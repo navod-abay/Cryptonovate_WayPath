@@ -1,0 +1,34 @@
+# Gateway Routing Configuration Mapping
+version: "1.0"
+gateway:
+  name: NGINX-Api-Gateway
+  port: 80
+  routes:
+    - path: /api/auth
+      target: http://auth-rbac:5001
+      service: auth-rbac
+      description: Authentication and RBAC operations
+    - path: /api/orders
+      target: http://order-management:5002
+      service: order-management
+      description: Delivery order lifecycle operations
+    - path: /api/planning
+      target: http://planning-allocation:5003
+      service: planning-allocation
+      description: Route planning and resource allocation engine
+    - path: /api/fleet
+      target: http://fleet-directory:5004
+      service: fleet-directory
+      description: Fleet, vehicle, and driver management
+    - path: /api/execution
+      target: http://execution-sync:5005
+      service: execution-sync
+      description: Real-time execution and telemetry sync
+    - path: /api/analytics
+      target: http://analytics-prediction:5006
+      service: analytics-prediction
+      description: Delivery analytics and predictive ETA models
+    - path: /
+      target: http://frontend:3000
+      service: frontend
+      description: Next.js SaaS Web Application

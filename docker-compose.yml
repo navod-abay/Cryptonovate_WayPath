@@ -1,0 +1,159 @@
+version: '3.8'
+
+services:
+  # ============================================================================
+  # DATABASE LAYER
+  # ============================================================================
+  postgres:
+    image: postgres:15-alpine
+    container_name: delivery_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres_password}
+      POSTGRES_DB: ${POSTGRES_DB:-delivery_db}
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./infrastructure/postgres-init:/docker-entrypoint-initdb.d
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-delivery_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ============================================================================
+  # BACKEND MICROSERVICES (Node.js TypeScript)
+  # ============================================================================
+  auth-rbac:
+    build:
+      context: ./services/auth-rbac
+      dockerfile: Dockerfile
+    container_name: service_auth_rbac
+    restart: unless-stopped
+    environment:
+      PORT: 5001
+      DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres_password}@postgres:5432/${POSTGRES_DB:-delivery_db}
+      JWT_SECRET: ${JWT_SECRET:-super_secret_jwt_key_2026}
+    ports:
+      - "5001:5001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  order-management:
+    build:
+      context: ./services/order-management
+      dockerfile: Dockerfile
+    container_name: service_order_management
+    restart: unless-stopped
+    environment:
+      PORT: 5002
+      DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres_password}@postgres:5432/${POSTGRES_DB:-delivery_db}
+    ports:
+      - "5002:5002"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  planning-allocation:
+    build:
+      context: ./services/planning-allocation
+      dockerfile: Dockerfile
+    container_name: service_planning_allocation
+    restart: unless-stopped
+    environment:
+      PORT: 5003
+      DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres_password}@postgres:5432/${POSTGRES_DB:-delivery_db}
+    ports:
+      - "5003:5003"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  fleet-directory:
+    build:
+      context: ./services/fleet-directory
+      dockerfile: Dockerfile
+    container_name: service_fleet_directory
+    restart: unless-stopped
+    environment:
+      PORT: 5004
+      DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres_password}@postgres:5432/${POSTGRES_DB:-delivery_db}
+    ports:
+      - "5004:5004"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  execution-sync:
+    build:
+      context: ./services/execution-sync
+      dockerfile: Dockerfile
+    container_name: service_execution_sync
+    restart: unless-stopped
+    environment:
+      PORT: 5005
+      DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres_password}@postgres:5432/${POSTGRES_DB:-delivery_db}
+    ports:
+      - "5005:5005"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  analytics-prediction:
+    build:
+      context: ./services/analytics-prediction
+      dockerfile: Dockerfile
+    container_name: service_analytics_prediction
+    restart: unless-stopped
+    environment:
+      PORT: 5006
+      DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres_password}@postgres:5432/${POSTGRES_DB:-delivery_db}
+    ports:
+      - "5006:5006"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ============================================================================
+  # FRONTEND (Next.js TypeScript SaaS App)
+  # ============================================================================
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: app_frontend
+    restart: unless-stopped
+    environment:
+      PORT: 3000
+      NEXT_PUBLIC_API_GATEWAY_URL: http://localhost:80
+    ports:
+      - "3000:3000"
+    depends_on:
+      - auth-rbac
+      - order-management
+
+  # ============================================================================
+  # API GATEWAY (NGINX Reverse Proxy)
+  # ============================================================================
+  gateway:
+    build:
+      context: ./gateway
+      dockerfile: Dockerfile
+    container_name: api_gateway
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - frontend
+      - auth-rbac
+      - order-management
+      - planning-allocation
+      - fleet-directory
+      - execution-sync
+      - analytics-prediction
+
+volumes:
+  postgres_data:
