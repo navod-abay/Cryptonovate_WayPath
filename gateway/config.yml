@@ -9,23 +9,23 @@ gateway:
       service: auth-rbac
       description: Authentication and RBAC operations
     - path: /api/orders
-      target: http://order-management:5002
+      target: http://order-management:3002
       service: order-management
       description: Delivery order lifecycle operations
     - path: /api/planning
-      target: http://planning-allocation:5003
+      target: http://planning-allocation:3003
       service: planning-allocation
       description: Route planning and resource allocation engine
     - path: /api/fleet
-      target: http://fleet-directory:5004
+      target: http://fleet-directory:3004
       service: fleet-directory
       description: Fleet, vehicle, and driver management
     - path: /api/execution
-      target: http://execution-sync:5005
+      target: http://execution-sync:3005
       service: execution-sync
       description: Real-time execution and telemetry sync
     - path: /api/analytics
-      target: http://analytics-prediction:5006
+      target: http://analytics-prediction:3006
       service: analytics-prediction
       description: Delivery analytics and predictive ETA models
     - path: /

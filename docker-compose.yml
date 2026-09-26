@@ -2,12 +2,14 @@ version: '3.8'
 
 services:
   # ============================================================================
-  # DATABASE LAYER
+  # DATABASE LAYER (PostgreSQL 15)
   # ============================================================================
   postgres:
     image: postgres:15-alpine
     container_name: delivery_postgres
     restart: always
+    env_file:
+      - .env
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres_password}
@@ -24,102 +26,139 @@ services:
       retries: 5
 
   # ============================================================================
-  # BACKEND MICROSERVICES (Node.js TypeScript)
+  # BACKEND MICROSERVICES (Isolated Contexts, Live Reload, Anonymous node_modules)
   # ============================================================================
+
+  # 1. Auth & RBAC Microservice
   auth-rbac:
     build:
       context: ./services/auth-rbac
       dockerfile: Dockerfile
     container_name: service_auth_rbac
     restart: unless-stopped
+    env_file:
+      - .env
     environment:
       PORT: 3001
       DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres_password}@postgres:5432/${POSTGRES_DB:-delivery_db}
-      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-waypoint_default_jwt_access_secret_key_2026}
-      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-waypoint_default_jwt_refresh_secret_key_2026}
     ports:
       - "3001:3001"
+    volumes:
+      # Live Reloading: Mount local source into container
+      - ./services/auth-rbac/src:/app/src
+      # Anonymous Volume: Prevent host OS node_modules from overriding container binaries
+      - /app/node_modules
     depends_on:
       postgres:
         condition: service_healthy
 
+  # 2. Order Management Microservice
   order-management:
     build:
       context: ./services/order-management
       dockerfile: Dockerfile
     container_name: service_order_management
     restart: unless-stopped
+    env_file:
+      - .env
     environment:
-      PORT: 5002
+      PORT: 3002
       DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres_password}@postgres:5432/${POSTGRES_DB:-delivery_db}
     ports:
-      - "5002:5002"
+      - "3002:3002"
+    volumes:
+      - ./services/order-management/src:/app/src
+      - /app/node_modules
     depends_on:
       postgres:
         condition: service_healthy
 
+  # 3. Planning & Allocation Microservice
   planning-allocation:
     build:
       context: ./services/planning-allocation
       dockerfile: Dockerfile
     container_name: service_planning_allocation
     restart: unless-stopped
+    env_file:
+      - .env
     environment:
-      PORT: 5003
+      PORT: 3003
       DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres_password}@postgres:5432/${POSTGRES_DB:-delivery_db}
     ports:
-      - "5003:5003"
+      - "3003:3003"
+    volumes:
+      - ./services/planning-allocation/src:/app/src
+      - /app/node_modules
     depends_on:
       postgres:
         condition: service_healthy
 
+  # 4. Fleet Directory Microservice
   fleet-directory:
     build:
       context: ./services/fleet-directory
       dockerfile: Dockerfile
     container_name: service_fleet_directory
     restart: unless-stopped
+    env_file:
+      - .env
     environment:
-      PORT: 5004
+      PORT: 3004
       DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres_password}@postgres:5432/${POSTGRES_DB:-delivery_db}
     ports:
-      - "5004:5004"
+      - "3004:3004"
+    volumes:
+      - ./services/fleet-directory/src:/app/src
+      - /app/node_modules
     depends_on:
       postgres:
         condition: service_healthy
 
+  # 5. Execution Sync Microservice
   execution-sync:
     build:
       context: ./services/execution-sync
       dockerfile: Dockerfile
     container_name: service_execution_sync
     restart: unless-stopped
+    env_file:
+      - .env
     environment:
-      PORT: 5005
+      PORT: 3005
       DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres_password}@postgres:5432/${POSTGRES_DB:-delivery_db}
     ports:
-      - "5005:5005"
+      - "3005:3005"
+    volumes:
+      - ./services/execution-sync/src:/app/src
+      - /app/node_modules
     depends_on:
       postgres:
         condition: service_healthy
 
+  # 6. Analytics & Prediction Microservice
   analytics-prediction:
     build:
       context: ./services/analytics-prediction
       dockerfile: Dockerfile
     container_name: service_analytics_prediction
     restart: unless-stopped
+    env_file:
+      - .env
     environment:
-      PORT: 5006
+      PORT: 3006
       DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres_password}@postgres:5432/${POSTGRES_DB:-delivery_db}
     ports:
-      - "5006:5006"
+      - "3006:3006"
+    volumes:
+      - ./services/analytics-prediction/src:/app/src
+      - /app/node_modules
     depends_on:
       postgres:
         condition: service_healthy
 
   # ============================================================================
-  # FRONTEND (Next.js TypeScript SaaS App)
+  # FRONTEND (Next.js SaaS Web App)
   # ============================================================================
   frontend:
     build:
@@ -127,11 +166,17 @@ services:
       dockerfile: Dockerfile
     container_name: app_frontend
     restart: unless-stopped
+    env_file:
+      - .env
     environment:
       PORT: 3000
       NEXT_PUBLIC_API_GATEWAY_URL: http://localhost:80
     ports:
       - "3000:3000"
+    volumes:
+      - ./frontend/src:/app/src
+      - /app/node_modules
+      - /app/.next
     depends_on:
       - auth-rbac
       - order-management
@@ -145,6 +190,8 @@ services:
       dockerfile: Dockerfile
     container_name: api_gateway
     restart: unless-stopped
+    env_file:
+      - .env
     ports:
       - "80:80"
     depends_on:
