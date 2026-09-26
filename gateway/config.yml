@@ -5,7 +5,7 @@ gateway:
   port: 80
   routes:
     - path: /api/auth
-      target: http://auth-rbac:5001
+      target: http://auth-rbac:3001
       service: auth-rbac
       description: Authentication and RBAC operations
     - path: /api/orders
