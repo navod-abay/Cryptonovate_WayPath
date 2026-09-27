@@ -76,13 +76,19 @@ export async function runCutoffSweep(closingDate: string, trigger: 'timer' | 'ma
       outlets_deferred_flag_cleared: cleared,
       trigger,
     };
-    await client.query('UPDATE service_jobs SET result = $3 WHERE job_name = $1 AND job_key = $2', [
-      CUTOFF_JOB_NAME,
-      closingDate,
-      JSON.stringify(result),
-    ]);
+    // Return the stored JSONB (not the local object) so first and repeat calls are byte-identical.
+    const stored = await client.query<{ result: CutoffSweepResult }>(
+      'UPDATE service_jobs SET result = $3 WHERE job_name = $1 AND job_key = $2 RETURNING result',
+      [CUTOFF_JOB_NAME, closingDate, JSON.stringify(result)],
+    );
 
-    return { job_name: CUTOFF_JOB_NAME, job_key: closingDate, already_ran: false, ran_at: guard.rows[0].ran_at, result };
+    return {
+      job_name: CUTOFF_JOB_NAME,
+      job_key: closingDate,
+      already_ran: false,
+      ran_at: guard.rows[0].ran_at,
+      result: stored.rows[0].result,
+    };
   });
 }
 
