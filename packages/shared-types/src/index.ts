@@ -1,25 +1,10 @@
-export type UserRole = 'dispatcher' | 'loader' | 'driver' | 'store_manager';
+/**
+ * Barrel File for @waypoint/shared-types
+ * Single source of truth for domain entities and cross-boundary API payload schemas.
+ */
 
-export interface BaseUser {
-  id: string;
-  username: string;
-  fullName: string;
-  role: UserRole;
-  outletId?: string | null;
-  depot?: string | null;
-}
+// Export Domain Schemas & Types
+export * from './schemas/domain.schema.js';
 
-export interface DeliveryOrder {
-  id: string;
-  orderNumber: string;
-  customerName: string;
-  status: 'PENDING' | 'ALLOCATED' | 'IN_TRANSIT' | 'DELIVERED' | 'FAILED';
-  deliveryWindowStart: string;
-  deliveryWindowEnd: string;
-}
-
-export interface RouteOptimizationRequest {
-  depotId: string;
-  orderIds: string[];
-  vehicleIds: string[];
-}
+// Export API Payload Schemas & Types
+export * from './schemas/api.schema.js';
