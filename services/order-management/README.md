@@ -6,16 +6,85 @@ It does not pick vehicles (Planning & Allocation), sequence stops, or capture pr
 
 Stack: Node 20, TypeScript (strict, NodeNext), Express 4, `pg` (raw SQL), Zod, `jsonwebtoken`.
 
+Full endpoint reference, with logic, examples and errors: **[docs/API.md](docs/API.md)**.
+
 ## Run
 
+Boot order: connect → assert schema → seed → listen → start the cutoff timer.
+
+### What gets seeded
+
+| Data | When | Controlled by |
+|---|---|---|
+| **120 outlets** (`outlets_ref`: Fresh OUT001–080, Style OUT081–105, Tech OUT106–120) | every boot, `ON CONFLICT DO NOTHING` | always on while `OUTLET_SOURCE=local`, because orders cannot be placed without outlets |
+| **Demo orders** (~1,700): 2 weeks of history, a live board for today, an over-capacity peak day tomorrow, at-risk outlets, one `draft` on OUT001 | **once per database**, guarded by a `service_jobs('seed_demo','v1')` row | `SEED_DEMO_DATA` (default `true`) |
+
+Seed data is deterministic (fixed PRNG seed) and dated relative to the day it ran. Because it is
+one-shot, **the flag only matters on a database that has not been seeded yet**. Turning it off later
+does not delete existing demo orders, and turning it back on does not re-date them.
+
+### With demo data (default)
+
 ```bash
-cp .env.example .env                 # once, from the repo root
-docker compose up --build order-management auth-rbac postgres
-curl localhost:3002/health           # direct
-curl localhost/api/orders/health     # through the gateway
+cp .env.example .env                                  # once, from the repo root
+docker compose up -d --build postgres auth-rbac order-management
+docker compose logs order-management                  # expect "Demo orders seeded: N orders."
+curl localhost:3002/health                            # direct
+curl localhost/api/orders/health                      # through the gateway (needs the gateway up)
 ```
 
-Boot order: connect → assert schema → seed outlets + demo orders (idempotent) → listen → start the cutoff timer.
+To re-date the demo to today, reset the volume. **This destroys all data in every service.**
+
+```bash
+docker compose down -v && docker compose up -d --build
+```
+
+### Without demo data (outlets only)
+
+Add `SEED_DEMO_DATA=false` to the repo-root `.env`, then start on a database that has **not** been
+seeded:
+
+```bash
+docker compose down -v                                # only if the volume was already seeded
+docker compose up -d --build postgres auth-rbac order-management
+docker compose logs order-management                  # expect "SEED_DEMO_DATA=false — skipping demo orders."
+```
+
+To keep your existing data and try an empty instance next to it, use a separate database:
+
+```bash
+docker compose exec -T postgres psql -U postgres -c "CREATE DATABASE om_empty;"
+docker compose exec -T postgres psql -U postgres -d om_empty < infrastructure/postgres-init/02-order-management.sql
+docker compose run --rm -d --no-deps --name om_empty -p 3102:3102 \
+  -e PORT=3102 -e SEED_DEMO_DATA=false \
+  -e DATABASE_URL=postgres://postgres:postgres_password@postgres:5432/om_empty order-management
+curl localhost:3102/health
+```
+
+Without demo data, `npm run verify` passes **43/45**. Scenario 42 (the over-capacity peak day) and
+scenario 43 (pagination over 25+ rows) need the demo orders.
+
+### Outside Docker (local Node)
+
+```bash
+cd services/order-management && npm install && npm run build
+DATABASE_URL=postgres://postgres:postgres_password@localhost:5432/delivery_db SEED_DEMO_DATA=false npm start
+# or: npm run dev   (ts-node-dev, auto-restart)
+```
+
+If Postgres is also installed natively on Windows, it already owns `localhost:5432`, and a local run
+connects to **it** instead of the container (symptom: `database "…" does not exist`). Stop the
+native service, or run the service inside compose as shown above.
+
+### Troubleshooting
+
+| Symptom | Cause / fix |
+|---|---|
+| `❌ FATAL: missing table(s): …` and exit 1 | Migration not applied to this volume. Run Path B below. |
+| `❌ FATAL: table "orders" exists but is missing required column(s)` | Another service created a same-named table. See the message. |
+| auth-rbac: `column "full_name" of relation "users" does not exist` | Known repo issue with `01-seed.sql`. See NOTES.md, issue 1. |
+| `env file … .env not found` | `cp .env.example .env` at the repo root. |
+| verify scenarios 4–7 fail | `NODE_ENV=production` disables the `X-Test-Now` clock. `.env` must set `development`. |
 
 ## Database migration
 
