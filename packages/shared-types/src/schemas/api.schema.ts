@@ -100,3 +100,26 @@ export const LogDistanceRequestSchema = z.object({
   week_number: z.number().int().positive('Week number must be a valid ISO week'),
 });
 export type LogDistanceRequest = z.infer<typeof LogDistanceRequestSchema>;
+
+/**
+ * ============================================================================
+ * GENERIC API RESPONSE CONTRACTS
+ * ============================================================================
+ */
+export interface ApiSuccessResponse<T> {
+  success: true;
+  data: T;
+}
+
+export interface ApiErrorDetail {
+  code: string;
+  message: string;
+  details?: unknown;
+}
+
+export interface ApiErrorResponse {
+  success: false;
+  error: ApiErrorDetail;
+}
+
+export type ApiResponse<T> = ApiSuccessResponse<T> | ApiErrorResponse;
