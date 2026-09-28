@@ -1,15 +1,17 @@
 FROM node:20-alpine
-
 WORKDIR /app
 
-COPY package.json ./
-RUN npm install
+COPY package.json package-lock.json* ./
+COPY packages ./packages
+COPY services/fleet-directory ./services/fleet-directory
 
-COPY tsconfig.json ./
-COPY src ./src
+RUN npm ci
 
+WORKDIR /app/packages/shared-types
 RUN npm run build
 
-EXPOSE 5004
+WORKDIR /app/services/fleet-directory
+RUN npm run build
 
-CMD ["node", "dist/index.js"]
+EXPOSE 3004
+CMD ["npm", "run", "dev"]

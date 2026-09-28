@@ -19,6 +19,7 @@ services:
     volumes:
       - ./infrastructure/postgres-init:/docker-entrypoint-initdb.d
       - postgres_data:/var/lib/postgresql/data
+      - ./data:/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-delivery_db}"]
       interval: 5s
@@ -26,14 +27,12 @@ services:
       retries: 5
 
   # ============================================================================
-  # BACKEND MICROSERVICES (Isolated Contexts, Live Reload, Anonymous node_modules)
+  # BACKEND MICROSERVICES
   # ============================================================================
-
-  # 1. Auth & RBAC Microservice
   auth-rbac:
     build:
-      context: ./services/auth-rbac
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./services/auth-rbac/Dockerfile
     container_name: service_auth_rbac
     restart: unless-stopped
     env_file:
@@ -44,19 +43,16 @@ services:
     ports:
       - "3001:3001"
     volumes:
-      # Live Reloading: Mount local source into container
-      - ./services/auth-rbac/src:/app/src
-      # Anonymous Volume: Prevent host OS node_modules from overriding container binaries
+      - ./services/auth-rbac/src:/app/services/auth-rbac/src
       - /app/node_modules
     depends_on:
       postgres:
         condition: service_healthy
 
-  # 2. Order Management Microservice
   order-management:
     build:
-      context: ./services/order-management
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./services/order-management/Dockerfile
     container_name: service_order_management
     restart: unless-stopped
     env_file:
@@ -67,17 +63,16 @@ services:
     ports:
       - "3002:3002"
     volumes:
-      - ./services/order-management/src:/app/src
+      - ./services/order-management/src:/app/services/order-management/src
       - /app/node_modules
     depends_on:
       postgres:
         condition: service_healthy
 
-  # 3. Planning & Allocation Microservice
   planning-allocation:
     build:
-      context: ./services/planning-allocation
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./services/planning-allocation/Dockerfile
     container_name: service_planning_allocation
     restart: unless-stopped
     env_file:
@@ -88,17 +83,16 @@ services:
     ports:
       - "3003:3003"
     volumes:
-      - ./services/planning-allocation/src:/app/src
+      - ./services/planning-allocation/src:/app/services/planning-allocation/src
       - /app/node_modules
     depends_on:
       postgres:
         condition: service_healthy
 
-  # 4. Fleet Directory Microservice
   fleet-directory:
     build:
-      context: ./services/fleet-directory
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./services/fleet-directory/Dockerfile
     container_name: service_fleet_directory
     restart: unless-stopped
     env_file:
@@ -109,17 +103,16 @@ services:
     ports:
       - "3004:3004"
     volumes:
-      - ./services/fleet-directory/src:/app/src
+      - ./services/fleet-directory/src:/app/services/fleet-directory/src
       - /app/node_modules
     depends_on:
       postgres:
         condition: service_healthy
 
-  # 5. Execution Sync Microservice
   execution-sync:
     build:
-      context: ./services/execution-sync
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./services/execution-sync/Dockerfile
     container_name: service_execution_sync
     restart: unless-stopped
     env_file:
@@ -130,17 +123,16 @@ services:
     ports:
       - "3005:3005"
     volumes:
-      - ./services/execution-sync/src:/app/src
+      - ./services/execution-sync/src:/app/services/execution-sync/src
       - /app/node_modules
     depends_on:
       postgres:
         condition: service_healthy
 
-  # 6. Analytics & Prediction Microservice
   analytics-prediction:
     build:
-      context: ./services/analytics-prediction
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./services/analytics-prediction/Dockerfile
     container_name: service_analytics_prediction
     restart: unless-stopped
     env_file:
@@ -151,7 +143,7 @@ services:
     ports:
       - "3006:3006"
     volumes:
-      - ./services/analytics-prediction/src:/app/src
+      - ./services/analytics-prediction/src:/app/services/analytics-prediction/src
       - /app/node_modules
     depends_on:
       postgres:
@@ -162,8 +154,8 @@ services:
   # ============================================================================
   frontend:
     build:
-      context: ./frontend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./frontend/Dockerfile
     container_name: app_frontend
     restart: unless-stopped
     env_file:
@@ -174,9 +166,9 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      - ./frontend/src:/app/src
-      - /app/node_modules
-      - /app/.next
+      - ./frontend/src:/app/frontend/src
+      - /app/frontend/node_modules
+      - /app/frontend/.next
     depends_on:
       - auth-rbac
       - order-management

@@ -1,0 +1,29 @@
+# Environment Variables (never commit real secrets)
+.env
+.env.local
+.env.*.local
+
+# Keep the example template
+!.env.example
+
+# Dependencies
+node_modules/
+**/node_modules/
+
+# TypeScript build output
+dist/
+**/dist/
+build/
+**/build/
+
+# Next.js
+.next/
+out/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS artifacts
+.DS_Store
+Thumbs.db

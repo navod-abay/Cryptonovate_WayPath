@@ -1,15 +1,17 @@
 FROM node:20-alpine
-
 WORKDIR /app
 
-COPY package.json ./
-RUN npm install
+COPY package.json package-lock.json* ./
+COPY packages ./packages
+COPY services/execution-sync ./services/execution-sync
 
-COPY tsconfig.json ./
-COPY src ./src
+RUN npm ci
 
+WORKDIR /app/packages/shared-types
 RUN npm run build
 
-EXPOSE 5005
+WORKDIR /app/services/execution-sync
+RUN npm run build
 
-CMD ["node", "dist/index.js"]
+EXPOSE 3005
+CMD ["npm", "run", "dev"]

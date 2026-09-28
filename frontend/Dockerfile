@@ -1,12 +1,15 @@
 FROM node:20-alpine AS base
-
 WORKDIR /app
 
-COPY package.json ./
+# 1. Copy workspace manifests from repo root (needed for npm ci)
+COPY package.json package-lock.json* ./
 
-RUN npm install
+# 2. Copy frontend source
+COPY frontend ./frontend
 
-COPY . .
+# 3. Install dependencies (uses root package-lock.json)
+WORKDIR /app/frontend
+RUN npm ci
 
 EXPOSE 3000
 

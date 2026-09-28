@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { DepotEnum } from './domain.schema.js';
+import { DepotEnum, DistrictTravelSchema, ServiceAllowanceSchema } from './domain.schema.js';
 
 /**
  * ============================================================================
@@ -77,3 +77,26 @@ export const ExecutionSyncRequestSchema = z.object({
     .optional(),
 });
 export type ExecutionSyncRequest = z.infer<typeof ExecutionSyncRequestSchema>;
+
+/**
+ * ============================================================================
+ * FLEET & DIRECTORY API SCHEMAS
+ * ============================================================================
+ */
+
+export const BatchOutletsRequestSchema = z.object({
+  outlet_ids: z.array(z.string().min(1, 'Outlet ID cannot be empty')),
+});
+export type BatchOutletsRequest = z.infer<typeof BatchOutletsRequestSchema>;
+
+export const TravelMetricsResponseSchema = z.object({
+  district_travel: z.array(DistrictTravelSchema),
+  service_allowances: z.array(ServiceAllowanceSchema),
+});
+export type TravelMetricsResponse = z.infer<typeof TravelMetricsResponseSchema>;
+
+export const LogDistanceRequestSchema = z.object({
+  distance_km: z.number().positive('Distance must be a positive number'),
+  week_number: z.number().int().positive('Week number must be a valid ISO week'),
+});
+export type LogDistanceRequest = z.infer<typeof LogDistanceRequestSchema>;
