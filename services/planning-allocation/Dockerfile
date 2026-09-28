@@ -1,15 +1,17 @@
 FROM node:20-alpine
-
 WORKDIR /app
 
-COPY package.json ./
-RUN npm install
+COPY package.json package-lock.json* ./
+COPY packages ./packages
+COPY services/planning-allocation ./services/planning-allocation
 
-COPY tsconfig.json ./
-COPY src ./src
+RUN npm ci
 
+WORKDIR /app/packages/shared-types
 RUN npm run build
 
-EXPOSE 5003
+WORKDIR /app/services/planning-allocation
+RUN npm run build
 
-CMD ["node", "dist/index.js"]
+EXPOSE 3003
+CMD ["npm", "run", "dev"]

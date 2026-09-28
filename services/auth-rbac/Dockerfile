@@ -1,32 +1,24 @@
-# Stage 1: Build Stage
-FROM node:20-alpine AS builder
-
+FROM node:20-alpine
 WORKDIR /app
 
-COPY package.json ./
-RUN npm install
+# 1. Copy workspace configuration
+COPY package.json package-lock.json* ./
 
-COPY tsconfig.json ./
-COPY src ./src
+# 2. Copy shared types and service source
+COPY packages ./packages
+COPY services/auth-rbac ./services/auth-rbac
 
+# 3. Install dependencies
+RUN npm ci
+
+# 4. Build shared types
+WORKDIR /app/packages/shared-types
 RUN npm run build
 
-# Stage 2: Production Lean Runtime Stage
-FROM node:20-alpine AS runner
+# 5. Build auth-rbac
+WORKDIR /app/services/auth-rbac
+RUN npm run build
 
-WORKDIR /app
-
-ENV NODE_ENV=production
-ENV PORT=3001
-
-COPY package.json ./
-RUN npm install --only=production
-
-COPY --from=builder /app/dist ./dist
-
-# Non-root security compliance
-USER node
-
+# 6. Expose port and start in dev mode (ts-node-dev watches /app/services/auth-rbac/src)
 EXPOSE 3001
-
-CMD ["node", "dist/index.js"]
+CMD ["npm", "run", "dev"]
