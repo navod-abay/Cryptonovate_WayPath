@@ -3,12 +3,13 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-COPY package.json ./
-RUN npm install
+COPY package.json package-lock.json* ./
+COPY packages ./packages
+COPY services/order-management ./services/order-management
 
-COPY tsconfig.json ./
-COPY src ./src
+RUN npm ci
 
+WORKDIR /app/packages/shared-types
 RUN npm run build
 
 # Stage 2: Production Lean Runtime Stage
@@ -32,4 +33,5 @@ EXPOSE 3002
 HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --retries=3 \
   CMD wget -qO- http://127.0.0.1:3002/health > /dev/null || exit 1
 
-CMD ["node", "dist/index.js"]
+EXPOSE 3002
+CMD ["npm", "run", "dev"]
