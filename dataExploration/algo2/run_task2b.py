@@ -19,9 +19,29 @@ from alns import ALNS, DEFAULTS, Order, Vehicle, hhmm_to_min, min_to_hhmm
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent / "algo1"))
-from task2b_test import check, load_scenario  # noqa: E402  (booklet rule checker shared with algorithm 1)
+from task2b_test import check  # noqa: E402  (booklet rule checker shared with algorithm 1)
 
+DATA = HERE.parents[1] / "data"
 OUT = HERE / "results"
+
+
+def read(path):
+    df = pd.read_csv(path)
+    df.columns = df.columns.str.strip()  # tolerate stray spaces in a header
+    return df
+
+
+def load_scenario(scenario):
+    s = read(DATA / "Test Data/task2b_peak_day_scenarios.csv")
+    s = s[s.scenario == scenario].reset_index(drop=True)
+    fleet = read(DATA / "Test Data/task2b_peak_day_fleet.csv")
+    vehicles = read(DATA / "General Data/vehicles.csv")
+    if "weekly_range_km" not in vehicles:
+        vehicles["weekly_range_km"] = vehicles.km_per_l * vehicles.weekly_fuel_quota_l
+    vehicles = vehicles.merge(fleet[fleet.scenario == scenario], on="vehicle_id")
+    travel = read(DATA / "General Data/district_travel.csv").set_index("district")
+    service = read(DATA / "General Data/service_allowance.csv").set_index(["brand", "dock_type"])
+    return s, vehicles, travel, service
 
 
 def build(s, vehicles, travel, service):

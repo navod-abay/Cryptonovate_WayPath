@@ -23,6 +23,9 @@ The scripts read the challenge data from `../data/` (the repo's `data/` folder).
 | `algo-1.md` | Specification of routing algorithm 1 |
 | `algo1/algo1.py` | Algorithm 1, back-tested day by day on all orders; writes `algo1/results/algo1_decisions.csv` and `algo1_routes.csv` |
 | `algo1/assess_algo.py` | Scores a decisions CSV: deferrals, continuous deferrals, spread across outlets (`--historical` compares with the data) |
+| `algo2/alns.py` | Algorithm 2: ALNS (random / Shaw / worst removal; greedy / regret-k / time-window regret insertion) with booklet time budgets and soft time windows |
+| `algo2/run_task2b.py` | Runs ALNS on Task 2B scenario S1, checks booklet rules 1-7, compares with algorithm 1 (`algo2/results/task2b_alns_*`) |
+| `algo2/backtest.py` | Day-by-day ALNS back-test; writes decisions/routes CSVs for `algo1/assess_algo.py` |
 | `dataDistributions.md` | What the distribution and fleet charts show, plus mall and van-only outlet counts |
 
 Run a script with `python3 <script>.py` (needs `networkx`, `matplotlib`, `pandas`).

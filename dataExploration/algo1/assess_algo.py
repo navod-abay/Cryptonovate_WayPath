@@ -102,8 +102,9 @@ def route_metrics(rts):
     return m, {"Median fill by category (share of capacity)": fill}
 
 
-def historical_decisions():
-    """What actually happened, in the same format: one deferred row per operating day an order waited."""
+def historical_decisions(ids=None):
+    """What actually happened, in the same format: one deferred row per operating day an order waited.
+    ids limits it to the orders in the assessed decisions file, so both cover the same period."""
     h = pd.concat([pd.read_csv(DATA / "Training Data/deliveries_train.csv"),
                    pd.read_csv(DATA / "Test Data/task1_test_inputs.csv")], ignore_index=True)
     h["category"] = h.brand.str.lower().where(h.brand != "Fresh",
@@ -111,6 +112,8 @@ def historical_decisions():
                                                                                  "ambient": "dry"}))
     days = sorted(h.order_date.unique())
     idx = {d: i for i, d in enumerate(days)}
+    if ids is not None:
+        h = h[h.delivery_id.isin(ids)]  # after building the day index, so waits are still counted correctly
     rows = []
     for r in h.itertuples():
         start = idx[r.order_date]
@@ -149,7 +152,7 @@ def main():
     all_outlets = pd.read_csv(DATA / "General Data/outlets.csv").outlet_id
     runs = {"algorithm": metrics(dec, all_outlets)}
     if a.historical:
-        runs["historical"] = metrics(historical_decisions(), all_outlets)
+        runs["historical"] = metrics(historical_decisions(set(dec.delivery_id)), all_outlets)
 
     lines = [f"# Assessment of `{Path(a.decisions).name}`", ""]
     names = list(runs)
