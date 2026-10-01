@@ -1,11 +1,7 @@
 import { Request, Response } from 'express';
 import {
   Vehicle,
-  Outlet,
-  DistrictTravel,
-  ServiceAllowance,
   ApiResponse,
-  BatchOutletsRequestSchema,
   LogDistanceRequestSchema,
 } from '@waypoint/shared-types';
 import { pool } from '../db/pool';
@@ -23,40 +19,11 @@ interface VehicleRow {
   status: Vehicle['status'];
 }
 
-interface OutletRow {
-  outlet_id: string;
-  brand: Outlet['brand'];
-  district: string;
-  depot: Outlet['depot'];
-  dock_type: Outlet['dock_type'];
-  parking_constraint: Outlet['parking_constraint'];
-  mall_window: string | null;
-  window_open_time: string | null;
-  window_close_time: string | null;
-}
-
-interface DistrictTravelRow {
-  district: string;
-  depot: DistrictTravel['depot'];
-  road_class: DistrictTravel['road_class'];
-  free_flow_kmh: number | string;
-  depot_to_district_km: number | string;
-  depot_to_district_freeflow_min: number | string;
-  inter_stop_km: number | string;
-  inter_stop_freeflow_min: number | string;
-}
-
-interface ServiceAllowanceRow {
-  brand: ServiceAllowance['brand'];
-  dock_type: ServiceAllowance['dock_type'];
-  service_allowance_min: number | string;
-}
-
 interface VehicleEfficiencyRow {
   km_per_l: number | string;
 }
 
-export class FleetController {
+export class VehicleController {
   /**
    * GET /vehicles
    * Query params: depot (optional), status (optional)
@@ -113,145 +80,6 @@ export class FleetController {
         error: {
           code: 'DATABASE_ERROR',
           message: 'Failed to retrieve vehicles from database',
-        },
-      });
-    }
-  }
-
-  /**
-   * POST /outlets/batch
-   * Body: { outlet_ids: string[] }
-   */
-  static async getOutletsBatch(
-    req: Request,
-    res: Response<ApiResponse<Outlet[]>>
-  ): Promise<void> {
-    try {
-      const validationResult = BatchOutletsRequestSchema.safeParse(req.body);
-      if (!validationResult.success) {
-        res.status(400).json({
-          success: false,
-          error: {
-            code: 'VALIDATION_ERROR',
-            message: 'Invalid request payload: outlet_ids must be an array of non-empty strings',
-          },
-        });
-        return;
-      }
-
-      const { outlet_ids } = validationResult.data;
-      if (outlet_ids.length === 0) {
-        res.status(200).json({
-          success: true,
-          data: [],
-        });
-        return;
-      }
-
-      const sql = `
-        SELECT 
-          outlet_id, 
-          brand, 
-          district, 
-          depot, 
-          dock_type, 
-          parking_constraint, 
-          mall_window, 
-          to_char(window_open_time, 'HH24:MI') as window_open_time, 
-          to_char(window_close_time, 'HH24:MI') as window_close_time 
-        FROM outlets 
-        WHERE outlet_id = ANY($1::varchar[])
-        ORDER BY outlet_id ASC
-      `;
-
-      const result = await pool.query<OutletRow>(sql, [outlet_ids]);
-
-      const outlets: Outlet[] = result.rows.map((row: OutletRow) => ({
-        outlet_id: row.outlet_id,
-        brand: row.brand,
-        district: row.district,
-        depot: row.depot,
-        dock_type: row.dock_type,
-        parking_constraint: row.parking_constraint,
-        mall_window: row.mall_window ?? null,
-        window_open_time: row.window_open_time ? String(row.window_open_time).slice(0, 5) : null,
-        window_close_time: row.window_close_time ? String(row.window_close_time).slice(0, 5) : null,
-      }));
-
-      res.status(200).json({
-        success: true,
-        data: outlets,
-      });
-    } catch (error) {
-      console.error('[fleet-directory] Error fetching outlets batch:', error);
-      res.status(500).json({
-        success: false,
-        error: {
-          code: 'DATABASE_ERROR',
-          message: 'Failed to retrieve outlets from database',
-        },
-      });
-    }
-  }
-
-  /**
-   * GET /travel-metrics
-   * Concurrently queries district_travel and service_allowance
-   */
-  static async getTravelMetrics(
-    req: Request,
-    res: Response<
-      ApiResponse<{
-        district_travel: DistrictTravel[];
-        service_allowances: ServiceAllowance[];
-      }>
-    >
-  ): Promise<void> {
-    try {
-      const [districtTravelResult, serviceAllowanceResult] = await Promise.all([
-        pool.query<DistrictTravelRow>(
-          'SELECT district, depot, road_class, free_flow_kmh, depot_to_district_km, depot_to_district_freeflow_min, inter_stop_km, inter_stop_freeflow_min FROM district_travel ORDER BY district, depot'
-        ),
-        pool.query<ServiceAllowanceRow>(
-          'SELECT brand, dock_type, service_allowance_min FROM service_allowance ORDER BY brand, dock_type'
-        ),
-      ]);
-
-      const district_travel: DistrictTravel[] = districtTravelResult.rows.map(
-        (row: DistrictTravelRow) => ({
-          district: row.district,
-          depot: row.depot,
-          road_class: row.road_class,
-          free_flow_kmh: Number(row.free_flow_kmh),
-          depot_to_district_km: Number(row.depot_to_district_km),
-          depot_to_district_freeflow_min: Number(row.depot_to_district_freeflow_min),
-          inter_stop_km: Number(row.inter_stop_km),
-          inter_stop_freeflow_min: Number(row.inter_stop_freeflow_min),
-        })
-      );
-
-      const service_allowances: ServiceAllowance[] = serviceAllowanceResult.rows.map(
-        (row: ServiceAllowanceRow) => ({
-          brand: row.brand,
-          dock_type: row.dock_type,
-          service_allowance_min: Number(row.service_allowance_min),
-        })
-      );
-
-      res.status(200).json({
-        success: true,
-        data: {
-          district_travel,
-          service_allowances,
-        },
-      });
-    } catch (error) {
-      console.error('[fleet-directory] Error fetching travel metrics:', error);
-      res.status(500).json({
-        success: false,
-        error: {
-          code: 'DATABASE_ERROR',
-          message: 'Failed to retrieve travel metrics from database',
         },
       });
     }
@@ -352,6 +180,75 @@ export class FleetController {
         error: {
           code: 'DATABASE_ERROR',
           message: 'Failed to record vehicle distance in database',
+        },
+      });
+    }
+  }
+
+  /**
+   * PATCH /vehicles/:vehicle_id/status
+   * Body: { status: "available" | "in_workshop" }
+   */
+  static async updateVehicleStatus(
+    req: Request<{ vehicle_id: string }>,
+    res: Response<ApiResponse<Vehicle>>
+  ): Promise<void> {
+    try {
+      const { vehicle_id } = req.params;
+      const { status } = req.body;
+
+      if (status !== 'available' && status !== 'in_workshop') {
+        res.status(400).json({
+          success: false,
+          error: {
+            code: 'BAD_REQUEST',
+            message: "Invalid status value. Must be 'available' or 'in_workshop'",
+          },
+        });
+        return;
+      }
+
+      const result = await pool.query<VehicleRow>(
+        'UPDATE vehicles SET status = $1 WHERE vehicle_id = $2 RETURNING *',
+        [status, vehicle_id]
+      );
+
+      if (result.rows.length === 0) {
+        res.status(404).json({
+          success: false,
+          error: {
+            code: 'NOT_FOUND',
+            message: `Vehicle with ID '${vehicle_id}' does not exist`,
+          },
+        });
+        return;
+      }
+
+      const row = result.rows[0];
+      const vehicle: Vehicle = {
+        vehicle_id: row.vehicle_id,
+        type: row.type,
+        temp: row.temp,
+        weight_cap_kg: Number(row.weight_cap_kg),
+        volume_cap_m3: Number(row.volume_cap_m3),
+        fuel_type: row.fuel_type,
+        km_per_l: Number(row.km_per_l),
+        weekly_fuel_quota_l: Number(row.weekly_fuel_quota_l),
+        depot: row.depot,
+        status: row.status,
+      };
+
+      res.status(200).json({
+        success: true,
+        data: vehicle,
+      });
+    } catch (error) {
+      console.error('[fleet-directory] Error updating vehicle status:', error);
+      res.status(500).json({
+        success: false,
+        error: {
+          code: 'DATABASE_ERROR',
+          message: 'Failed to update vehicle status in database',
         },
       });
     }
