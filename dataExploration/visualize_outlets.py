@@ -20,8 +20,8 @@ import networkx as nx
 import pandas as pd
 from matplotlib.lines import Line2D
 
-# The challenge data lives outside the repo, next to it in TechTriathlon2026/.
-DATA = Path(__file__).resolve().parents[2] / "data-20260926T041005Z-1-001/data/General Data"
+# The challenge data lives in the repo root, at Cryptonovate_TBD/data.
+DATA = Path(__file__).resolve().parent.parent / "data/General Data"
 OUT = Path(__file__).parent / "outlets_network.png"
 
 # Approximate (lat, lon), used ONLY to choose the direction of each spoke.
@@ -36,12 +36,15 @@ DEPOT_NODE = {"Peliyagoda": "Peliyagoda", "Kandy": "Kandy depot"}
 # Districts right next to their depot get a fixed direction so they don't cover it
 # or a neighbouring district (degrees, 0 = east).
 BEARING_OVERRIDE = {"Colombo": -165, "Kandy": -115}
+# Shift the Kandy depot (and so all its districts) east so its cluster sits clear of Peliyagoda's.
+# Display only: spoke lengths stay to scale, the gap between the depots does not.
+DEPOT_SHIFT_KM = {"Kandy depot": (120, 0)}
 # Label direction for crowded districts (degrees); others use the spoke direction.
-LABEL_DIR = {"Gampaha": 160, "Kegalle": 90, "Kandy": -90, "Matale": 0, "Kurunegala": 150}
+LABEL_DIR = {"Gampaha": 160, "Kegalle": 90, "Kandy": -90, "Matale": 0, "Kurunegala": 150, "Nuwara Eliya": -90}
 SPACING = 2.6  # km between neighbouring outlets in the drawn cluster (display only)
 
-# Colour = dock type (validated categorical slots 1-3); marker = parking constraint.
-DOCK_COLOR = {"rear_dock": "#2a78d6", "street": "#eb6834", "mall_bay": "#1baf7a"}
+# Colour = brand (validated categorical slots 1-3, same as the other charts); marker = parking constraint.
+BRAND_COLOR = {"Fresh": "#2a78d6", "Style": "#eb6834", "Tech": "#1baf7a"}
 PARKING_MARKER = {"normal": "o", "van_only": "^", "mall_dock": "s"}
 
 SURFACE, INK, INK_2, MUTED, HAIRLINE = "#fcfcfb", "#0b0b0b", "#52514e", "#898781", "#e1e0d9"
@@ -72,20 +75,24 @@ def build_graph(outlets, travel):
 
 def layout(G, outlets, travel):
     pos = {node: to_km(*GEO[node]) for node in DEPOT_NODE.values()}
+    for node, (sx, sy) in DEPOT_SHIFT_KM.items():
+        pos[node] = (pos[node][0] + sx, pos[node][1] + sy)
     centers, angles = {}, {}
     for t in travel.itertuples():
-        dx, dy = pos[DEPOT_NODE[t.depot]]
+        depot = DEPOT_NODE[t.depot]
+        dx, dy = pos[depot]
+        rx, ry = to_km(*GEO[depot])  # bearings come from the real, unshifted depot position
         gx, gy = to_km(*GEO[t.district])
         if t.district in BEARING_OVERRIDE:
             ang = math.radians(BEARING_OVERRIDE[t.district])
         else:
-            ang = math.atan2(gy - dy, gx - dx)
+            ang = math.atan2(gy - ry, gx - rx)
         angles[t.district] = ang
         centers[t.district] = (dx + t.depot_to_district_km * math.cos(ang),
                                dy + t.depot_to_district_km * math.sin(ang))
-    # Sunflower packing around the district point, grouped by dock type.
+    # Sunflower packing around the district point, grouped by brand.
     golden = math.pi * (3 - math.sqrt(5))
-    for district, grp in outlets.sort_values(["dock_type", "parking_constraint"]).groupby("district"):
+    for district, grp in outlets.sort_values(["brand", "parking_constraint"]).groupby("district"):
         cx, cy = centers[district]
         for k, oid in enumerate(grp.outlet_id):
             r = SPACING * math.sqrt(k + 0.5)
@@ -112,9 +119,9 @@ def main():
         (x0, y0), (x1, y1) = pos[DEPOT_NODE[t.depot]], centers[t.district]
         ax.plot([x0, x1], [y0, y1], color=MUTED, lw=1.5, zorder=1)
 
-    # Outlets: colour = dock type, marker = parking constraint.
-    for (dock, park), grp in outlets.groupby(["dock_type", "parking_constraint"]):
-        nx.draw_networkx_nodes(G, pos, nodelist=grp.outlet_id.tolist(), node_color=DOCK_COLOR[dock],
+    # Outlets: colour = brand, marker = parking constraint.
+    for (brand, park), grp in outlets.groupby(["brand", "parking_constraint"]):
+        nx.draw_networkx_nodes(G, pos, nodelist=grp.outlet_id.tolist(), node_color=BRAND_COLOR[brand],
                                node_shape=PARKING_MARKER[park], node_size=70,
                                edgecolors=SURFACE, linewidths=1.0, ax=ax)
 
@@ -145,13 +152,14 @@ def main():
                     bbox=dict(boxstyle="round,pad=0.25", fc=SURFACE, ec="none", alpha=0.85))
 
     # Legends: colour and marker are separate encodings, so they get separate keys.
-    dock_handles = [Line2D([], [], marker="o", ls="", ms=9, mfc=c, mec=SURFACE, label=k.replace("_", " "))
-                    for k, c in DOCK_COLOR.items()]
+    counts = outlets.brand.value_counts()
+    brand_handles = [Line2D([], [], marker="o", ls="", ms=9, mfc=c, mec=SURFACE, label=f"{k} ({counts[k]})")
+                     for k, c in BRAND_COLOR.items()]
     park_handles = [Line2D([], [], marker=m, ls="", ms=9, mfc=MUTED, mec=SURFACE, label=k.replace("_", " "))
                     for k, m in PARKING_MARKER.items()]
     park_handles.append(Line2D([], [], marker="*", ls="", ms=14, mfc=INK, mec=SURFACE, label="depot"))
     kw = dict(frameon=False, fontsize=10, title_fontsize=10, labelcolor=INK_2, alignment="left")
-    leg1 = ax.legend(handles=dock_handles, title="Colour · dock type", loc="lower left",
+    leg1 = ax.legend(handles=brand_handles, title="Colour · brand", loc="lower left",
                      bbox_to_anchor=(0.0, 0.17), **kw)
     ax.add_artist(leg1)
     ax.legend(handles=park_handles, title="Marker · parking constraint", loc="lower left", **kw)
@@ -160,7 +168,7 @@ def main():
                  loc="left", fontsize=15, color=INK, pad=14)
     fig.text(0.125, 0.07,
              "Spoke length = depot-to-district distance (to scale, km). Spoke direction is the approximate "
-             "compass bearing\n(Colombo and Kandy are turned slightly so they don't cover their depot). Outlets are spread around their district for readability.\nGrey hairlines join "
+             "compass bearing\n(Colombo and Kandy are turned slightly so they don't cover their depot, and the Kandy depot is moved east so the two depot clusters don't overlap). Outlets are spread around their district for readability.\nGrey hairlines join "
              "outlets in the same district; every pair is the fixed inter-stop distance shown in the district label.",
              fontsize=9, color=MUTED, va="top")
 
