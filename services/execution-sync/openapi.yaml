@@ -1,0 +1,84 @@
+openapi: 3.0.3
+info:
+  title: Execution Sync Service
+  version: 0.1.0
+  description: Real-time execution and telemetry sync.
+servers:
+  - url: http://localhost/api/execution
+    description: Via API gateway
+  - url: http://localhost:3005
+    description: Direct (local container)
+tags:
+  - name: Execution
+  - name: System
+
+paths:
+  /health:
+    get:
+      tags: [System]
+      summary: Health check
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+  /telemetry:
+    post:
+      tags: [Execution]
+      summary: Push a driver GPS telemetry point
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [driverId, lat, lng]
+              properties:
+                driverId:
+                  type: string
+                  example: drv_1
+                lat:
+                  type: number
+                  minimum: -90
+                  maximum: 90
+                  example: 6.9271
+                lng:
+                  type: number
+                  minimum: -180
+                  maximum: 180
+                  example: 79.8612
+      responses:
+        '200':
+          description: Telemetry accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  driverId:
+                    type: string
+                  lat:
+                    type: number
+                  lng:
+                    type: number
+                  syncedAt:
+                    type: string
+                    format: date-time
+
+components:
+  schemas:
+    Health:
+      type: object
+      properties:
+        service:
+          type: string
+        status:
+          type: string
+          example: healthy
+        timestamp:
+          type: string
+          format: date-time
