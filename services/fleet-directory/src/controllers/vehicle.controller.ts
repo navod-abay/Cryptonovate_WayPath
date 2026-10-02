@@ -3,7 +3,7 @@ import {
   Vehicle,
   ApiResponse,
   LogDistanceRequestSchema,
-} from '@waypoint/shared-types';
+} from '../contracts';
 import { pool } from '../db/pool';
 
 interface VehicleRow {
