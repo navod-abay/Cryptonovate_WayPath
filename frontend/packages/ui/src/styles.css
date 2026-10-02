@@ -1,0 +1,67 @@
+/*
+ * @waypoint/ui — Global CSS Variables
+ *
+ * Import this once in your app root:
+ *   import '@waypoint/ui/styles';
+ *
+ * All components consume these vars so you can theme by overriding them.
+ */
+
+:root {
+  /* ─── Colours ─────────────────────────────────────────────── */
+  --wp-color-primary-dark:    #00416C;
+  --wp-color-primary-light:   #55D3F3;
+  --wp-color-background:      #F8F9FA;
+  --wp-color-surface:         #FFFFFF;
+  --wp-color-text-main:       #2E3538;
+  --wp-color-text-secondary:  #5C6970;
+  --wp-color-success:         #16A34A;
+  --wp-color-danger:          #FF334E;
+  --wp-color-border:          #E5E7EB;
+  --wp-color-shade:           #CCD9E259;
+  --wp-color-warning:         #D97706;
+  --wp-color-badge-cyan:      #009DC5;
+  --wp-color-badge-yellow:    #FDE68A;
+  --wp-color-icon-yellow:     #00416C;
+  --wp-color-tab-inactive:    #D1D5DB;
+
+  /* ─── Spacing ─────────────────────────────────────────────── */
+  --wp-space-sm:   0.5rem;   /* 8 px  */
+  --wp-space-md:   1rem;     /* 16 px */
+  --wp-space-lg:   1.5rem;   /* 24 px */
+  --wp-space-xl:   2rem;     /* 32 px */
+  --wp-space-xxl:  3rem;     /* 48 px */
+  --wp-space-xxxl: 4rem;     /* 64 px */
+
+  /* ─── Typography ──────────────────────────────────────────── */
+  --wp-font-size-sm:   0.875rem;   /* 14 px */
+  --wp-font-size-md:   1rem;       /* 16 px */
+  --wp-font-size-lg:   1.25rem;    /* 20 px */
+  --wp-font-size-xl:   1.5rem;     /* 24 px */
+  --wp-font-size-xxl:  1.875rem;   /* 30 px */
+
+  --wp-font-weight-regular:  400;
+  --wp-font-weight-medium:   500;
+  --wp-font-weight-semibold: 600;
+  --wp-font-weight-bold:     700;
+
+  /* ─── Radii ───────────────────────────────────────────────── */
+  --wp-radius-sm: 4px;
+  --wp-radius-md: 8px;
+  --wp-radius-lg: 12px;
+
+  /* ─── Transitions ─────────────────────────────────────────── */
+  --wp-transition: 150ms ease;
+}
+
+/* ─── Base reset for all @waypoint/ui components ──────────────── */
+.wp-component *,
+.wp-component *::before,
+.wp-component *::after {
+  box-sizing: border-box;
+}
+
+/* ─── Animations ──────────────────────────────────────────────── */
+@keyframes wp-spin {
+  to { transform: rotate(360deg); }
+}
