@@ -18,9 +18,10 @@ import type { DeferralReasonCode } from '../domain/reasonCodes.js';
 import { computeRollups } from '../domain/rollups.js';
 import type { OrderStatus } from '../domain/statusMachine.js';
 import type { OrderItemInput, TempRequirement } from '../schemas/orders.schema.js';
-import { reeferCapacityFromFixture } from '../repositories/fleet.repo.js';
-import { VEHICLE_FIXTURE } from '../seed/fleet.fixture.js';
-import { buildOutletFixture, intBetween, mulberry32, pick, type OutletFixture, type Rng } from '../seed/outlets.fixture.js';
+import { FleetUnavailableError, type FleetVehicle } from '../clients/fleet.client.js';
+import { listOutlets, type OutletMaster } from '../repositories/outlets.repo.js';
+import { intBetween, mulberry32, pick, type Rng } from '../seed/prng.js';
+import { loadVehicles, reeferCapacityOf, syncOutlets } from '../services/referenceData.js';
 import { pool, withTransaction } from './pool.js';
 
 /**
@@ -83,12 +84,12 @@ const CATALOGUE: Record<'freshAmbient' | 'freshChilled' | 'style' | 'tech', read
   ],
 };
 
-function catalogueFor(outlet: OutletFixture, temp: TempRequirement): readonly CatalogueItem[] {
+function catalogueFor(outlet: OutletMaster, temp: TempRequirement): readonly CatalogueItem[] {
   if (outlet.brand === 'Fresh') return temp === 'chilled' ? CATALOGUE.freshChilled : CATALOGUE.freshAmbient;
   return outlet.brand === 'Style' ? CATALOGUE.style : CATALOGUE.tech;
 }
 
-function pickItems(rng: Rng, outlet: OutletFixture, temp: TempRequirement): OrderItemInput[] {
+function pickItems(rng: Rng, outlet: OutletMaster, temp: TempRequirement): OrderItemInput[] {
   const catalogue = catalogueFor(outlet, temp);
   const lines = outlet.brand === 'Tech' ? intBetween(rng, 1, 2) : intBetween(rng, 3, Math.min(6, catalogue.length));
   const chosen = [...catalogue]
@@ -108,6 +109,9 @@ function pickItems(rng: Rng, outlet: OutletFixture, temp: TempRequirement): Orde
 
 // ------------------------------------------------------------------ order builder
 
+// The fleet the demo is generated against; set once per seed run from Fleet & Directory's API.
+let seedVehicles: readonly FleetVehicle[] = [];
+
 interface SeedEvent {
   from: OrderStatus | null;
   to: OrderStatus;
@@ -118,7 +122,7 @@ interface SeedEvent {
 }
 
 interface SeedOrder {
-  outlet: OutletFixture;
+  outlet: OutletMaster;
   refDate: string;
   orderDate: string;
   originalDate: string;
@@ -151,7 +155,7 @@ function deferralNote(code: DeferralReasonCode): string | null {
   }
 }
 
-function reasonFor(rng: Rng, outlet: OutletFixture, temp: TempRequirement): DeferralReasonCode {
+function reasonFor(rng: Rng, outlet: OutletMaster, temp: TempRequirement): DeferralReasonCode {
   if (temp === 'chilled' && rng() < 0.7) return 'NO_REEFER_AVAILABLE';
   if (outlet.parking_constraint === 'van_only' && rng() < 0.6) return 'NO_VAN_FOR_VAN_ONLY_OUTLET';
   if (outlet.mall_window && rng() < 0.5) return 'WINDOW_INFEASIBLE';
@@ -168,7 +172,7 @@ function reasonFor(rng: Rng, outlet: OutletFixture, temp: TempRequirement): Defe
 
 function buildOrder(
   rng: Rng,
-  outlet: OutletFixture,
+  outlet: OutletMaster,
   originalDate: string,
   temp: TempRequirement,
   finalStatus: OrderStatus,
@@ -220,7 +224,9 @@ function buildOrder(
   if (stepsToRun > 0) {
     // Real fleet: a chilled order needs a reefer from the outlet's own depot.
     const wanted = temp === 'chilled' ? 'reefer' : 'ambient';
-    order.vehicleId = pick(rng, VEHICLE_FIXTURE.filter((v) => v.depot === outlet.depot && v.temp === wanted)).vehicle_id;
+    const sameTemp = seedVehicles.filter((v) => v.temp === wanted);
+    const atDepot = sameTemp.filter((v) => v.depot === outlet.depot);
+    order.vehicleId = pick(rng, atDepot.length > 0 ? atDepot : sameTemp).vehicle_id;
     order.tripId = temp === 'chilled' || outlet.mall_window ? 1 : intBetween(rng, 1, 2);
 
     const openAt = businessInstant(orderDate, outlet.window_open_time);
@@ -270,7 +276,7 @@ function weightedStatus(rng: Rng): OrderStatus {
   return 'delivered';
 }
 
-function generateDemoOrders(outlets: OutletFixture[]): { orders: SeedOrder[]; d0: string; d1: string; deferredYesterday: Set<string> } {
+function generateDemoOrders(outlets: OutletMaster[]): { orders: SeedOrder[]; d0: string; d1: string; deferredYesterday: Set<string> } {
   const rng = mulberry32(DEMO_SEED);
   const today = colomboToday();
   const d0 = isOperatingDay(today) ? today : prevOperatingDay(today);
@@ -296,7 +302,7 @@ function generateDemoOrders(outlets: OutletFixture[]): { orders: SeedOrder[]; d0
   // 1. History: mostly received, ~8% deferred once, ~5% disputed.
   for (const d of history) {
     const canDefer = d < lastHistory;
-    const historic = (o: OutletFixture, temp: TempRequirement) => {
+    const historic = (o: OutletMaster, temp: TempRequirement) => {
       const deferrals = canDefer && rng() < 0.08 ? [reasonFor(rng, o, temp)] : [];
       orders.push(buildOrder(rng, o, d, temp, rng() < 0.05 ? 'disputed' : 'received', { deferrals }));
     };
@@ -346,7 +352,7 @@ function generateDemoOrders(outlets: OutletFixture[]): { orders: SeedOrder[]; d0
       peakChilled.push(buildOrder(rng, o, d1, 'chilled', 'confirmed'));
     }
   }
-  const capacity = reeferCapacityFromFixture('Peliyagoda').volume_m3 * env.CHILLED_TRIPS_PER_DAY;
+  const capacity = reeferCapacityOf(seedVehicles, 'Peliyagoda').volume_m3 * env.CHILLED_TRIPS_PER_DAY;
   const peliyagodaChilled = peakChilled.filter((o) => o.outlet.depot === 'Peliyagoda');
   const baseVolume = peliyagodaChilled.reduce((s, o) => s + computeRollups(o.items).order_volume_m3, 0);
   if (baseVolume > 0 && capacity > 0) {
@@ -475,7 +481,7 @@ async function insertDemoOrders(client: PoolClient, orders: SeedOrder[]): Promis
 
 async function updateFairnessCounters(
   client: PoolClient,
-  outlets: OutletFixture[],
+  outlets: OutletMaster[],
   orders: SeedOrder[],
   d0: string,
   deferredYesterday: Set<string>,
@@ -505,53 +511,50 @@ async function updateFairnessCounters(
 
 // ------------------------------------------------------------------ entry points
 
-/**
- * Upserts the dataset outlets. Master attributes are corrected if they drifted (e.g. a database
- * seeded from the earlier synthetic fixture); fairness counters are never touched here.
- */
-export async function seedOutlets(): Promise<number> {
-  const outlets = buildOutletFixture();
-  const { rowCount } = await pool.query(
-    `INSERT INTO outlets_ref (outlet_id, brand, district, depot, dock_type, parking_constraint, mall_window,
-                              window_open_time, window_close_time)
-     SELECT * FROM unnest($1::varchar[], $2::varchar[], $3::varchar[], $4::varchar[], $5::varchar[],
-                          $6::varchar[], $7::boolean[], $8::time[], $9::time[])
-     ON CONFLICT (outlet_id) DO UPDATE SET
-       brand = EXCLUDED.brand, district = EXCLUDED.district, depot = EXCLUDED.depot,
-       dock_type = EXCLUDED.dock_type, parking_constraint = EXCLUDED.parking_constraint,
-       mall_window = EXCLUDED.mall_window, window_open_time = EXCLUDED.window_open_time,
-       window_close_time = EXCLUDED.window_close_time, updated_at = now()
-     WHERE (outlets_ref.brand, outlets_ref.district, outlets_ref.depot, outlets_ref.dock_type,
-            outlets_ref.parking_constraint, outlets_ref.mall_window, outlets_ref.window_open_time,
-            outlets_ref.window_close_time)
-           IS DISTINCT FROM
-           (EXCLUDED.brand, EXCLUDED.district, EXCLUDED.depot, EXCLUDED.dock_type,
-            EXCLUDED.parking_constraint, EXCLUDED.mall_window, EXCLUDED.window_open_time,
-            EXCLUDED.window_close_time)`,
-    [
-      outlets.map((o) => o.outlet_id),
-      outlets.map((o) => o.brand),
-      outlets.map((o) => o.district),
-      outlets.map((o) => o.depot),
-      outlets.map((o) => o.dock_type),
-      outlets.map((o) => o.parking_constraint),
-      outlets.map((o) => o.mall_window),
-      outlets.map((o) => o.window_open_time),
-      outlets.map((o) => o.window_close_time),
-    ],
-  );
-  return rowCount ?? 0;
-}
+export type DemoSeedOutcome =
+  | { status: 'seeded'; orders: number }
+  | { status: 'already-seeded' }
+  | { status: 'waiting'; reason: string };
 
-export async function seedDemoOrders(): Promise<{ seeded: boolean; orders: number }> {
-  return withTransaction(async (client) => {
+/**
+ * Generates the demo orders once per database. They are built from the real outlets
+ * (outlets_ref, copied from Fleet's table) and the real vehicles (Fleet's API). If either is
+ * not available yet the seed is left pending — nothing is invented — and can be retried.
+ */
+export async function seedDemoOrders(vehicleAttempts = 1): Promise<DemoSeedOutcome> {
+  const { rows: done } = await pool.query('SELECT 1 FROM service_jobs WHERE job_name = $1 AND job_key = $2', [
+    DEMO_SEED_JOB,
+    DEMO_SEED_KEY,
+  ]);
+  if (done.length > 0) return { status: 'already-seeded' };
+
+  let vehicles: FleetVehicle[];
+  try {
+    vehicles = await loadVehicles(vehicleAttempts);
+  } catch (err) {
+    if (!(err instanceof FleetUnavailableError)) throw err;
+    return { status: 'waiting', reason: err.message };
+  }
+  if (!vehicles.some((v) => v.temp === 'reefer') || !vehicles.some((v) => v.temp === 'ambient')) {
+    return { status: 'waiting', reason: `Fleet & Directory returned ${vehicles.length} vehicle(s), without both reefer and ambient ones` };
+  }
+
+  return withTransaction(async (client): Promise<DemoSeedOutcome> => {
+    const outlets: OutletMaster[] = await listOutlets(client);
+    const missing = [DEMO_OUTLET, STALE_OUTLET, ...AT_RISK_OUTLETS].filter(
+      (id) => !outlets.some((o) => o.outlet_id === id && o.brand === 'Fresh'),
+    );
+    if (missing.length > 0) {
+      return { status: 'waiting', reason: `outlets the demo story needs are not Fresh outlets in the directory: ${missing.join(', ')}` };
+    }
+
     const guard = await client.query(
       `INSERT INTO service_jobs (job_name, job_key) VALUES ($1, $2) ON CONFLICT DO NOTHING RETURNING job_key`,
       [DEMO_SEED_JOB, DEMO_SEED_KEY],
     );
-    if (guard.rowCount === 0) return { seeded: false, orders: 0 };
+    if (guard.rowCount === 0) return { status: 'already-seeded' };
 
-    const outlets = buildOutletFixture();
+    seedVehicles = vehicles;
     const { orders, d0, d1, deferredYesterday } = generateDemoOrders(outlets);
     await insertDemoOrders(client, orders);
     await updateFairnessCounters(client, outlets, orders, d0, deferredYesterday);
@@ -561,28 +564,39 @@ export async function seedDemoOrders(): Promise<{ seeded: boolean; orders: numbe
       today: d0,
       peak_day: d1,
       events: orders.reduce((s, o) => s + o.events.length, 0),
+      outlets: outlets.length,
+      vehicles: vehicles.length,
     };
     await client.query('UPDATE service_jobs SET result = $3 WHERE job_name = $1 AND job_key = $2', [
       DEMO_SEED_JOB,
       DEMO_SEED_KEY,
       JSON.stringify(result),
     ]);
-    return { seeded: true, orders: orders.length };
+    return { status: 'seeded', orders: orders.length };
   });
 }
 
-export async function seedData(opts: { demoOrders: boolean }): Promise<void> {
-  if (env.OUTLET_SOURCE !== 'local') {
-    console.log('ℹ️ OUTLET_SOURCE=http — skipping outlets_ref and demo order seeding.');
-    return;
+/** Boot-time data preparation. Returns true when a demo seed is still pending. */
+export async function seedData(opts: { demoOrders: boolean }): Promise<boolean> {
+  const { changed, total, skipped } = await syncOutlets();
+  console.log(`✅ outlets_ref synced from Fleet's outlets table: ${total - skipped} outlet(s), ${changed} inserted or corrected.`);
+  if (skipped > 0) {
+    console.warn(`⚠️ ${skipped} outlet row(s) in Fleet's table were not copied: brand, depot, dock, parking or delivery window is missing or invalid.`);
   }
-  const inserted = await seedOutlets();
-  console.log(`✅ outlets_ref: ${inserted} outlet(s) inserted or corrected (dataset has 120).`);
+  if (total === 0) {
+    console.warn('⚠️ Fleet\'s outlets table is empty: no orders can be placed until it is loaded.');
+  }
 
   if (!opts.demoOrders) {
     console.log('ℹ️ SEED_DEMO_DATA=false — skipping demo orders.');
-    return;
+    return false;
   }
-  const { seeded, orders } = await seedDemoOrders();
-  console.log(seeded ? `✅ Demo orders seeded: ${orders} orders.` : 'ℹ️ Demo orders already seeded (service_jobs guard); skipping.');
+  return reportDemoSeed(await seedDemoOrders(env.FLEET_BOOT_ATTEMPTS));
+}
+
+export function reportDemoSeed(outcome: DemoSeedOutcome): boolean {
+  if (outcome.status === 'seeded') console.log(`✅ Demo orders seeded: ${outcome.orders} orders.`);
+  if (outcome.status === 'already-seeded') console.log('ℹ️ Demo orders already seeded (service_jobs guard); skipping.');
+  if (outcome.status === 'waiting') console.warn(`⏳ Demo orders not seeded yet: ${outcome.reason}. Will retry.`);
+  return outcome.status === 'waiting';
 }

@@ -259,7 +259,7 @@ const orderResponse = (description: string, example: unknown): Json => ok(descri
 // ------------------------------------------------------------------ spec
 
 export interface OpenApiOptions {
-  servers?: { url: string; description: string }[];
+  servers?: { url: string; description: string; variables?: Record<string, { default: string; description?: string }> }[];
 }
 
 const OPERATION_IDS: Readonly<Record<string, string>> = {
@@ -305,10 +305,11 @@ function buildSpec(options: OpenApiOptions): Json {
         '',
         '### Authentication',
         'Every route except `/health` needs the header `Authorization: Bearer <access_token>`.',
-        'Get a token from auth-rbac, then press **Authorize** and paste it (without the `Bearer ` prefix):',
+        'Get a token from auth-rbac (through the gateway your environment uses), then press **Authorize** and paste it',
+        '(without the `Bearer ` prefix):',
         '',
         '```bash',
-        'curl -X POST http://localhost/api/auth/login \\',
+        'curl -X POST "$GATEWAY_URL/api/auth/login" \\',
         "  -H 'Content-Type: application/json' \\",
         '  -d \'{"username":"manager_out001","password":"Password123!"}\'',
         '```',
@@ -449,7 +450,9 @@ function buildSpec(options: OpenApiOptions): Json {
         get: {
           tags: ['Health'],
           summary: 'Liveness and DB readiness',
-          description: 'Public. Pings the database; returns 503 when it is unreachable.',
+          description:
+            'Public. Pings the database; returns 503 when it is unreachable. `reference_data.outlets` reports when outlets ' +
+            'were last copied from Fleet & Directory\'s `outlets` table.',
           security: [],
           responses: {
             '200': {
@@ -462,10 +465,39 @@ function buildSpec(options: OpenApiOptions): Json {
                       service: { type: 'string' },
                       status: { type: 'string' },
                       db: { type: 'string', enum: ['up', 'down'] },
+                      reference_data: {
+                        type: 'object',
+                        properties: {
+                          outlets: {
+                            type: 'object',
+                            properties: {
+                              source: { type: 'string' },
+                              last_synced_at: { type: 'string', format: 'date-time', nullable: true },
+                              outlets: { type: 'integer', nullable: true },
+                              skipped_invalid: { type: 'integer', nullable: true },
+                              last_error: { type: 'string', nullable: true },
+                            },
+                          },
+                        },
+                      },
                       timestamp: { type: 'string', format: 'date-time' },
                     },
                   },
-                  example: { service: 'order-management', status: 'healthy', db: 'up', timestamp: '2026-09-27T18:07:31.046Z' },
+                  example: {
+                    service: 'order-management',
+                    status: 'healthy',
+                    db: 'up',
+                    reference_data: {
+                      outlets: {
+                        source: 'database: outlets (Fleet & Directory)',
+                        last_synced_at: '2026-09-27T18:05:02.118Z',
+                        outlets: 120,
+                        skipped_invalid: 0,
+                        last_error: null,
+                      },
+                    },
+                    timestamp: '2026-09-27T18:07:31.046Z',
+                  },
                 },
               },
             },
@@ -762,7 +794,8 @@ function buildSpec(options: OpenApiOptions): Json {
           summary: 'Dispatcher dashboard for one date',
           description:
             'Role: dispatcher. Counts by status, totals by brand and temperature, and chilled demand against ' +
-            'refrigerated fleet capacity (read from Fleet\'s vehicles when available, otherwise the dataset snapshot).',
+            'refrigerated fleet capacity. Capacity is the available reefers reported by Fleet & Directory\'s API. ' +
+            'If Fleet cannot be reached, `available` is false and the capacity figures are null; nothing is estimated.',
           security: secured,
           parameters: [dateQ('date', false, 'Default: next operating day'), depotQ],
           responses: {
@@ -779,15 +812,15 @@ function buildSpec(options: OpenApiOptions): Json {
                   chilled_capacity_reference: {
                     type: 'object',
                     properties: {
+                      available: { type: 'boolean', description: 'false when Fleet & Directory could not be reached' },
                       note: { type: 'string' },
-                      source: { type: 'string', enum: ['fleet.vehicles', 'dataset-snapshot'] },
-                      reefer_vehicles: { type: 'integer' },
-                      reefer_volume_m3: { type: 'number' },
+                      reefer_vehicles: { type: 'integer', nullable: true },
+                      reefer_volume_m3: { type: 'number', nullable: true },
                       chilled_trips_per_day: { type: 'integer' },
-                      capacity_m3: { type: 'number' },
+                      capacity_m3: { type: 'number', nullable: true },
                       demand_m3: { type: 'number' },
                       utilisation_pct: { type: 'number', nullable: true },
-                      exceeds_capacity: { type: 'boolean' },
+                      exceeds_capacity: { type: 'boolean', nullable: true },
                     },
                   },
                 },
@@ -806,8 +839,8 @@ function buildSpec(options: OpenApiOptions): Json {
                   chilled: { orders: 56, units: 52294, weight_kg: 117923.3, volume_m3: 290.5 },
                 },
                 chilled_capacity_reference: {
-                  note: 'Total refrigerated volume available for the date; Fleet & Directory owns vehicle data',
-                  source: 'fleet.vehicles',
+                  available: true,
+                  note: 'Volume of the available refrigerated vehicles, from Fleet & Directory',
                   reefer_vehicles: 9,
                   reefer_volume_m3: 207.5,
                   chilled_trips_per_day: 1,

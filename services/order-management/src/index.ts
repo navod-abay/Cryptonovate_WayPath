@@ -4,13 +4,14 @@ import type { Server } from 'node:http';
 import { env } from './config/env.js';
 import { pool } from './db/pool.js';
 import { assertSchema, SchemaAssertionError } from './db/assertSchema.js';
-import { seedData } from './db/seed.js';
+import { reportDemoSeed, seedData, seedDemoOrders } from './db/seed.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import { testClock } from './middleware/testClock.js';
 import swaggerUi from 'swagger-ui-express';
 import { buildOpenApiSpec } from './docs/openapi.js';
 import ordersRouter from './routes/orders.routes.js';
 import { startCutoffTimer, stopCutoffTimer } from './services/cutoffJob.js';
+import { startReferenceDataRefresh, stopReferenceDataRefresh } from './services/referenceData.js';
 
 const app = express();
 
@@ -18,7 +19,8 @@ app.disable('x-powered-by');
 app.set('trust proxy', true);
 
 // Global Middleware
-app.use(cors());
+// Browser origins come from configuration; with none configured any origin is accepted (dev default).
+app.use(cors(env.CORS_ALLOWED_ORIGINS.length > 0 ? { origin: env.CORS_ALLOWED_ORIGINS } : undefined));
 app.use(express.json({ limit: '1mb' }));
 // After body parsing so the frozen clock survives into async handlers.
 app.use(testClock);
@@ -31,7 +33,7 @@ for (const base of ['/api/orders', '']) {
 }
 
 // Mount order matters: the '/' mount's auth guard would otherwise intercept /api/orders/health.
-app.use('/api/orders', ordersRouter); // direct: curl localhost:3002/api/orders/...
+app.use('/api/orders', ordersRouter); // direct calls to this service
 app.use('/', ordersRouter); // through the gateway (prefix already stripped)
 
 app.use(notFoundHandler);
@@ -45,13 +47,15 @@ async function bootstrap() {
     await pool.query('SELECT 1');
 
     await assertSchema();
-    await seedData({ demoOrders: env.SEED_DEMO_DATA });
+    const demoSeedPending = await seedData({ demoOrders: env.SEED_DEMO_DATA });
 
     server = app.listen(env.PORT, () => {
       console.log(`🚀 Waypoint Order Management Microservice listening on port ${env.PORT} [${env.NODE_ENV}]`);
     });
 
     startCutoffTimer();
+    startReferenceDataRefresh();
+    if (demoSeedPending) retryDemoSeed();
   } catch (error) {
     if (error instanceof SchemaAssertionError) {
       console.error(error.message);
@@ -63,6 +67,24 @@ async function bootstrap() {
   }
 }
 
+// The demo seed needs vehicles from Fleet & Directory. If Fleet was not up at boot, keep
+// trying in the background instead of seeding from invented data.
+const DEMO_SEED_RETRY_MS = 15_000;
+let demoSeedTimer: NodeJS.Timeout | undefined;
+function retryDemoSeed() {
+  demoSeedTimer = setInterval(() => {
+    seedDemoOrders()
+      .then((outcome) => {
+        if (outcome.status !== 'waiting') {
+          reportDemoSeed(outcome);
+          clearInterval(demoSeedTimer);
+        }
+      })
+      .catch((err) => console.error('❌ Demo seed retry failed:', err));
+  }, DEMO_SEED_RETRY_MS);
+  demoSeedTimer.unref();
+}
+
 // Graceful Shutdown Logic
 let shuttingDown = false;
 async function gracefulShutdown(signal: string) {
@@ -70,6 +92,8 @@ async function gracefulShutdown(signal: string) {
   shuttingDown = true;
   console.log(`\n⚠️ Received ${signal}. Starting graceful shutdown...`);
   stopCutoffTimer();
+  stopReferenceDataRefresh();
+  if (demoSeedTimer) clearInterval(demoSeedTimer);
 
   const forceExit = setTimeout(() => {
     console.error('❌ Graceful shutdown timed out; forcing exit.');

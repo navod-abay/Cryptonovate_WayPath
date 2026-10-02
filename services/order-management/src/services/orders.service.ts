@@ -14,6 +14,7 @@ import {
   type OrderStatus,
 } from '../domain/statusMachine.js';
 import { assertOutletInScope, type Actor } from '../middleware/outletScope.js';
+import { getReeferCapacity, resolveOutlet } from './referenceData.js';
 import { appendEvent, listEvents, listRecentEvents, type StatusEventRow } from '../repositories/events.repo.js';
 import { countItems, insertItems, listItems, replaceItems, type OrderItemRow } from '../repositories/orderItems.repo.js';
 import {
@@ -31,7 +32,6 @@ import {
   type OrderRecord,
   type OrderRow,
 } from '../repositories/orders.repo.js';
-import { getReeferCapacity } from '../repositories/fleet.repo.js';
 import { findAtRiskOutlets, outletDirectory } from '../repositories/outlets.repo.js';
 import type {
   CreateOrderInput,
@@ -166,7 +166,7 @@ export async function createOrder(actor: Actor, input: CreateOrderInput, idempot
   }
 
   assertOutletInScope(actor, input.outlet_id);
-  const outlet = await outletDirectory.findById(input.outlet_id);
+  const outlet = await resolveOutlet(input.outlet_id);
   if (!outlet) {
     throw appError('OUTLET_NOT_FOUND', `Outlet ${input.outlet_id} does not exist`, { outlet_id: input.outlet_id });
   }
@@ -436,7 +436,8 @@ export async function getSummary(date: string | undefined, depot: Depot | undefi
   }
 
   const reefers = await getReeferCapacity(depot);
-  const chilledCapacity = reefers.volume_m3 * env.CHILLED_TRIPS_PER_DAY;
+  const demand = byTemp.chilled.volume_m3;
+  const chilledCapacity = reefers.available ? reefers.volume_m3 * env.CHILLED_TRIPS_PER_DAY : null;
   return {
     date: day,
     depot: depot ?? null,
@@ -444,15 +445,19 @@ export async function getSummary(date: string | undefined, depot: Depot | undefi
     by_brand: byBrand,
     by_temperature: byTemp,
     chilled_capacity_reference: {
-      note: 'Total refrigerated volume available for the date; Fleet & Directory owns vehicle data',
-      source: reefers.source,
-      reefer_vehicles: reefers.vehicles,
-      reefer_volume_m3: reefers.volume_m3,
+      // Vehicles come from Fleet & Directory's API. When it cannot be reached the figures are
+      // null rather than guessed.
+      available: reefers.available,
+      note: reefers.available
+        ? 'Volume of the available refrigerated vehicles, from Fleet & Directory'
+        : `Capacity unavailable: ${reefers.reason}`,
+      reefer_vehicles: reefers.available ? reefers.vehicles : null,
+      reefer_volume_m3: reefers.available ? reefers.volume_m3 : null,
       chilled_trips_per_day: env.CHILLED_TRIPS_PER_DAY,
-      capacity_m3: round(chilledCapacity, 3),
-      demand_m3: byTemp.chilled.volume_m3,
-      utilisation_pct: chilledCapacity > 0 ? round((byTemp.chilled.volume_m3 / chilledCapacity) * 100, 1) : null,
-      exceeds_capacity: byTemp.chilled.volume_m3 > chilledCapacity,
+      capacity_m3: chilledCapacity === null ? null : round(chilledCapacity, 3),
+      demand_m3: demand,
+      utilisation_pct: chilledCapacity ? round((demand / chilledCapacity) * 100, 1) : null,
+      exceeds_capacity: chilledCapacity === null ? null : demand > chilledCapacity,
     },
   };
 }

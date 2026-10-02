@@ -4,11 +4,12 @@
  *
  *   npm run verify
  *
- * Runs against a LIVE stack. Env:
- *   BASE_URL   default http://localhost:3002/api/orders
- *   AUTH_URL   default http://localhost:3001/api/auth
+ * Runs against a LIVE stack. Targets are never assumed; they come from the environment or
+ * from a git-ignored .env.verify next to package.json (template: .env.verify.example):
+ *   BASE_URL   required — Order Management base including /api/orders
+ *   AUTH_URL   required unless AUTH_MODE=mint — auth-rbac base including /api/auth
  *   AUTH_MODE  login (default) | mint — `mint` signs dev tokens locally with JWT_ACCESS_SECRET
- *              for when auth-rbac is down; scenario 2 then reports SKIP, never PASS.
+ *              (required in that mode) for when auth-rbac is down; scenario 2 then reports SKIP.
  *   VERIFY_WEEK_OFFSET  optional integer to pin the synthetic test week.
  *
  * Every write lands on a synthetic far-future week (unique per run), so runs never collide
@@ -16,9 +17,29 @@
  * the X-Test-Now header (honoured only when NODE_ENV !== 'production').
  */
 
-const BASE_URL = (process.env.BASE_URL ?? 'http://localhost:3002/api/orders').replace(/\/$/, '');
-const AUTH_URL = (process.env.AUTH_URL ?? 'http://localhost:3001/api/auth').replace(/\/$/, '');
-const AUTH_MODE = process.env.AUTH_MODE ?? 'login';
+import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import dotenv from 'dotenv';
+
+const envFile = fileURLToPath(new URL('../.env.verify', import.meta.url));
+if (existsSync(envFile)) dotenv.config({ path: envFile });
+
+const AUTH_MODE = process.env.AUTH_MODE || 'login';
+const missing = [
+  !process.env.BASE_URL && 'BASE_URL',
+  AUTH_MODE !== 'mint' && !process.env.AUTH_URL && 'AUTH_URL',
+  AUTH_MODE === 'mint' && !process.env.JWT_ACCESS_SECRET && 'JWT_ACCESS_SECRET',
+].filter(Boolean);
+if (missing.length > 0) {
+  console.error(
+    `verify: missing ${missing.join(', ')}.\n` +
+      'Set them in the environment, or copy .env.verify.example to .env.verify and fill it in.',
+  );
+  process.exit(2);
+}
+
+const BASE_URL = process.env.BASE_URL.replace(/\/$/, '');
+const AUTH_URL = (process.env.AUTH_URL ?? '').replace(/\/$/, '');
 const MAX_DEFERRALS = Number(process.env.MAX_DEFERRALS ?? 3);
 
 // ------------------------------------------------------------------ dates
@@ -143,7 +164,7 @@ async function mintTokens() {
   } catch {
     throw new Error('AUTH_MODE=mint needs jsonwebtoken — run from services/order-management after npm install');
   }
-  const secret = process.env.JWT_ACCESS_SECRET ?? 'waypoint_default_jwt_access_secret_key_2026';
+  const secret = process.env.JWT_ACCESS_SECRET;
   const mk = (username, role, outlet_id, depot, n) =>
     jwt.sign({ sub: `00000000-0000-4000-8000-00000000000${n}`, username, role, outlet_id, depot, type: 'access' }, secret, {
       expiresIn: '1h',
@@ -680,9 +701,24 @@ async function main() {
     const html = await fetch(`${BASE_URL}/docs/`);
     check(html.status === 200 && (await html.text()).includes('swagger-ui'), `/docs/: HTTP ${html.status}`);
   });
+
+  await scenario(49, 'Reference data: outlets synced from the database; /summary capacity comes from Fleet or says it is unavailable', async () => {
+    const health = await call('GET', '/health');
+    const outlets = health.body.reference_data?.outlets;
+    check(outlets && outlets.last_synced_at, `outlets were never synced: ${JSON.stringify(health.body.reference_data)}`);
+    check(outlets.outlets > 0 && outlets.last_error === null, `outlet sync problem: ${JSON.stringify(outlets)}`);
+    const summary = expectStatus(await call('GET', '/summary?depot=Peliyagoda', { token: tokens.dispatcher }), 200);
+    const cap = summary.chilled_capacity_reference;
+    if (cap.available) {
+      check(cap.reefer_vehicles > 0 && cap.capacity_m3 > 0, 'capacity must be positive when available');
+    } else {
+      check(cap.capacity_m3 === null && cap.exceeds_capacity === null, 'unavailable capacity must be null, not estimated');
+    }
+    console.log(`      outlets: ${outlets.outlets} from the database; reefer capacity: ${cap.available ? `${cap.reefer_vehicles} reefers, ${cap.capacity_m3} m3 (Fleet API)` : 'unavailable (Fleet unreachable)'}`);
+  });
 }
 
-const TOTAL_SCENARIOS = 48;
+const TOTAL_SCENARIOS = 49;
 
 main()
   .catch((err) => {

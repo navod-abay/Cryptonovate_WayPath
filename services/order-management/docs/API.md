@@ -125,7 +125,6 @@ database transaction as the status change. A status change without an audit row 
 | `NON_OPERATING_DATE` | 422 | Date is a Sunday or holiday. `details.next_operating_day` |
 | `RECEIPT_UNITS_MISMATCH` | 422 | received + missing + rejected ≠ ordered units |
 | `DB_UNAVAILABLE` | 503 | Database unreachable; retry |
-| `NOT_IMPLEMENTED` | 501 | `OUTLET_SOURCE=http` write paths, which are not built yet |
 | `INTERNAL_SERVER_ERROR` | 500 | Anything unexpected. Logged, never leaked |
 
 Every authenticated route can also return `UNAUTHORIZED`, `INVALID_TOKEN`, `FORBIDDEN` and
@@ -137,12 +136,18 @@ Every authenticated route can also return `UNAUTHORIZED`, `INVALID_TOKEN`, `FORB
 
 **Public.** Liveness and readiness in one check: it pings the database.
 
+`reference_data.outlets` shows when outlets were last copied from Fleet & Directory's `outlets`
+table, how many were copied, how many rows were skipped as invalid, and the last sync error, if any.
+
 **Why:** compose, the gateway and the judges need an honest signal. A service that is up but can't
 reach its DB is not healthy, so this returns **503** in that case rather than a misleading 200.
 
 ```jsonc
 // 200
-{ "service": "order-management", "status": "healthy", "db": "up", "timestamp": "2026-09-27T18:07:31.046Z" }
+{ "service": "order-management", "status": "healthy", "db": "up",
+  "reference_data": { "outlets": { "source": "database: outlets (Fleet & Directory)", "last_synced_at": "2026-09-27T18:05:02.118Z",
+                                  "outlets": 120, "skipped_invalid": 0, "last_error": null } },
+  "timestamp": "2026-09-27T18:07:31.046Z" }
 // 503
 { "service": "order-management", "status": "degraded", "db": "down", "timestamp": "..." }
 ```
@@ -171,7 +176,8 @@ reach its DB is not healthy, so this returns **503** in that case rather than a 
    (**200**, `"idempotent_replay": true`). A different body returns `IDEMPOTENCY_KEY_CONFLICT`. The
    comparison uses a stored sha256 fingerprint of the canonical payload, so client retries never
    create duplicates.
-2. **Scope and lookup.** The outlet must exist and be in the caller's scope.
+2. **Scope and lookup.** The outlet must exist and be in the caller's scope. An outlet not yet in
+   `outlets_ref` is looked up in Fleet & Directory's `outlets` table and copied across first.
 3. **Temperature rules.**
    - Chilled orders are Fresh-only.
    - Every item's `is_chilled` must match `temp_requirement`. The order's temperature is never
@@ -192,7 +198,7 @@ reach its DB is not healthy, so this returns **503** in that case rather than a 
 |---|---|
 | 400 `VALIDATION_ERROR` | bad field or type, duplicate sku, bad Idempotency-Key, malformed JSON |
 | 403 `OUTLET_SCOPE_VIOLATION` | store_manager sends another outlet's id |
-| 404 `OUTLET_NOT_FOUND` | unknown outlet |
+| 404 `OUTLET_NOT_FOUND` | unknown outlet: not in `outlets_ref`, and not in Fleet & Directory's `outlets` table either |
 | 422 `CHILLED_MISMATCH` | item temperature mismatch, or chilled order for Style/Tech |
 | 422 `NON_OPERATING_DATE` | `order_date` is a Sunday or holiday |
 | 409 `CUTOFF_PASSED` | explicit `order_date` is already closed |
@@ -585,11 +591,15 @@ Dispatcher dashboard for one date:
 Chilled capacity is the tightest constraint in the business (16 of 60 vehicles), so the summary
 shows at a glance whether deferrals are unavoidable that day.
 
-Capacity = total volume of the refrigerated vehicles (for the depot, if given) × `CHILLED_TRIPS_PER_DAY`
-(default 1, because chilled goods must arrive before 08:00). The vehicles are read from Fleet &
-Directory's `vehicles` table when it exists in the shared database, skipping any not `available`
-(`source: "fleet.vehicles"`). Otherwise the `vehicles.csv` snapshot is used
-(`source: "dataset-snapshot"`).
+Capacity = total volume of the **available** refrigerated vehicles (for the depot, if given) ×
+`CHILLED_TRIPS_PER_DAY` (default 1, because chilled goods must arrive before 08:00).
+
+The vehicles come from Fleet & Directory's API (`GET /api/fleet/vehicles?status=available`), so a
+reefer in the workshop is excluded. The result is cached for 30 seconds.
+
+If Fleet cannot be reached, nothing is estimated: `available` is `false`, and `reefer_vehicles`,
+`reefer_volume_m3`, `capacity_m3`, `utilisation_pct` and `exceeds_capacity` are `null`. The rest of
+the summary is unaffected.
 
 ```jsonc
 { "success": true, "data": {
@@ -597,7 +607,7 @@ Directory's `vehicles` table when it exists in the shared database, skipping any
   "by_status": { "confirmed": 119 },
   "by_brand": { "Fresh": { "orders": 97, … }, "Style": { … }, "Tech": { … } },
   "by_temperature": { "ambient": { … }, "chilled": { "orders": 48, … , "volume_m3": 291.664 } },
-  "chilled_capacity_reference": { "note": "…", "source": "fleet.vehicles", "reefer_vehicles": 9,
+  "chilled_capacity_reference": { "available": true, "note": "…", "reefer_vehicles": 9,
     "reefer_volume_m3": 207.5, "chilled_trips_per_day": 1, "capacity_m3": 207.5, "demand_m3": 291.664,
     "utilisation_pct": 140.6, "exceeds_capacity": true } } }
 ```

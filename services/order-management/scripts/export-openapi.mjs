@@ -1,7 +1,11 @@
 #!/usr/bin/env node
 /**
  * Writes openapi.yaml from the code-first spec (src/docs/openapi.ts), so the in-service
- * Swagger UI (/docs) and the platform-wide one (http://localhost:8080) never drift apart.
+ * Swagger UI (/docs) and the platform-wide Swagger UI never drift apart.
+ *
+ * No host is baked into the file. The server entry is a template, `{baseUrl}/api/orders`,
+ * whose value the reader sets in Swagger UI ("Servers" box). Its initial value comes from
+ * OPENAPI_BASE_URL at generation time and is left empty when that is not set.
  *
  *   npm run openapi          # regenerate
  *   npm run openapi:check    # fail if openapi.yaml is stale (for CI / pre-push)
@@ -15,8 +19,16 @@ const target = fileURLToPath(new URL('../openapi.yaml', import.meta.url));
 
 const spec = openapi.buildOpenApiSpec({
   servers: [
-    { url: 'http://localhost/api/orders', description: 'Via API gateway' },
-    { url: 'http://localhost:3002/api/orders', description: 'Direct (local container)' },
+    {
+      url: '{baseUrl}/api/orders',
+      description: 'API gateway or this service; set baseUrl to the origin of your environment',
+      variables: {
+        baseUrl: {
+          default: (process.env.OPENAPI_BASE_URL ?? '').replace(/\/$/, ''),
+          description: 'Scheme and host (and port, if any), without a trailing slash. Empty = same origin as this page.',
+        },
+      },
+    },
   ],
 });
 

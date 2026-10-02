@@ -1,3 +1,4 @@
+import { OUTLET_DIRECTORY_COLUMNS, OUTLET_DIRECTORY_TABLE } from '../repositories/outlets.repo.js';
 import { pool } from './pool.js';
 
 /**
@@ -103,5 +104,43 @@ export async function assertSchema(): Promise<void> {
     throw new SchemaAssertionError(missingTablesMessage(missingSeqs).replace('missing table(s)', 'missing sequence(s)'));
   }
 
-  console.log(`✅ Order Management schema verified (${tableNames.length} tables, ${REQUIRED_SEQUENCES.length} sequence).`);
+  await assertOutletDirectory();
+
+  console.log(`✅ Order Management schema verified (${tableNames.length} tables, ${REQUIRED_SEQUENCES.length} sequence, outlet directory present).`);
+}
+
+/**
+ * Outlets are read from Fleet & Directory's table in this database. There is no embedded
+ * copy to fall back on, so its absence stops the boot with instructions instead of letting
+ * the service run with no outlets.
+ */
+async function assertOutletDirectory(): Promise<void> {
+  const { rows } = await pool.query<{ column_name: string }>(
+    `SELECT column_name FROM information_schema.columns
+      WHERE table_schema = current_schema() AND table_name = $1`,
+    [OUTLET_DIRECTORY_TABLE],
+  );
+  const present = new Set(rows.map((r) => r.column_name));
+  const init = 'infrastructure/postgres-init/02-init-fleet.sql';
+
+  if (present.size === 0) {
+    throw new SchemaAssertionError(
+      [
+        `❌ FATAL: table "${OUTLET_DIRECTORY_TABLE}" does not exist.`,
+        '   Order Management reads outlets from Fleet & Directory\'s table and has no built-in copy.',
+        `   It is created and loaded from data/outlets.csv by ${init}, which only runs on an EMPTY volume.`,
+        '   Start clean:  docker compose down -v && docker compose up --build',
+      ].join('\n'),
+    );
+  }
+  const missing = OUTLET_DIRECTORY_COLUMNS.filter((c) => !present.has(c));
+  if (missing.length > 0) {
+    throw new SchemaAssertionError(
+      [
+        `❌ FATAL: table "${OUTLET_DIRECTORY_TABLE}" is missing column(s) Order Management reads: ${missing.join(', ')}.`,
+        `   The table is owned by Fleet & Directory (${init}); its shape has changed.`,
+        '   Fix: agree the outlet columns with the Fleet & Directory owner, then update outlets.repo.ts.',
+      ].join('\n'),
+    );
+  }
 }

@@ -56,6 +56,8 @@ services:
     environment:
       PORT: 3002
       DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres_password}@postgres:5432/${POSTGRES_DB:-delivery_db}
+      # Where Order Management reaches Fleet & Directory. Override per environment.
+      FLEET_SERVICE_URL: ${FLEET_SERVICE_URL:-http://fleet-directory:3004}
     ports:
       - "3002:3002"
     volumes:
