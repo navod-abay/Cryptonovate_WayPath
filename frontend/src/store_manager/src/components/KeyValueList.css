@@ -1,0 +1,8 @@
+.sm-kv { margin: 0; padding: 0 12px; }
+.sm-kv__row {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 16px;
+  padding: 16px 0 14px; border-bottom: 1px solid var(--sm-gray-200);
+}
+.sm-kv dt { color: var(--sm-gray-500); font-size: 18px; }
+.sm-kv dd { margin: 0; font-size: 22px; font-weight: 500; text-align: right; white-space: nowrap; }
+.sm-kv--lg dd { font-size: 24px; }

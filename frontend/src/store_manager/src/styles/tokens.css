@@ -1,0 +1,55 @@
+/*
+ * Store manager design tokens (WayPath Figma, "Store manager" section).
+ * Built on top of the shared --wp-* variables from @waypoint/ui/styles.
+ * Only values the shared library does not have yet live here.
+ */
+:root {
+  --sm-font: 'Atkinson Hyperlegible Next', 'Atkinson Hyperlegible', system-ui, sans-serif;
+
+  /* Navy */
+  --sm-navy-500: var(--wp-color-primary-dark, #00416C);
+  --sm-navy-900: #001624;
+
+  /* Gray */
+  --sm-gray-50: #F9FAFA;
+  --sm-gray-100: #EEF0F1;
+  --sm-gray-200: #CCD9E2;
+  --sm-gray-500: #5C6970;
+  --sm-gray-600: #454F54;
+  --sm-gray-900: #2E3538;
+  --sm-gray-950: #22282A;
+  --sm-white: #FFFFFF;
+
+  /* Cyan (chilled) */
+  --sm-cyan-50: #F5FCFE;
+  --sm-cyan-100: #CCF2FB;
+  --sm-cyan-150: #CCEBF3;
+  --sm-cyan-300: #80DEF6;
+  --sm-cyan-500: #00BDED;
+  --sm-cyan-600: #009DC5;
+
+  /* Amber (dry groceries) */
+  --sm-amber-50: #FFFBEB;
+  --sm-amber-100: #FEF3C7;
+  --sm-amber-200: #FDE68A;
+  --sm-amber-500: #F59E0B;
+
+  /* Maroon (errors) */
+  --sm-maroon-50: #FFF5F6;
+  --sm-maroon-100: #FFE0E4;
+  --sm-maroon-500: #FF334E;
+
+  /* Green */
+  --sm-green-50: #F0FDF4;
+  --sm-green-100: #DCFCE7;
+  --sm-green-600: #16A34A;
+
+  --sm-overlay: rgba(0, 22, 36, 0.48);
+
+  --sm-radius: 16px;
+  --sm-radius-sm: 8px;
+  --sm-gap: 16px;
+  --sm-page-x: 48px;
+  --sm-nav-h: 120px;
+  --sm-shadow-pop: 0 8px 24px rgba(0, 22, 36, 0.12);
+}

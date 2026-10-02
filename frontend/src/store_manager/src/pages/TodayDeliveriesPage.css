@@ -1,0 +1,20 @@
+.sm-today {
+  display: grid; grid-template-columns: minmax(0, 1fr) 400px; grid-template-rows: minmax(0, 1fr) auto;
+  gap: 16px; height: calc(100vh - var(--sm-nav-h)); min-height: 760px;
+}
+.sm-today__main { display: flex; flex-direction: column; padding: 40px 32px 40px; min-height: 0; }
+.sm-today__badges { display: flex; align-items: center; gap: 8px; }
+.sm-today__badges .wp-badge { font-size: 16px !important; padding: 8px 16px !important; text-transform: none !important; border-radius: 8px !important; }
+.sm-today__eta-row { display: flex; justify-content: space-between; align-items: flex-start; margin-top: 16px; }
+.sm-today__eta-row > :last-child { margin-top: 40px; }
+.sm-today__eta { font-size: 60px; font-weight: 700; line-height: 1.1; }
+.sm-today__eta-label { font-size: 19px; font-weight: 500; color: var(--sm-gray-500); margin-top: 6px; }
+.sm-today__window { font-size: 19px; font-weight: 500; color: var(--sm-cyan-600); margin-top: 18px; }
+.sm-today__truck { flex: 1; min-height: 0; max-height: 320px; object-fit: contain; align-self: center; margin: 12px 0; mix-blend-mode: multiply; }
+.sm-today__side { display: flex; flex-direction: column; justify-content: space-between; gap: 16px; padding: 56px 16px 40px; min-height: 0; overflow: auto; }
+.sm-today__side > div:first-child { padding: 0 24px; }
+.sm-today__type { font-size: 30px; font-weight: 500; padding-bottom: 20px; }
+.sm-today__count { font-size: 24px; font-weight: 500; padding: 20px 0 8px; }
+.sm-today__side .sm-kv { padding: 0 12px; }
+.sm-today__actions { display: flex; flex-direction: column; gap: 8px; }
+.sm-today__nav { grid-column: 1 / -1; }

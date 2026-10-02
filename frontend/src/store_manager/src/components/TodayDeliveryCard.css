@@ -1,0 +1,18 @@
+.sm-today-card {
+  display: flex; flex-direction: column; justify-content: space-between; gap: 32px;
+  width: 100%; min-height: 208px; padding: 24px; border: 0; text-align: left;
+  border-radius: var(--sm-radius); color: var(--sm-gray-900);
+  transition: transform .15s, box-shadow .15s;
+}
+.sm-today-card:hover { transform: translateY(-2px); box-shadow: var(--sm-shadow-pop); }
+.sm-today-card--chilled { background: var(--sm-cyan-100); }
+.sm-today-card--dry { background: var(--sm-amber-50); }
+.sm-today-card--done { background: var(--sm-white); }
+.sm-today-card__head { display: flex; align-items: center; gap: 12px; }
+.sm-today-card__head .wp-badge { font-size: 14px !important; padding: 6px 14px !important; }
+.sm-today-card__title { font-size: 22px; font-weight: 500; }
+.sm-today-card__caret { margin-left: auto; color: var(--sm-white); }
+.sm-today-card--dry .sm-today-card__caret, .sm-today-card--done .sm-today-card__caret { color: var(--sm-gray-200); }
+.sm-today-card__foot { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; }
+.sm-today-card__time { display: block; font-size: 34px; font-weight: 700; line-height: 1.1; }
+.sm-today-card__sub { display: block; font-size: 17px; font-weight: 500; color: var(--sm-gray-500); }

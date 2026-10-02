@@ -1,0 +1,12 @@
+.sm-alerts { display: flex; flex-direction: column; gap: 9px; }
+.sm-alerts__btn {
+  display: flex; align-items: center; justify-content: center; gap: 12px;
+  height: 85px; border-radius: var(--sm-radius);
+  border: 2px solid transparent; background: var(--sm-gray-50);
+  font-size: 24px; font-weight: 500; color: var(--sm-gray-900);
+  transition: background .15s, border-color .15s;
+}
+.sm-alerts__btn:hover { background: var(--sm-white); }
+.sm-alerts__btn.is-active { background: var(--sm-amber-50); }
+.sm-alerts__btn.has-unread { border-color: var(--sm-amber-500); background: var(--sm-amber-50); }
+.sm-alerts__count { margin-left: 4px; }

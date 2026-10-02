@@ -1,0 +1,8 @@
+.sm-type-icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  flex: none; border-radius: 12px; color: var(--sm-white);
+}
+.sm-type-icon--chilled { background: var(--sm-cyan-300); }
+.sm-type-icon--dry { background: var(--sm-amber-200); }
+.sm-type-icon--chilled.sm-type-icon--faded { background: var(--sm-cyan-100); }
+.sm-type-icon--dry.sm-type-icon--faded { background: var(--sm-amber-100); }

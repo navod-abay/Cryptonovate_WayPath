@@ -1,0 +1,11 @@
+.sm-carousel { display: flex; align-items: center; justify-content: space-between; }
+.sm-carousel__arrow {
+  width: 120px; height: 80px; border: 0; border-radius: var(--sm-radius);
+  background: var(--sm-gray-200); color: var(--sm-white);
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.sm-carousel__arrow:hover:not(:disabled) { background: #B5C7D3; }
+.sm-carousel__arrow:disabled { opacity: .5; cursor: default; }
+.sm-carousel__dots { display: flex; gap: 12px; }
+.sm-carousel__dot { width: 12px; height: 12px; padding: 0; border: 0; border-radius: 50%; background: var(--sm-gray-200); }
+.sm-carousel__dot.is-active { background: var(--sm-navy-500); }
