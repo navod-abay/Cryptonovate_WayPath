@@ -1,3 +1,12 @@
+.env
+*venv/*
+data_exploration/**/*.png
+
+*.ipynb_checkpoints
+
+**/node_modules/**
+node_modules/**
+*.pyc
 # Environment Variables (never commit real secrets)
 .env
 .env.local

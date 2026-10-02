@@ -2,8 +2,7 @@
 
 Notes and scripts from exploring the Tech Triathlon 2026 challenge data.
 
-The data is not in this repo. The scripts expect it next to the repo, at
-`../../data-20260926T041005Z-1-001/data/` relative to this folder.
+The scripts read the challenge data from `../data/` (the repo's `data/` folder).
 
 ## Files
 
@@ -11,12 +10,29 @@ The data is not in this repo. The scripts expect it next to the repo, at
 |---|---|
 | `visualize_outlets.py` | Builds a networkx graph of depots and outlets and draws `outlets_network.png` |
 | `outlets_network.png` | The rendered outlet network |
+| `plot_distributions.py` | Order weight, volume and weekday charts, loading windows, Fresh chilled orders by outlet |
+| `Fresh/`, `Style/`, `Tech/`, `All/` | Charts from `plot_distributions.py`, one folder per brand plus all brands |
+| `fleet_capacity.py` | Vehicle capacity charts and a count of days when demand exceeded fleet capacity |
+| `Fleet/` | Charts from `fleet_capacity.py` |
+| `deferred_orders.py` | Deferred orders by brand and by weekday (charts in `All/`) |
+| `vehicle_usage.py` | Reefer usage and order volume by weekday (`Fleet/`), Fresh double trips (`Fresh/`) |
+| `fresh_chilled_by_district.py` | Fresh chilled demand, deferrals and routes by district |
+| `byDistrict/` | Charts from `fresh_chilled_by_district.py` |
+| `vehicles_not_run.py` | Vehicles not used / used once / used twice by weekday, all vehicles and reefers |
+| `vehiclesNotRun/` | Charts from `vehicles_not_run.py` |
+| `algo-1.md` | Specification of routing algorithm 1 |
+| `algo1/algo1.py` | Algorithm 1, back-tested day by day on all orders; writes `algo1/results/algo1_decisions.csv` and `algo1_routes.csv` |
+| `algo1/assess_algo.py` | Scores a decisions CSV: deferrals, continuous deferrals, spread across outlets (`--historical` compares with the data) |
+| `algo2/alns.py` | Algorithm 2: ALNS (random / Shaw / worst removal; greedy / regret-k / time-window regret insertion) with booklet time budgets and soft time windows |
+| `algo2/run_task2b.py` | Runs ALNS on Task 2B scenario S1, checks booklet rules 1-7, compares with algorithm 1 (`algo2/results/task2b_alns_*`) |
+| `algo2/backtest.py` | Day-by-day ALNS back-test; writes decisions/routes CSVs for `algo1/assess_algo.py` |
+| `dataDistributions.md` | What the distribution and fleet charts show, plus mall and van-only outlet counts |
 
-Run it with `python3 visualize_outlets.py` (needs `networkx`, `matplotlib`, `pandas`).
+Run a script with `python3 <script>.py` (needs `networkx`, `matplotlib`, `pandas`).
 
 ## Outlet network (`visualize_outlets.py`)
 
-- Colour = `dock_type` (rear dock, street, mall bay). Marker = `parking_constraint`
+- Colour = `brand` (Fresh, Style, Tech). Marker = `parking_constraint`
   (circle normal, triangle van only, square mall dock). Depots are stars.
 - The graph has 122 nodes (120 outlets, 2 depots) and 886 edges, each with `km` and
   `freeflow_min`:
