@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { env } from '../config/env.js';
+import { DATASET_HOLIDAYS } from './holidays.js';
 
 /**
  * Single source of truth for "now" and for every business-day calculation.
@@ -83,7 +84,8 @@ export function createCalendar(config: CalendarConfig): BusinessCalendar {
     return { date: `${p.year}-${p.month}-${p.day}`, hour: Number(p.hour), minute: Number(p.minute) };
   };
 
-  // To adopt calendar.csv later, replace only this function body with a lookup.
+  // Mirrors calendar.csv's is_operating (see holidays.ts). To switch to a live calendar source,
+  // replace only this function body with a lookup.
   const isOperatingDay = (date: string): boolean => !nonOperating.has(weekdayOf(date)) && !holidays.has(date);
 
   const step = (from: string, direction: 1 | -1): string => {
@@ -135,7 +137,7 @@ export function createCalendar(config: CalendarConfig): BusinessCalendar {
 export const calendar = createCalendar({
   timeZone: env.BUSINESS_TZ,
   nonOperatingWeekdays: env.NON_OPERATING_WEEKDAYS,
-  holidays: env.HOLIDAY_DATES,
+  holidays: [...DATASET_HOLIDAYS, ...env.HOLIDAY_DATES],
 });
 
 export const colomboToday = (at: Date = now()): string => calendar.localDate(at);

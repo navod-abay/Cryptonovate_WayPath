@@ -99,6 +99,10 @@ export const StatusUpdateSchema = z.object({
 });
 export type StatusUpdateInput = z.infer<typeof StatusUpdateSchema>;
 
+/** Body of PATCH /:order_ref/status — one StatusUpdate without the ref (it is in the path). */
+export const StatusChangeSchema = StatusUpdateSchema.omit({ order_ref: true });
+export type StatusChangeInput = z.infer<typeof StatusChangeSchema>;
+
 export const StatusBatchSchema = z.object({
   updates: z.array(StatusUpdateSchema).min(1, 'updates must contain at least one entry').max(500, 'At most 500 updates per call'),
 });

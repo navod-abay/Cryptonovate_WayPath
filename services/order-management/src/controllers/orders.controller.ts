@@ -13,6 +13,7 @@ import type {
   DeferOrderSchema,
   ListOrdersQuery,
   ReceiptInput,
+  StatusChangeInput,
   ReplaceItemsSchema,
   StatusBatchSchema,
   SummaryQuerySchema,
@@ -87,6 +88,10 @@ export async function getAtRisk(req: Request, res: Response) {
 export async function statusBatch(req: Request, res: Response) {
   const body = req.body as z.infer<typeof StatusBatchSchema>;
   ok(res, await orders.applyStatusBatch(actorFrom(req), body.updates));
+}
+
+export async function changeStatus(req: Request, res: Response) {
+  ok(res, await orders.changeOrderStatus(actorFrom(req), orderRefParam(req), req.body as StatusChangeInput));
 }
 
 export async function deferOrder(req: Request, res: Response) {

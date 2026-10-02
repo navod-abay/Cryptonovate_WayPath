@@ -18,6 +18,8 @@ import type { DeferralReasonCode } from '../domain/reasonCodes.js';
 import { computeRollups } from '../domain/rollups.js';
 import type { OrderStatus } from '../domain/statusMachine.js';
 import type { OrderItemInput, TempRequirement } from '../schemas/orders.schema.js';
+import { reeferCapacityFromFixture } from '../repositories/fleet.repo.js';
+import { VEHICLE_FIXTURE } from '../seed/fleet.fixture.js';
 import { buildOutletFixture, intBetween, mulberry32, pick, type OutletFixture, type Rng } from '../seed/outlets.fixture.js';
 import { pool, withTransaction } from './pool.js';
 
@@ -216,9 +218,9 @@ function buildOrder(
   const target = finalStatus === 'received' || finalStatus === 'disputed' ? 'delivered' : finalStatus;
   const stepsToRun = PROGRESSION.indexOf(target) + 1;
   if (stepsToRun > 0) {
-    order.vehicleId = temp === 'chilled'
-      ? `VEH-${String(intBetween(rng, 1, 16)).padStart(3, '0')}`
-      : `VEH-${String(intBetween(rng, 17, 60)).padStart(3, '0')}`;
+    // Real fleet: a chilled order needs a reefer from the outlet's own depot.
+    const wanted = temp === 'chilled' ? 'reefer' : 'ambient';
+    order.vehicleId = pick(rng, VEHICLE_FIXTURE.filter((v) => v.depot === outlet.depot && v.temp === wanted)).vehicle_id;
     order.tripId = temp === 'chilled' || outlet.mall_window ? 1 : intBetween(rng, 1, 2);
 
     const openAt = businessInstant(orderDate, outlet.window_open_time);
@@ -344,7 +346,7 @@ function generateDemoOrders(outlets: OutletFixture[]): { orders: SeedOrder[]; d0
       peakChilled.push(buildOrder(rng, o, d1, 'chilled', 'confirmed'));
     }
   }
-  const capacity = env.REEFER_VEHICLE_COUNT * env.REEFER_VOLUME_M3 * env.CHILLED_TRIPS_PER_DAY;
+  const capacity = reeferCapacityFromFixture('Peliyagoda').volume_m3 * env.CHILLED_TRIPS_PER_DAY;
   const peliyagodaChilled = peakChilled.filter((o) => o.outlet.depot === 'Peliyagoda');
   const baseVolume = peliyagodaChilled.reduce((s, o) => s + computeRollups(o.items).order_volume_m3, 0);
   if (baseVolume > 0 && capacity > 0) {
@@ -503,6 +505,10 @@ async function updateFairnessCounters(
 
 // ------------------------------------------------------------------ entry points
 
+/**
+ * Upserts the dataset outlets. Master attributes are corrected if they drifted (e.g. a database
+ * seeded from the earlier synthetic fixture); fairness counters are never touched here.
+ */
 export async function seedOutlets(): Promise<number> {
   const outlets = buildOutletFixture();
   const { rowCount } = await pool.query(
@@ -510,7 +516,18 @@ export async function seedOutlets(): Promise<number> {
                               window_open_time, window_close_time)
      SELECT * FROM unnest($1::varchar[], $2::varchar[], $3::varchar[], $4::varchar[], $5::varchar[],
                           $6::varchar[], $7::boolean[], $8::time[], $9::time[])
-     ON CONFLICT (outlet_id) DO NOTHING`,
+     ON CONFLICT (outlet_id) DO UPDATE SET
+       brand = EXCLUDED.brand, district = EXCLUDED.district, depot = EXCLUDED.depot,
+       dock_type = EXCLUDED.dock_type, parking_constraint = EXCLUDED.parking_constraint,
+       mall_window = EXCLUDED.mall_window, window_open_time = EXCLUDED.window_open_time,
+       window_close_time = EXCLUDED.window_close_time, updated_at = now()
+     WHERE (outlets_ref.brand, outlets_ref.district, outlets_ref.depot, outlets_ref.dock_type,
+            outlets_ref.parking_constraint, outlets_ref.mall_window, outlets_ref.window_open_time,
+            outlets_ref.window_close_time)
+           IS DISTINCT FROM
+           (EXCLUDED.brand, EXCLUDED.district, EXCLUDED.depot, EXCLUDED.dock_type,
+            EXCLUDED.parking_constraint, EXCLUDED.mall_window, EXCLUDED.window_open_time,
+            EXCLUDED.window_close_time)`,
     [
       outlets.map((o) => o.outlet_id),
       outlets.map((o) => o.brand),
@@ -560,7 +577,7 @@ export async function seedData(opts: { demoOrders: boolean }): Promise<void> {
     return;
   }
   const inserted = await seedOutlets();
-  console.log(`✅ outlets_ref: ${inserted} new outlet(s) inserted (fixture has 120).`);
+  console.log(`✅ outlets_ref: ${inserted} outlet(s) inserted or corrected (dataset has 120).`);
 
   if (!opts.demoOrders) {
     console.log('ℹ️ SEED_DEMO_DATA=false — skipping demo orders.');

@@ -29,100 +29,149 @@ export interface OutletFixture {
   window_close_time: string;
 }
 
-export const DEPOT_DISTRICTS: Readonly<Record<Depot, readonly string[]>> = {
-  Peliyagoda: ['Colombo', 'Gampaha', 'Kalutara', 'Galle', 'Kurunegala'],
-  Kandy: ['Kandy', 'Matale', 'Nuwara Eliya', 'Badulla'],
-};
-
-const OUTLET_SEED = 0x0e11_2026;
-const PELIYAGODA_SHARE = 0.75;
-const VAN_ONLY_SHARE = 0.15;
-const STYLE_MALL_COUNT = 13; // "around half" of 25
-
-const hhmm = (minutes: number) => `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
-
-const outletId = (n: number) => `OUT${String(n).padStart(3, '0')}`;
-
-function pickDepotAndDistrict(rng: Rng): { depot: Depot; district: string } {
-  const depot: Depot = rng() < PELIYAGODA_SHARE ? 'Peliyagoda' : 'Kandy';
-  return { depot, district: pick(rng, DEPOT_DISTRICTS[depot]) };
-}
-
-function streetOrDock(rng: Rng): { dock_type: DockType; parking_constraint: ParkingConstraint } {
-  if (rng() < VAN_ONLY_SHARE) return { dock_type: 'street', parking_constraint: 'van_only' };
-  return { dock_type: rng() < 0.7 ? 'rear_dock' : 'street', parking_constraint: 'normal' };
-}
+type Row = [string, Brand, string, Depot, DockType, ParkingConstraint, boolean, string, string];
 
 /**
- * Exactly 120 outlets: Fresh OUT001–080, Style OUT081–105, Tech OUT106–120.
- * OUT001 is pinned to Fresh / Peliyagoda / Colombo because auth-rbac's manager_out001 uses it.
+ * Snapshot of the challenge dataset data/outlets.csv (120 outlets) — the same file Fleet & Directory
+ * loads into its `outlets` table, so outlets_ref agrees with Fleet. The service's Docker build context
+ * is its own folder, so the CSV itself is not reachable at runtime. Regenerate if the CSV changes.
+ * mall_window: the CSV carries the mall access range (e.g. '10:00-12:00'); it always equals the
+ * outlet's window_open/close, so it is stored here as a boolean flag.
  */
+// prettier-ignore
+const ROWS: readonly Row[] = [
+  ['OUT001', 'Fresh', 'Colombo', 'Peliyagoda', 'street', 'van_only', false, '05:00', '07:30'],
+  ['OUT002', 'Fresh', 'Colombo', 'Peliyagoda', 'street', 'van_only', false, '05:30', '08:00'],
+  ['OUT003', 'Fresh', 'Colombo', 'Peliyagoda', 'street', 'van_only', false, '05:00', '07:30'],
+  ['OUT004', 'Fresh', 'Colombo', 'Peliyagoda', 'street', 'normal', false, '05:30', '08:00'],
+  ['OUT005', 'Fresh', 'Colombo', 'Peliyagoda', 'rear_dock', 'normal', false, '04:00', '07:45'],
+  ['OUT006', 'Fresh', 'Colombo', 'Peliyagoda', 'street', 'normal', false, '03:00', '08:00'],
+  ['OUT007', 'Fresh', 'Colombo', 'Peliyagoda', 'street', 'normal', false, '05:30', '08:00'],
+  ['OUT008', 'Fresh', 'Colombo', 'Peliyagoda', 'rear_dock', 'normal', false, '05:00', '07:30'],
+  ['OUT009', 'Fresh', 'Colombo', 'Peliyagoda', 'rear_dock', 'normal', false, '04:00', '07:45'],
+  ['OUT010', 'Fresh', 'Colombo', 'Peliyagoda', 'rear_dock', 'normal', false, '05:00', '07:30'],
+  ['OUT011', 'Fresh', 'Colombo', 'Peliyagoda', 'rear_dock', 'normal', false, '03:00', '08:00'],
+  ['OUT012', 'Fresh', 'Colombo', 'Peliyagoda', 'rear_dock', 'normal', false, '05:30', '08:00'],
+  ['OUT013', 'Fresh', 'Colombo', 'Peliyagoda', 'rear_dock', 'normal', false, '05:00', '07:30'],
+  ['OUT014', 'Fresh', 'Colombo', 'Peliyagoda', 'street', 'normal', false, '05:30', '08:00'],
+  ['OUT015', 'Style', 'Colombo', 'Peliyagoda', 'mall_bay', 'mall_dock', true, '09:00', '11:00'],
+  ['OUT016', 'Style', 'Colombo', 'Peliyagoda', 'mall_bay', 'mall_dock', true, '09:00', '11:00'],
+  ['OUT017', 'Style', 'Colombo', 'Peliyagoda', 'mall_bay', 'mall_dock', true, '10:30', '12:30'],
+  ['OUT018', 'Style', 'Colombo', 'Peliyagoda', 'mall_bay', 'mall_dock', true, '10:30', '12:30'],
+  ['OUT019', 'Style', 'Colombo', 'Peliyagoda', 'rear_dock', 'normal', false, '09:00', '17:00'],
+  ['OUT020', 'Style', 'Colombo', 'Peliyagoda', 'street', 'normal', false, '09:00', '17:00'],
+  ['OUT021', 'Tech', 'Colombo', 'Peliyagoda', 'mall_bay', 'mall_dock', true, '10:30', '12:30'],
+  ['OUT022', 'Tech', 'Colombo', 'Peliyagoda', 'mall_bay', 'mall_dock', true, '10:00', '12:00'],
+  ['OUT023', 'Tech', 'Colombo', 'Peliyagoda', 'street', 'normal', false, '09:00', '17:00'],
+  ['OUT024', 'Tech', 'Colombo', 'Peliyagoda', 'rear_dock', 'normal', false, '09:00', '17:00'],
+  ['OUT025', 'Fresh', 'Gampaha', 'Peliyagoda', 'rear_dock', 'normal', false, '05:30', '08:00'],
+  ['OUT026', 'Fresh', 'Gampaha', 'Peliyagoda', 'rear_dock', 'normal', false, '03:00', '08:00'],
+  ['OUT027', 'Fresh', 'Gampaha', 'Peliyagoda', 'street', 'normal', false, '05:00', '07:30'],
+  ['OUT028', 'Fresh', 'Gampaha', 'Peliyagoda', 'street', 'normal', false, '03:00', '08:00'],
+  ['OUT029', 'Fresh', 'Gampaha', 'Peliyagoda', 'rear_dock', 'normal', false, '05:30', '08:00'],
+  ['OUT030', 'Fresh', 'Gampaha', 'Peliyagoda', 'rear_dock', 'normal', false, '03:00', '08:00'],
+  ['OUT031', 'Fresh', 'Gampaha', 'Peliyagoda', 'rear_dock', 'normal', false, '03:00', '08:00'],
+  ['OUT032', 'Fresh', 'Gampaha', 'Peliyagoda', 'rear_dock', 'normal', false, '04:00', '07:45'],
+  ['OUT033', 'Fresh', 'Gampaha', 'Peliyagoda', 'rear_dock', 'normal', false, '05:30', '08:00'],
+  ['OUT034', 'Fresh', 'Gampaha', 'Peliyagoda', 'rear_dock', 'normal', false, '05:00', '07:30'],
+  ['OUT035', 'Style', 'Gampaha', 'Peliyagoda', 'mall_bay', 'mall_dock', true, '10:30', '12:30'],
+  ['OUT036', 'Style', 'Gampaha', 'Peliyagoda', 'mall_bay', 'mall_dock', true, '10:30', '12:30'],
+  ['OUT037', 'Style', 'Gampaha', 'Peliyagoda', 'street', 'normal', false, '09:00', '17:00'],
+  ['OUT038', 'Tech', 'Gampaha', 'Peliyagoda', 'street', 'normal', false, '09:00', '17:00'],
+  ['OUT039', 'Tech', 'Gampaha', 'Peliyagoda', 'rear_dock', 'normal', false, '09:00', '17:00'],
+  ['OUT040', 'Fresh', 'Kalutara', 'Peliyagoda', 'street', 'normal', false, '03:00', '08:00'],
+  ['OUT041', 'Fresh', 'Kalutara', 'Peliyagoda', 'rear_dock', 'normal', false, '05:00', '07:30'],
+  ['OUT042', 'Fresh', 'Kalutara', 'Peliyagoda', 'rear_dock', 'normal', false, '03:00', '08:00'],
+  ['OUT043', 'Fresh', 'Kalutara', 'Peliyagoda', 'street', 'normal', false, '05:00', '07:30'],
+  ['OUT044', 'Fresh', 'Kalutara', 'Peliyagoda', 'rear_dock', 'normal', false, '03:00', '08:00'],
+  ['OUT045', 'Fresh', 'Kalutara', 'Peliyagoda', 'rear_dock', 'normal', false, '03:00', '08:00'],
+  ['OUT046', 'Fresh', 'Kalutara', 'Peliyagoda', 'rear_dock', 'normal', false, '05:00', '07:30'],
+  ['OUT047', 'Style', 'Kalutara', 'Peliyagoda', 'street', 'normal', false, '09:00', '17:00'],
+  ['OUT048', 'Style', 'Kalutara', 'Peliyagoda', 'rear_dock', 'normal', false, '09:00', '17:00'],
+  ['OUT049', 'Tech', 'Kalutara', 'Peliyagoda', 'street', 'normal', false, '09:00', '17:00'],
+  ['OUT050', 'Fresh', 'Galle', 'Peliyagoda', 'rear_dock', 'normal', false, '05:30', '08:00'],
+  ['OUT051', 'Fresh', 'Galle', 'Peliyagoda', 'street', 'normal', false, '03:00', '08:00'],
+  ['OUT052', 'Fresh', 'Galle', 'Peliyagoda', 'street', 'normal', false, '05:00', '07:30'],
+  ['OUT053', 'Fresh', 'Galle', 'Peliyagoda', 'street', 'normal', false, '03:00', '08:00'],
+  ['OUT054', 'Fresh', 'Galle', 'Peliyagoda', 'rear_dock', 'normal', false, '05:00', '07:30'],
+  ['OUT055', 'Fresh', 'Galle', 'Peliyagoda', 'street', 'normal', false, '05:00', '07:30'],
+  ['OUT056', 'Style', 'Galle', 'Peliyagoda', 'mall_bay', 'mall_dock', true, '10:00', '12:00'],
+  ['OUT057', 'Style', 'Galle', 'Peliyagoda', 'street', 'normal', false, '09:00', '17:00'],
+  ['OUT058', 'Tech', 'Galle', 'Peliyagoda', 'rear_dock', 'normal', false, '09:00', '17:00'],
+  ['OUT059', 'Fresh', 'Matara', 'Peliyagoda', 'rear_dock', 'normal', false, '04:00', '07:45'],
+  ['OUT060', 'Fresh', 'Matara', 'Peliyagoda', 'rear_dock', 'normal', false, '03:00', '08:00'],
+  ['OUT061', 'Fresh', 'Matara', 'Peliyagoda', 'rear_dock', 'normal', false, '05:00', '07:30'],
+  ['OUT062', 'Fresh', 'Matara', 'Peliyagoda', 'rear_dock', 'normal', false, '05:30', '08:00'],
+  ['OUT063', 'Style', 'Matara', 'Peliyagoda', 'street', 'normal', false, '09:00', '17:00'],
+  ['OUT064', 'Tech', 'Matara', 'Peliyagoda', 'rear_dock', 'normal', false, '09:00', '17:00'],
+  ['OUT065', 'Fresh', 'Kurunegala', 'Peliyagoda', 'rear_dock', 'normal', false, '05:30', '08:00'],
+  ['OUT066', 'Fresh', 'Kurunegala', 'Peliyagoda', 'rear_dock', 'normal', false, '04:00', '07:45'],
+  ['OUT067', 'Fresh', 'Kurunegala', 'Peliyagoda', 'rear_dock', 'normal', false, '05:00', '07:30'],
+  ['OUT068', 'Fresh', 'Kurunegala', 'Peliyagoda', 'rear_dock', 'normal', false, '03:00', '08:00'],
+  ['OUT069', 'Fresh', 'Kurunegala', 'Peliyagoda', 'rear_dock', 'normal', false, '05:30', '08:00'],
+  ['OUT070', 'Style', 'Kurunegala', 'Peliyagoda', 'rear_dock', 'normal', false, '09:00', '17:00'],
+  ['OUT071', 'Style', 'Kurunegala', 'Peliyagoda', 'street', 'normal', false, '09:00', '17:00'],
+  ['OUT072', 'Tech', 'Kurunegala', 'Peliyagoda', 'rear_dock', 'normal', false, '09:00', '17:00'],
+  ['OUT073', 'Fresh', 'Puttalam', 'Peliyagoda', 'rear_dock', 'normal', false, '03:00', '08:00'],
+  ['OUT074', 'Fresh', 'Puttalam', 'Peliyagoda', 'rear_dock', 'normal', false, '05:30', '08:00'],
+  ['OUT075', 'Fresh', 'Puttalam', 'Peliyagoda', 'rear_dock', 'normal', false, '03:00', '08:00'],
+  ['OUT076', 'Fresh', 'Kandy', 'Kandy', 'street', 'van_only', false, '03:00', '08:00'],
+  ['OUT077', 'Fresh', 'Kandy', 'Kandy', 'street', 'van_only', false, '05:00', '07:30'],
+  ['OUT078', 'Fresh', 'Kandy', 'Kandy', 'street', 'van_only', false, '03:00', '08:00'],
+  ['OUT079', 'Fresh', 'Kandy', 'Kandy', 'street', 'van_only', false, '04:00', '07:45'],
+  ['OUT080', 'Fresh', 'Kandy', 'Kandy', 'street', 'van_only', false, '05:30', '08:00'],
+  ['OUT081', 'Fresh', 'Kandy', 'Kandy', 'street', 'van_only', false, '03:00', '08:00'],
+  ['OUT082', 'Fresh', 'Kandy', 'Kandy', 'street', 'van_only', false, '03:00', '08:00'],
+  ['OUT083', 'Fresh', 'Kandy', 'Kandy', 'street', 'van_only', false, '04:00', '07:45'],
+  ['OUT084', 'Fresh', 'Kandy', 'Kandy', 'rear_dock', 'normal', false, '05:30', '08:00'],
+  ['OUT085', 'Fresh', 'Kandy', 'Kandy', 'rear_dock', 'normal', false, '05:00', '07:30'],
+  ['OUT086', 'Fresh', 'Kandy', 'Kandy', 'rear_dock', 'normal', false, '03:00', '08:00'],
+  ['OUT087', 'Fresh', 'Kandy', 'Kandy', 'rear_dock', 'normal', false, '03:00', '08:00'],
+  ['OUT088', 'Style', 'Kandy', 'Kandy', 'street', 'van_only', false, '09:00', '17:00'],
+  ['OUT089', 'Style', 'Kandy', 'Kandy', 'mall_bay', 'mall_dock', true, '10:30', '12:30'],
+  ['OUT090', 'Style', 'Kandy', 'Kandy', 'mall_bay', 'mall_dock', true, '10:30', '12:30'],
+  ['OUT091', 'Style', 'Kandy', 'Kandy', 'street', 'normal', false, '09:00', '17:00'],
+  ['OUT092', 'Style', 'Kandy', 'Kandy', 'street', 'normal', false, '09:00', '17:00'],
+  ['OUT093', 'Tech', 'Kandy', 'Kandy', 'street', 'van_only', false, '09:00', '17:00'],
+  ['OUT094', 'Tech', 'Kandy', 'Kandy', 'mall_bay', 'mall_dock', true, '09:00', '11:00'],
+  ['OUT095', 'Tech', 'Kandy', 'Kandy', 'rear_dock', 'normal', false, '09:00', '17:00'],
+  ['OUT096', 'Fresh', 'Matale', 'Kandy', 'rear_dock', 'normal', false, '05:30', '08:00'],
+  ['OUT097', 'Fresh', 'Matale', 'Kandy', 'street', 'normal', false, '03:00', '08:00'],
+  ['OUT098', 'Fresh', 'Matale', 'Kandy', 'rear_dock', 'normal', false, '03:00', '08:00'],
+  ['OUT099', 'Fresh', 'Matale', 'Kandy', 'rear_dock', 'normal', false, '05:00', '07:30'],
+  ['OUT100', 'Fresh', 'Matale', 'Kandy', 'rear_dock', 'normal', false, '03:00', '08:00'],
+  ['OUT101', 'Fresh', 'Matale', 'Kandy', 'rear_dock', 'normal', false, '05:00', '07:30'],
+  ['OUT102', 'Style', 'Matale', 'Kandy', 'street', 'normal', false, '09:00', '17:00'],
+  ['OUT103', 'Tech', 'Matale', 'Kandy', 'rear_dock', 'normal', false, '09:00', '17:00'],
+  ['OUT104', 'Fresh', 'Nuwara Eliya', 'Kandy', 'rear_dock', 'normal', false, '03:00', '08:00'],
+  ['OUT105', 'Fresh', 'Nuwara Eliya', 'Kandy', 'rear_dock', 'normal', false, '05:00', '07:30'],
+  ['OUT106', 'Fresh', 'Nuwara Eliya', 'Kandy', 'rear_dock', 'normal', false, '05:30', '08:00'],
+  ['OUT107', 'Fresh', 'Nuwara Eliya', 'Kandy', 'rear_dock', 'normal', false, '03:00', '08:00'],
+  ['OUT108', 'Fresh', 'Nuwara Eliya', 'Kandy', 'rear_dock', 'normal', false, '04:00', '07:45'],
+  ['OUT109', 'Style', 'Nuwara Eliya', 'Kandy', 'rear_dock', 'normal', false, '09:00', '17:00'],
+  ['OUT110', 'Fresh', 'Badulla', 'Kandy', 'rear_dock', 'normal', false, '03:00', '08:00'],
+  ['OUT111', 'Fresh', 'Badulla', 'Kandy', 'rear_dock', 'normal', false, '03:00', '08:00'],
+  ['OUT112', 'Fresh', 'Badulla', 'Kandy', 'rear_dock', 'normal', false, '04:00', '07:45'],
+  ['OUT113', 'Fresh', 'Badulla', 'Kandy', 'rear_dock', 'normal', false, '05:30', '08:00'],
+  ['OUT114', 'Style', 'Badulla', 'Kandy', 'rear_dock', 'normal', false, '09:00', '17:00'],
+  ['OUT115', 'Tech', 'Badulla', 'Kandy', 'street', 'normal', false, '09:00', '17:00'],
+  ['OUT116', 'Fresh', 'Kegalle', 'Kandy', 'rear_dock', 'normal', false, '05:00', '07:30'],
+  ['OUT117', 'Fresh', 'Kegalle', 'Kandy', 'rear_dock', 'normal', false, '04:00', '07:45'],
+  ['OUT118', 'Fresh', 'Kegalle', 'Kandy', 'street', 'normal', false, '04:00', '07:45'],
+  ['OUT119', 'Fresh', 'Kegalle', 'Kandy', 'rear_dock', 'normal', false, '03:00', '08:00'],
+  ['OUT120', 'Style', 'Kegalle', 'Kandy', 'rear_dock', 'normal', false, '09:00', '17:00'],
+];
+
 export function buildOutletFixture(): OutletFixture[] {
-  const rng = mulberry32(OUTLET_SEED);
-  const outlets: OutletFixture[] = [];
-
-  for (let n = 1; n <= 80; n++) {
-    const loc = n === 1 ? { depot: 'Peliyagoda' as const, district: 'Colombo' } : pickDepotAndDistrict(rng);
-    const access = n === 1 ? { dock_type: 'rear_dock' as const, parking_constraint: 'normal' as const } : streetOrDock(rng);
-    // Fresh must arrive before 08:00; windows differ per outlet.
-    const open = 4 * 60 + 30 + 15 * intBetween(rng, 0, 4); // 04:30–05:30
-    const close = 7 * 60 + 15 * intBetween(rng, 0, 3); // 07:00–07:45
-    outlets.push({
-      outlet_id: outletId(n),
-      brand: 'Fresh',
-      ...loc,
-      ...access,
-      mall_window: false,
-      window_open_time: hhmm(open),
-      window_close_time: hhmm(close),
-    });
-  }
-
-  const styleIds = Array.from({ length: 25 }, (_, i) => 81 + i);
-  const mallIds = new Set(
-    [...styleIds]
-      .map((id) => ({ id, key: rng() }))
-      .sort((a, b) => a.key - b.key)
-      .slice(0, STYLE_MALL_COUNT)
-      .map((x) => x.id),
-  );
-  for (const n of styleIds) {
-    const loc = pickDepotAndDistrict(rng);
-    if (mallIds.has(n)) {
-      outlets.push({
-        outlet_id: outletId(n),
-        brand: 'Style',
-        ...loc,
-        dock_type: 'mall_bay',
-        parking_constraint: 'mall_dock',
-        mall_window: true,
-        window_open_time: '06:00',
-        window_close_time: '09:00',
-      });
-    } else {
-      outlets.push({
-        outlet_id: outletId(n),
-        brand: 'Style',
-        ...loc,
-        ...streetOrDock(rng),
-        mall_window: false,
-        window_open_time: '09:00',
-        window_close_time: '17:00',
-      });
-    }
-  }
-
-  for (let n = 106; n <= 120; n++) {
-    outlets.push({
-      outlet_id: outletId(n),
-      brand: 'Tech',
-      ...pickDepotAndDistrict(rng),
-      ...streetOrDock(rng),
-      mall_window: false,
-      window_open_time: '09:00',
-      window_close_time: '16:00',
-    });
-  }
-
-  return outlets;
+  return ROWS.map(([outlet_id, brand, district, depot, dock_type, parking_constraint, mall_window, window_open_time, window_close_time]) => ({
+    outlet_id,
+    brand,
+    district,
+    depot,
+    dock_type,
+    parking_constraint,
+    mall_window,
+    window_open_time,
+    window_close_time,
+  }));
 }

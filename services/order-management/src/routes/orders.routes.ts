@@ -18,6 +18,7 @@ import {
   ReceiptSchema,
   ReplaceItemsSchema,
   StatusBatchSchema,
+  StatusChangeSchema,
   SummaryQuerySchema,
 } from '../schemas/orders.schema.js';
 
@@ -59,6 +60,12 @@ router.delete('/:order_ref', orderWriters, validateRequest(CancelOrderSchema), a
 router.put('/:order_ref/items', orderWriters, validateRequest(ReplaceItemsSchema), asyncHandler(ctrl.replaceItems));
 router.post('/:order_ref/confirm', orderWriters, validateRequest(ConfirmOrderSchema), asyncHandler(ctrl.confirmOrder));
 router.get('/:order_ref/history', orderWriters, asyncHandler(ctrl.getHistory));
+router.patch(
+  '/:order_ref/status',
+  requireRole(['dispatcher', 'loader', 'driver']),
+  validateRequest(StatusChangeSchema),
+  asyncHandler(ctrl.changeStatus),
+);
 router.post('/:order_ref/defer', dispatcher, validateRequest(DeferOrderSchema), asyncHandler(ctrl.deferOrder));
 router.post('/:order_ref/receipt', requireRole(['store_manager']), validateRequest(ReceiptSchema), asyncHandler(ctrl.recordReceipt));
 

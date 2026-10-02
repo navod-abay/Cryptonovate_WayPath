@@ -31,6 +31,7 @@ import {
   type OrderRecord,
   type OrderRow,
 } from '../repositories/orders.repo.js';
+import { getReeferCapacity } from '../repositories/fleet.repo.js';
 import { findAtRiskOutlets, outletDirectory } from '../repositories/outlets.repo.js';
 import type {
   CreateOrderInput,
@@ -38,6 +39,7 @@ import type {
   ListOrdersQuery,
   OrderItemInput,
   ReceiptInput,
+  StatusChangeInput,
   StatusUpdateInput,
   TempRequirement,
 } from '../schemas/orders.schema.js';
@@ -433,7 +435,8 @@ export async function getSummary(date: string | undefined, depot: Depot | undefi
     bucket.volume_m3 = round(bucket.volume_m3, 3);
   }
 
-  const chilledCapacity = env.REEFER_VEHICLE_COUNT * env.REEFER_VOLUME_M3 * env.CHILLED_TRIPS_PER_DAY;
+  const reefers = await getReeferCapacity(depot);
+  const chilledCapacity = reefers.volume_m3 * env.CHILLED_TRIPS_PER_DAY;
   return {
     date: day,
     depot: depot ?? null,
@@ -441,9 +444,10 @@ export async function getSummary(date: string | undefined, depot: Depot | undefi
     by_brand: byBrand,
     by_temperature: byTemp,
     chilled_capacity_reference: {
-      note: 'Planning assumption for the dashboard; Fleet & Directory owns real vehicle capacity',
-      reefer_vehicles: env.REEFER_VEHICLE_COUNT,
-      volume_m3_per_reefer_trip: env.REEFER_VOLUME_M3,
+      note: 'Total refrigerated volume available for the date; Fleet & Directory owns vehicle data',
+      source: reefers.source,
+      reefer_vehicles: reefers.vehicles,
+      reefer_volume_m3: reefers.volume_m3,
       chilled_trips_per_day: env.CHILLED_TRIPS_PER_DAY,
       capacity_m3: round(chilledCapacity, 3),
       demand_m3: byTemp.chilled.volume_m3,
@@ -621,6 +625,29 @@ export async function applyStatusBatch(actor: Actor, updates: StatusUpdateInput[
     }),
   );
   return { updated: updates.length, orders: orders.filter((o): o is OrderDto => o !== null) };
+}
+
+// Field roles may only report the steps they physically perform; dispatchers may set any
+// status the batch endpoint allows.
+const STATUS_BY_ROLE: Readonly<Partial<Record<Actor['role'], readonly OrderStatus[]>>> = {
+  loader: ['loaded'],
+  driver: ['out_for_delivery', 'delivered'],
+};
+
+/** Single-order status change (Execution & Sync). Same rules and code path as one status-batch entry. */
+export async function changeOrderStatus(actor: Actor, ref: string, change: StatusChangeInput): Promise<OrderDetailDto> {
+  if (actor.role !== 'dispatcher') {
+    const permitted = STATUS_BY_ROLE[actor.role] ?? [];
+    if (!permitted.includes(change.status)) {
+      throw appError('FORBIDDEN', `Role '${actor.role}' may not set status '${change.status}'`, {
+        role: actor.role,
+        status: change.status,
+        permitted,
+      });
+    }
+  }
+  await withTransaction((client) => applyStatusUpdateLocked(client, actor, { ...change, order_ref: ref }));
+  return loadDetail(ref);
 }
 
 export async function deferOrder(actor: Actor, ref: string, reasonCode: unknown, reasonNote: unknown): Promise<OrderDetailDto> {

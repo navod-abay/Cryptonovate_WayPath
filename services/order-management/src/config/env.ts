@@ -59,10 +59,8 @@ const envSchema = z.object({
   SEED_DEMO_DATA: boolFromString('true'),
   CUTOFF_JOB_INTERVAL_MS: intFromString('60000', 1000, 3_600_000),
 
-  // Reference chilled capacity used only by GET /summary to show demand vs. reefer supply.
-  // Fleet & Directory owns the real vehicle data; these are planning assumptions.
-  REEFER_VEHICLE_COUNT: intFromString('16', 0, 1000),
-  REEFER_VOLUME_M3: z.string().default('8').transform(Number).pipe(z.number().positive()),
+  // Chilled goods must arrive before 08:00, so a reefer realistically runs one chilled trip a day.
+  // Used by GET /summary (demand vs. refrigerated capacity); vehicle data itself comes from Fleet.
   CHILLED_TRIPS_PER_DAY: intFromString('1', 1, 2),
 });
 
