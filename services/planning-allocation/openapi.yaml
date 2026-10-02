@@ -9,6 +9,7 @@ servers:
   - url: http://localhost:3003
     description: Direct (local container)
 tags:
+  - name: Schedule
   - name: Planning
   - name: System
 
@@ -24,30 +25,373 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Health'
-  /optimize:
-    post:
-      tags: [Planning]
-      summary: Run route optimisation (placeholder)
+
+  /schedule/summary:
+    get:
+      tags: [Schedule]
+      summary: Schedule summary for both depots
+      description: Vehicles used, trips, fleet / weight / volume utilisation, total weight and volume, orders served and deferred, distance and fuel, per depot and in total.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Date'
       responses:
         '200':
-          description: Optimisation result
+          description: Summary for the day
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  status:
-                    type: string
-                    example: OPTIMIZED
-                  routesGenerated:
-                    type: integer
-                    example: 3
-                  estimatedFuelSavedPercent:
-                    type: number
-                    example: 14.5
+                $ref: '#/components/schemas/ScheduleSummary'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /depots/{depot}/schedule:
+    get:
+      tags: [Schedule]
+      summary: Schedule of one depot
+      description: Every vehicle with its trips (at most two) and the stops of each trip in visiting order.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Depot'
+        - $ref: '#/components/parameters/Date'
+      responses:
+        '200':
+          description: The depot's schedule
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DepotSchedule'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          description: Unknown depot
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /schedule/deferrals:
+    get:
+      tags: [Schedule]
+      summary: Orders deferred for the day, with the reason
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Date'
+        - name: depot
+          in: query
+          required: false
+          description: Only this depot's deferrals (case-insensitive). Both depots when omitted.
+          schema:
+            type: string
+            enum: [Peliyagoda, Kandy]
+      responses:
+        '200':
+          description: Deferred orders
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeferralList'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /planning-runs:
+    post:
+      tags: [Planning]
+      summary: Start planning tomorrow's schedule
+      description: Called by the nightly cron job. Queues a planning run and returns immediately; the run continues in the background. Plans tomorrow (Asia/Colombo) unless planDate is given. Only one run per plan date can be queued or running at a time.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StartPlanningRequest'
+      responses:
+        '202':
+          description: Planning run queued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlanningRun'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          description: A run for this plan date is already queued or running (returned in the body)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlanningRun'
 
 components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    Date:
+      name: date
+      in: query
+      required: false
+      description: Day to report on, YYYY-MM-DD (Asia/Colombo). Defaults to today.
+      schema:
+        type: string
+        format: date
+        example: '2026-10-02'
+    Depot:
+      name: depot
+      in: path
+      required: true
+      description: Depot name (case-insensitive)
+      schema:
+        type: string
+        enum: [Peliyagoda, Kandy]
+
+  responses:
+    BadRequest:
+      description: Invalid parameter or body
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
   schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          example: date must be YYYY-MM-DD
+    DepotSummary:
+      type: object
+      properties:
+        depot:
+          type: string
+          example: Peliyagoda
+        vehiclesAvailable:
+          type: integer
+        vehiclesUsed:
+          type: integer
+        trips:
+          type: integer
+        fleetUtilization:
+          type: number
+          description: Vehicles used / vehicles available (0-1)
+        weightUtilization:
+          type: number
+          description: Loaded weight / weight capacity of the trips run (0-1)
+        volumeUtilization:
+          type: number
+          description: Loaded volume / volume capacity of the trips run (0-1)
+        totalWeightKg:
+          type: number
+        totalVolumeM3:
+          type: number
+        ordersServed:
+          type: integer
+        ordersDeferred:
+          type: integer
+        totalDistanceKm:
+          type: number
+        fuelLitres:
+          type: number
+    ScheduleSummary:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+        depots:
+          type: array
+          items:
+            $ref: '#/components/schemas/DepotSummary'
+        totals:
+          $ref: '#/components/schemas/DepotSummary'
+    Stop:
+      type: object
+      properties:
+        sequence:
+          type: integer
+        orderRef:
+          type: string
+        outletId:
+          type: string
+        brand:
+          type: string
+          enum: [Fresh, Style, Tech]
+        temperature:
+          type: string
+          enum: [chilled, ambient]
+        weightKg:
+          type: number
+        volumeM3:
+          type: number
+        eta:
+          type: string
+          example: '04:18'
+        windowOpen:
+          type: string
+          example: '05:00'
+        windowClose:
+          type: string
+          example: '07:30'
+    Trip:
+      type: object
+      properties:
+        tripId:
+          type: string
+          example: VEH003-T1
+        tripNumber:
+          type: integer
+          enum: [1, 2]
+        brand:
+          type: string
+          enum: [Fresh, Style, Tech]
+        district:
+          type: string
+        departureTime:
+          type: string
+          example: '03:30'
+        returnTime:
+          type: string
+        durationMin:
+          type: integer
+          description: Booklet trip time (outbound + inter-stop + handling)
+        distanceKm:
+          type: number
+        fuelLitres:
+          type: number
+        weightKg:
+          type: number
+        volumeM3:
+          type: number
+        weightUtilization:
+          type: number
+        volumeUtilization:
+          type: number
+        stops:
+          type: array
+          items:
+            $ref: '#/components/schemas/Stop'
+    VehicleSchedule:
+      type: object
+      properties:
+        vehicleId:
+          type: string
+        type:
+          type: string
+          enum: [truck, van]
+        temperature:
+          type: string
+          enum: [reefer, ambient]
+        weightCapacityKg:
+          type: number
+        volumeCapacityM3:
+          type: number
+        trips:
+          type: array
+          items:
+            $ref: '#/components/schemas/Trip'
+    DepotSchedule:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+        depot:
+          type: string
+        planRunId:
+          type: string
+        vehicles:
+          type: array
+          items:
+            $ref: '#/components/schemas/VehicleSchedule'
+    DeferredOrder:
+      type: object
+      properties:
+        orderRef:
+          type: string
+        outletId:
+          type: string
+        depot:
+          type: string
+        district:
+          type: string
+        brand:
+          type: string
+        temperature:
+          type: string
+          enum: [chilled, ambient]
+        weightKg:
+          type: number
+        volumeM3:
+          type: number
+        orderDate:
+          type: string
+          format: date
+        timesDeferred:
+          type: integer
+          description: How many earlier days this order was already deferred
+        reason:
+          type: string
+          enum: [NO_REEFER_CAPACITY, NO_VEHICLE_CAPACITY, TIME_BUDGET_EXCEEDED, NO_VAN_AVAILABLE, EXCEEDS_LARGEST_VEHICLE, FUEL_QUOTA_EXHAUSTED]
+        reasonDetail:
+          type: string
+          example: All available reefers are fully booked within the 270-minute Fresh window.
+    DeferralList:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+        depot:
+          type: string
+        count:
+          type: integer
+        orders:
+          type: array
+          items:
+            $ref: '#/components/schemas/DeferredOrder'
+    StartPlanningRequest:
+      type: object
+      properties:
+        planDate:
+          type: string
+          format: date
+          description: Day to plan; defaults to tomorrow (Asia/Colombo). Must not be in the past.
+        trigger:
+          type: string
+          enum: [cron, manual]
+          default: cron
+    PlanningRun:
+      type: object
+      properties:
+        runId:
+          type: string
+          example: run_1d800738570d950e
+        planDate:
+          type: string
+          format: date
+        status:
+          type: string
+          enum: [QUEUED, RUNNING, COMPLETED, FAILED]
+        trigger:
+          type: string
+        requestedAt:
+          type: string
+          format: date-time
+        startedAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: string
+          format: date-time
+        error:
+          type: string
     Health:
       type: object
       properties:
