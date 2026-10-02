@@ -1,0 +1,7 @@
+node_modules/
+dist/
+dist-tests/
+.env
+
+# Local working notes — deliberately untracked
+NOTES.md
