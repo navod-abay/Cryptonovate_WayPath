@@ -3,7 +3,7 @@ import {
   DistrictTravel,
   ServiceAllowance,
   ApiResponse,
-} from '@waypoint/shared-types';
+} from '../contracts';
 import { pool } from '../db/pool';
 
 interface DistrictTravelRow {
