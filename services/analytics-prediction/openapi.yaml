@@ -1,0 +1,61 @@
+openapi: 3.0.3
+info:
+  title: Analytics & Prediction Service
+  version: 0.1.0
+  description: Delivery analytics and predictive ETA models.
+servers:
+  - url: http://localhost/api/analytics
+    description: Via API gateway
+  - url: http://localhost:3006
+    description: Direct (local container)
+tags:
+  - name: Analytics
+  - name: System
+
+paths:
+  /health:
+    get:
+      tags: [System]
+      summary: Health check
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+  /kpi:
+    get:
+      tags: [Analytics]
+      summary: Delivery KPIs (placeholder data)
+      responses:
+        '200':
+          description: KPI snapshot
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  onTimeDeliveryRate:
+                    type: number
+                    example: 98.4
+                  avgUnloadTimeMinutes:
+                    type: number
+                    example: 14.2
+                  predictedDelays:
+                    type: integer
+                    example: 2
+
+components:
+  schemas:
+    Health:
+      type: object
+      properties:
+        service:
+          type: string
+        status:
+          type: string
+          example: healthy
+        timestamp:
+          type: string
+          format: date-time
