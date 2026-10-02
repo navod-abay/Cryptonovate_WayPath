@@ -1,84 +1,327 @@
 openapi: 3.0.3
 info:
-  title: Execution Sync Service
-  version: 0.1.0
-  description: Real-time execution and telemetry sync.
+  title: Execution Sync Service API
+  version: 1.0.0
+  description: Real-time execution, warehouse loading, driver telemetry, offline sync engine, and store manager confirmation microservice.
 servers:
   - url: http://localhost/api/execution
-    description: Via API gateway
+    description: Via NGINX API Gateway
   - url: http://localhost:3005
-    description: Direct (local container)
+    description: Direct local container access
 tags:
-  - name: Execution
   - name: System
+  - name: Warehouse Loading
+  - name: Driver Execution
+  - name: Offline Sync
+  - name: Store Manager Confirmation
 
 paths:
   /health:
     get:
       tags: [System]
-      summary: Health check
+      summary: Health Check
       responses:
         '200':
           description: Service is healthy
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Health'
-  /telemetry:
+                type: object
+                properties:
+                  service:
+                    type: string
+                  status:
+                    type: string
+                  timestamp:
+                    type: string
+                    format: date-time
+
+  /trips/{tripId}/manifest:
+    get:
+      tags: [Warehouse Loading]
+      summary: Get LIFO Loading Manifest
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: tripId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: LIFO ordered loading manifest retrieved
+
+  /trips/{tripId}/shortfall:
     post:
-      tags: [Execution]
-      summary: Push a driver GPS telemetry point
+      tags: [Warehouse Loading]
+      summary: Record Item Shortfall or Damage
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: tripId
+          in: path
+          required: true
+          schema:
+            type: string
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [driverId, lat, lng]
+              required: [orderRef, sku]
+              properties:
+                orderRef:
+                  type: string
+                sku:
+                  type: string
+                missingQty:
+                  type: integer
+                  default: 0
+                damageFlag:
+                  type: boolean
+                  default: false
+                notes:
+                  type: string
+      responses:
+        '201':
+          description: Shortfall logged successfully
+
+  /trips/{tripId}/dispatch:
+    post:
+      tags: [Warehouse Loading]
+      summary: Complete Warehouse Manifest Dispatch
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: tripId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                loaderId:
+                  type: string
+                  format: uuid
+      responses:
+        '200':
+          description: Manifest completed and trip dispatched
+
+  /driver/active-route:
+    get:
+      tags: [Driver Execution]
+      summary: Get Active Route & Assigned Stops
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Active route details retrieved
+
+  /telemetry:
+    post:
+      tags: [Driver Execution]
+      summary: Push Driver GPS Telemetry Point
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [lat, lng]
               properties:
                 driverId:
                   type: string
-                  example: drv_1
+                vehicleId:
+                  type: string
                 lat:
                   type: number
                   minimum: -90
                   maximum: 90
-                  example: 6.9271
                 lng:
                   type: number
                   minimum: -180
                   maximum: 180
-                  example: 79.8612
+                speed:
+                  type: number
+                recordedAt:
+                  type: string
+                  format: date-time
       responses:
         '200':
-          description: Telemetry accepted
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                  driverId:
-                    type: string
-                  lat:
-                    type: number
-                  lng:
-                    type: number
-                  syncedAt:
-                    type: string
-                    format: date-time
+          description: Telemetry point logged
+
+  /stops/{stopId}/pod:
+    post:
+      tags: [Driver Execution]
+      summary: Record Proof of Delivery (POD)
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: stopId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [orderRef, podSignature]
+              properties:
+                routeId:
+                  type: string
+                orderRef:
+                  type: string
+                outletId:
+                  type: string
+                status:
+                  type: string
+                  enum: [delivered, partially_delivered, rejected, completed]
+                podSignature:
+                  type: string
+                notes:
+                  type: string
+                actualArrivalTime:
+                  type: string
+                  format: date-time
+                actualDepartureTime:
+                  type: string
+                  format: date-time
+                actualServiceDurationMin:
+                  type: integer
+      responses:
+        '201':
+          description: Proof of delivery recorded
+
+  /sync:
+    post:
+      tags: [Offline Sync]
+      summary: Bulk Sync Offline Telemetry & Delivery Events
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                events:
+                  type: array
+                  items:
+                    type: object
+                    required: [orderRef, offlineCapturedAt]
+                    properties:
+                      tripId:
+                        type: string
+                      orderRef:
+                        type: string
+                      outletId:
+                        type: string
+                      actualArrivalTime:
+                        type: string
+                        format: date-time
+                      actualDepartureTime:
+                        type: string
+                        format: date-time
+                      actualServiceDurationMin:
+                        type: integer
+                      status:
+                        type: string
+                        enum: [delivered, partially_delivered, rejected]
+                      podSignature:
+                        type: string
+                      offlineCapturedAt:
+                        type: string
+                        format: date-time
+                telemetry:
+                  type: array
+                  items:
+                    type: object
+                    required: [lat, lng]
+                    properties:
+                      driverId:
+                        type: string
+                      vehicleId:
+                        type: string
+                      lat:
+                        type: number
+                      lng:
+                        type: number
+                      speed:
+                        type: number
+                      recordedAt:
+                        type: string
+                        format: date-time
+      responses:
+        '200':
+          description: Bulk sync completed with timestamp conflict resolution
+
+  /orders/{orderRef}/confirm:
+    post:
+      tags: [Store Manager Confirmation]
+      summary: Store Manager Order Goods Confirmation
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: orderRef
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                notes:
+                  type: string
+      responses:
+        '200':
+          description: Order receipt confirmed
+
+  /orders/{orderRef}/dispute:
+    post:
+      tags: [Store Manager Confirmation]
+      summary: Store Manager Order Dispute Registration
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: orderRef
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [discrepancyType, description]
+              properties:
+                discrepancyType:
+                  type: string
+                description:
+                  type: string
+      responses:
+        '201':
+          description: Order dispute logged
 
 components:
-  schemas:
-    Health:
-      type: object
-      properties:
-        service:
-          type: string
-        status:
-          type: string
-          example: healthy
-        timestamp:
-          type: string
-          format: date-time
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
