@@ -57,13 +57,8 @@ func main() {
 		})
 	})
 
-	mux.HandleFunc("POST /optimize", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]any{
-			"status":                    "OPTIMIZED",
-			"routesGenerated":           3,
-			"estimatedFuelSavedPercent": 14.5,
-		})
-	})
+	api := &API{store: stubStore{}, runs: NewRunManager(stubPlanner{}, 30*time.Minute), now: time.Now}
+	api.routes(mux)
 
 	log.Printf("[%s] Microservice listening on port %s", serviceName, port)
 	log.Fatal(http.ListenAndServe(":"+port, cors(mux)))
