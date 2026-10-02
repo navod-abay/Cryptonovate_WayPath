@@ -1,17 +1,14 @@
-FROM node:20-alpine
-WORKDIR /app
+FROM golang:1.22-alpine AS build
+WORKDIR /src
 
-COPY package.json package-lock.json* ./
-COPY packages ./packages
-COPY services/planning-allocation ./services/planning-allocation
+COPY go.mod ./
+RUN go mod download
 
-RUN npm ci
+COPY . .
+RUN CGO_ENABLED=0 go build -o /out/planning-allocation .
 
-WORKDIR /app/packages/shared-types
-RUN npm run build
-
-WORKDIR /app/services/planning-allocation
-RUN npm run build
+FROM alpine:3.20
+COPY --from=build /out/planning-allocation /usr/local/bin/planning-allocation
 
 EXPOSE 3003
-CMD ["npm", "run", "dev"]
+CMD ["planning-allocation"]
