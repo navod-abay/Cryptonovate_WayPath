@@ -16,7 +16,7 @@ Boot order: connect → assert schema → seed → listen → start the cutoff t
 
 | Data | When | Controlled by |
 |---|---|---|
-| **120 outlets** (`outlets_ref`): a snapshot of the real `data/outlets.csv`, the same file Fleet & Directory loads, so both agree | every boot; inserted, or corrected if the master attributes drifted. Fairness counters are never overwritten | always on while `OUTLET_SOURCE=local`, because orders cannot be placed without outlets |
+| **Outlets** (`outlets_ref`): copied from Fleet & Directory's `outlets` table in the database | every boot, then every 5 minutes; inserted, or corrected if the source changed. Fairness counters are never overwritten | always on; the service will not start if the `outlets` table is missing |
 | **Demo orders** (~1,700): 2 weeks of history, a live board for today, a peak day tomorrow whose Peliyagoda chilled demand is ~1.4× the real reefer capacity (9 reefers, 207.5 m³), at-risk outlets, one `draft` on OUT001. Orders are generated (the dataset has no order file for the live system); outlets and vehicle IDs are real | **once per database**, guarded by a `service_jobs('seed_demo','v1')` row | `SEED_DEMO_DATA` (default `true`) |
 
 Seed data is deterministic (fixed PRNG seed) and dated relative to the day it ran. Because it is
@@ -27,8 +27,8 @@ does not delete existing demo orders, and turning it back on does not re-date th
 
 ```bash
 cp .env.example .env                                  # once, from the repo root
-docker compose up -d --build postgres auth-rbac order-management
-docker compose logs order-management                  # expect "Demo orders seeded: N orders."
+docker compose up -d --build postgres auth-rbac fleet-directory order-management
+docker compose logs order-management                  # expect "outlets_ref synced from Fleet's outlets table" and "Demo orders seeded"
 curl localhost:3002/health                            # direct
 curl localhost/api/orders/health                      # through the gateway (needs the gateway up)
 ```
@@ -61,20 +61,22 @@ docker compose run --rm -d --no-deps --name om_empty -p 3102:3102 \
 curl localhost:3102/health
 ```
 
-Without demo data, `npm run verify` passes **46/48**. Scenario 42 (the over-capacity peak day) and
+Without demo data, `npm run verify` passes **47/49**. Scenario 42 (the over-capacity peak day) and
 scenario 43 (pagination over 25+ rows) need the demo orders.
 
 ### Outside Docker (local Node)
 
 ```bash
-cd services/order-management && npm install && npm run build
-DATABASE_URL=postgres://postgres:postgres_password@localhost:5432/delivery_db SEED_DEMO_DATA=false npm start
-# or: npm run dev   (ts-node-dev, auto-restart)
+cd services/order-management && npm install
+cp .env.example .env        # then fill in PORT, DATABASE_URL, JWT_ACCESS_SECRET, FLEET_SERVICE_URL
+npm run dev                 # tsx watch, auto-restart
 ```
 
-If Postgres is also installed natively on Windows, it already owns `localhost:5432`, and a local run
-connects to **it** instead of the container (symptom: `database "…" does not exist`). Stop the
-native service, or run the service inside compose as shown above.
+Nothing is assumed: the service refuses to start and names each required setting that is missing.
+
+If Postgres is also installed natively on Windows, it may already own the port your `DATABASE_URL`
+points at, and a local run then connects to **it** instead of the container (symptom:
+`database "…" does not exist`). Stop the native service, or run the service inside compose.
 
 ### Troubleshooting
 
@@ -90,9 +92,9 @@ native service, or run the service inside compose as shown above.
 
 | Where | URL |
 |---|---|
-| Swagger UI served by this service | `http://localhost:3002/api/orders/docs` (gateway: `http://localhost/api/orders/docs`) |
-| Raw spec | `http://localhost:3002/api/orders/openapi.json` |
-| Platform-wide Swagger UI (all services) | `http://localhost:8080`, started with the compose `dev` profile; it reads `openapi.yaml` |
+| Swagger UI served by this service | `<service or gateway origin>/api/orders/docs` |
+| Raw spec | `<service or gateway origin>/api/orders/openapi.json` |
+| Platform-wide Swagger UI (all services) | started with the compose `dev` profile; it reads `openapi.yaml`. Set `baseUrl` in its Servers box to the origin you are testing |
 
 Every operation has named request-body examples, documented headers (`Authorization`,
 `Idempotency-Key`, `X-Test-Now`), a success example, and one example per error code.
@@ -104,18 +106,41 @@ The spec is code-first. `src/docs/openapi.ts` builds it from the same Zod schema
 requests, and `openapi.yaml` is generated from it with `npm run openapi`. A unit test fails if a
 route is added without documenting it, or if any request or response lacks an example.
 
-## Reference data
+## Reference data (dependency on Fleet & Directory)
 
-Outlets, vehicles and holidays come from the challenge datasets in `/data`:
+Fleet & Directory owns outlets and vehicles. Order Management holds no copy of its own: there are
+no embedded data files and no fallbacks.
 
-- `src/seed/outlets.fixture.ts` is a snapshot of `outlets.csv`.
-- `src/seed/fleet.fixture.ts` is a snapshot of `vehicles.csv`.
-- `src/domain/holidays.ts` lists the closed days from `calendar.csv`. That file ends on
-  2026-06-28; later holidays go in `HOLIDAY_DATES`.
+| Data | Where it comes from | Used for |
+|---|---|---|
+| Outlets | Fleet's `outlets` table in the shared database (loaded from `data/outlets.csv` by `infrastructure/postgres-init/02-init-fleet.sql`) | brand, depot, district, dock, parking and delivery window when an order is created, and the outlet fields on `GET /confirmed` |
+| Vehicles | Fleet's HTTP API, `GET /api/fleet/vehicles` | refrigerated capacity on `GET /summary`; vehicle IDs in the demo seed |
 
-Snapshots are used because the Docker build context is this folder only, so the CSVs are not
-reachable at runtime. `GET /summary` reads live refrigerated capacity from Fleet's `vehicles` table
-when it exists in the shared database, and falls back to the snapshot otherwise.
+Outlets:
+
+- **`outlets_ref` is our working copy**, filled from Fleet's table by one SQL statement at boot and
+  every 5 minutes. It exists because the fairness counters (`deferred_yesterday`,
+  `days_since_last_served`) have no place in Fleet's table, and orders reference it by foreign key.
+- **An outlet added to Fleet's table works immediately.** If an order names an outlet that has not
+  been copied yet, the table is checked before the request is rejected.
+- **Rows that would break our constraints are skipped and reported**: unknown brand, depot, dock
+  or parking value, or a missing delivery window.
+- **The mall access range** (`"10:00-12:00"` in Fleet) is kept as a yes/no flag, because it always
+  equals the outlet's delivery window.
+- **If the `outlets` table is missing, the service will not start.** It prints which init script
+  creates it. `GET /health` shows when outlets were last synced under `reference_data.outlets`.
+
+Vehicles:
+
+- **Status is live.** A reefer marked `in_workshop` in Fleet drops out of `/summary` capacity
+  within 30 seconds (the cache time).
+- **If Fleet is unreachable, capacity is reported as unavailable**: `available: false` and null
+  figures. Nothing is estimated. Orders are not affected.
+- **The demo seed needs Fleet's vehicles.** If Fleet is not up at first boot, the seed waits and
+  retries every 15 seconds until it is.
+
+Holidays come from `src/domain/holidays.ts`, the closed days in `calendar.csv`. That file ends on
+2026-06-28; later holidays go in `HOLIDAY_DATES`.
 
 ## Database migration
 
@@ -171,15 +196,31 @@ Deferral reason codes: `CAPACITY_WEIGHT`, `CAPACITY_VOLUME`, `NO_REEFER_AVAILABL
 
 ## Configuration
 
+All configuration comes from the environment (`docker-compose.yml`, the host, or a local `.env`;
+template in [.env.example](.env.example)). Addresses, ports and secrets have **no defaults in
+code**, so a hosted deployment can never silently point at a development address.
+
+Required — the service refuses to start without these:
+
+| Var | Purpose |
+|---|---|
+| `PORT` | port to listen on |
+| `DATABASE_URL` | PostgreSQL connection string |
+| `JWT_ACCESS_SECRET` | must equal auth-rbac's access-token secret |
+| `FLEET_SERVICE_URL` | base URL of Fleet & Directory (vehicle data), without a path |
+
+Optional:
+
 | Var | Default | Purpose |
 |---|---|---|
-| `PORT` | `3002` | |
-| `DATABASE_URL` | `postgres://postgres:postgres_password@postgres:5432/delivery_db` | |
-| `JWT_ACCESS_SECRET` | `waypoint_default_jwt_access_secret_key_2026` | must match auth-rbac |
-| `ORDER_CUTOFF_HOUR` / `BUSINESS_TZ` | `16` / `Asia/Colombo` | |
+| `NODE_ENV` | `development` | `production` disables the `X-Test-Now` test clock |
+| `CORS_ALLOWED_ORIGINS` | empty (any origin) | comma-separated browser origins allowed to call the API |
+| `FLEET_TIMEOUT_MS` | `3000` | per-request timeout for Fleet calls |
+| `FLEET_BOOT_ATTEMPTS` / `FLEET_RETRY_DELAY_MS` | `5` / `2000` | how long the demo seed waits for Fleet at boot before retrying in the background |
+| `OUTLET_REFRESH_INTERVAL_MS` | `300000` | how often `outlets_ref` is re-copied from Fleet's table |
+| `ORDER_CUTOFF_HOUR` / `BUSINESS_TZ` | `16` / `Asia/Colombo` | ordering cutoff |
 | `NON_OPERATING_WEEKDAYS` / `HOLIDAY_DATES` | `0` / empty | operating calendar |
 | `MAX_DEFERRALS` / `AT_RISK_DAYS` | `3` / `3` | |
-| `OUTLET_SOURCE` / `FLEET_SERVICE_URL` | `local` / `http://fleet-directory:3004` | outlet directory backend |
 | `SEED_DEMO_DATA` | `true` | seed demo orders once |
 | `CUTOFF_JOB_INTERVAL_MS` | `60000` | cutoff timer tick |
 | `CHILLED_TRIPS_PER_DAY` | `1` | chilled trips a reefer can make before the 08:00 deadline; used by `/summary` |
@@ -188,16 +229,21 @@ Deferral reason codes: `CAPACITY_WEIGHT`, `CAPACITY_VOLUME`, `NO_REEFER_AVAILABL
 
 ```bash
 npm test              # unit tests (node:test): calendar + dataset holidays, cutoff table, status machine,
-                      # rollups, refs, reasons, dataset snapshots, and route-vs-OpenAPI coverage
-npm run verify        # 48 endpoint scenarios against the running stack
+                      # rollups, refs, reasons, Fleet vehicle mapping, and route-vs-OpenAPI coverage
+npm run verify        # 49 endpoint scenarios against a running stack
 npm run openapi       # regenerate openapi.yaml from src/docs/openapi.ts
 npm run openapi:check # fail if openapi.yaml is stale
 ```
 
-`verify` writes its orders onto a synthetic far-future week (unique per run), and freezes the
-clock with the `X-Test-Now` header, which requires `NODE_ENV !== 'production'`. It logs in with the
-seeded accounts (`Password123!`). If auth-rbac is down (see NOTES.md, known issue 1), run
-`AUTH_MODE=mint npm run verify`. That signs dev tokens with the shared secret and marks scenario 2
-as SKIP.
+`verify` needs to be told where the stack is. Copy [.env.verify.example](.env.verify.example) to
+`.env.verify` (git-ignored) and set `BASE_URL` and `AUTH_URL`, or pass them in the environment. It
+stops with a message if they are missing.
+
+It writes its orders onto a synthetic far-future week (unique per run), and freezes the clock with
+the `X-Test-Now` header, which requires `NODE_ENV !== 'production'`. It logs in with the seeded
+accounts. If auth-rbac is down, set `AUTH_MODE=mint` and `JWT_ACCESS_SECRET`: it then signs dev
+tokens itself and marks scenario 2 as SKIP.
+
+Unit tests and `npm run openapi` load [.env.test](.env.test), which holds placeholder values only.
 
 See [NOTES.md](NOTES.md) for deviations from the plan and issues found elsewhere in the repo.

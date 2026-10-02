@@ -1,6 +1,4 @@
-import { env } from '../config/env.js';
 import { pool, type Queryable } from '../db/pool.js';
-import { appError } from '../domain/errors.js';
 import type { Brand, Depot, DockType, ParkingConstraint } from '../schemas/orders.schema.js';
 
 export interface OutletRef {
@@ -19,9 +17,11 @@ export interface OutletRef {
 }
 
 /**
- * Where outlet master data comes from. `local` reads this service's outlets_ref mirror;
- * `http` will delegate to Fleet & Directory once it exposes outlets. The optional `db`
- * lets local writes join the caller's transaction.
+ * Reads and fairness-counter writes against outlets_ref, this service's local copy of the
+ * outlet directory. Fleet & Directory owns the master data in its `outlets` table (same
+ * database); syncOutletsFromDirectory() below copies it across. The copy exists because the
+ * fairness counters have no home in Fleet's table and orders reference it by foreign key. The optional `db` lets writes join the
+ * caller's transaction.
  */
 export interface OutletDirectory {
   findById(outletId: string, db?: Queryable): Promise<OutletRef | null>;
@@ -73,46 +73,86 @@ export class LocalOutletDirectory implements OutletDirectory {
   }
 }
 
-/**
- * Placeholder for when Fleet & Directory owns outlets. Reads are delegated over HTTP;
- * fairness-counter writes are not yet part of Fleet's contract, so they fail loudly
- * rather than silently dropping audit-relevant state.
- */
-export class HttpOutletDirectory implements OutletDirectory {
-  constructor(private readonly baseUrl: string) {}
+export const outletDirectory: OutletDirectory = new LocalOutletDirectory();
 
-  async findById(outletId: string): Promise<OutletRef | null> {
-    const url = `${this.baseUrl.replace(/\/$/, '')}/outlets/${encodeURIComponent(outletId)}`;
-    let res: Response;
-    try {
-      res = await fetch(url, { signal: AbortSignal.timeout(3000) });
-    } catch (err) {
-      console.error(`❌ Fleet & Directory unreachable at ${url}:`, err);
-      throw appError('DB_UNAVAILABLE', 'Outlet directory (Fleet & Directory) is unavailable');
-    }
-    if (res.status === 404) return null;
-    if (!res.ok) {
-      throw appError('DB_UNAVAILABLE', `Outlet directory returned HTTP ${res.status}`);
-    }
-    const body = (await res.json()) as { data?: OutletRef } | OutletRef;
-    return 'data' in body && body.data ? body.data : (body as OutletRef);
-  }
-
-  async markDeferred(): Promise<void> {
-    throw appError('NOT_IMPLEMENTED', 'OUTLET_SOURCE=http does not yet support fairness-counter writes');
-  }
-
-  async markServed(): Promise<void> {
-    throw appError('NOT_IMPLEMENTED', 'OUTLET_SOURCE=http does not yet support fairness-counter writes');
-  }
-
-  async incrementDaysSinceServed(): Promise<number> {
-    throw appError('NOT_IMPLEMENTED', 'OUTLET_SOURCE=http does not yet support fairness-counter writes');
-  }
+export interface OutletMaster {
+  outlet_id: string;
+  brand: Brand;
+  district: string;
+  depot: Depot;
+  dock_type: DockType;
+  parking_constraint: ParkingConstraint;
+  mall_window: boolean;
+  window_open_time: string;
+  window_close_time: string;
 }
 
-export const outletDirectory: OutletDirectory =
-  env.OUTLET_SOURCE === 'http' ? new HttpOutletDirectory(env.FLEET_SERVICE_URL) : new LocalOutletDirectory();
+/** Fleet & Directory's outlet table in the shared database, and the columns read from it. */
+export const OUTLET_DIRECTORY_TABLE = 'outlets';
+export const OUTLET_DIRECTORY_COLUMNS = [
+  'outlet_id', 'brand', 'district', 'depot', 'dock_type', 'parking_constraint', 'mall_window',
+  'window_open_time', 'window_close_time',
+] as const;
+
+// A source row is copied only if it satisfies outlets_ref's own constraints; anything else is
+// counted as skipped and reported, never written.
+const VALID_SOURCE_ROW = `
+      o.brand IN ('Fresh','Style','Tech')
+  AND o.depot IN ('Peliyagoda','Kandy')
+  AND o.dock_type IN ('rear_dock','street','mall_bay')
+  AND o.parking_constraint IN ('normal','van_only','mall_dock')
+  AND o.window_open_time IS NOT NULL
+  AND o.window_close_time IS NOT NULL
+  AND o.window_close_time > o.window_open_time`;
+
+/**
+ * Copies outlet master data from Fleet & Directory's `outlets` table into outlets_ref, in the
+ * database, with one statement. Existing rows are corrected when the source changed; fairness
+ * counters are never touched. Pass an outlet id to copy just that outlet.
+ *
+ * Fleet stores the mall access range as text ("10:00-12:00") or NULL; outlets_ref keeps a
+ * flag, because the range always equals the outlet's delivery window.
+ */
+export async function syncOutletsFromDirectory(
+  outletId?: string,
+  db: Queryable = pool,
+): Promise<{ changed: number; total: number; skipped: number }> {
+  const { rowCount } = await db.query(
+    `INSERT INTO outlets_ref (outlet_id, brand, district, depot, dock_type, parking_constraint, mall_window,
+                              window_open_time, window_close_time)
+     SELECT o.outlet_id, o.brand, o.district, o.depot, o.dock_type, o.parking_constraint,
+            NULLIF(btrim(o.mall_window), '') IS NOT NULL,
+            o.window_open_time, o.window_close_time
+       FROM ${OUTLET_DIRECTORY_TABLE} o
+      WHERE ($1::varchar IS NULL OR o.outlet_id = $1)
+        AND ${VALID_SOURCE_ROW}
+     ON CONFLICT (outlet_id) DO UPDATE SET
+       brand = EXCLUDED.brand, district = EXCLUDED.district, depot = EXCLUDED.depot,
+       dock_type = EXCLUDED.dock_type, parking_constraint = EXCLUDED.parking_constraint,
+       mall_window = EXCLUDED.mall_window, window_open_time = EXCLUDED.window_open_time,
+       window_close_time = EXCLUDED.window_close_time, updated_at = now()
+     WHERE (outlets_ref.brand, outlets_ref.district, outlets_ref.depot, outlets_ref.dock_type,
+            outlets_ref.parking_constraint, outlets_ref.mall_window, outlets_ref.window_open_time,
+            outlets_ref.window_close_time)
+           IS DISTINCT FROM
+           (EXCLUDED.brand, EXCLUDED.district, EXCLUDED.depot, EXCLUDED.dock_type,
+            EXCLUDED.parking_constraint, EXCLUDED.mall_window, EXCLUDED.window_open_time,
+            EXCLUDED.window_close_time)`,
+    [outletId ?? null],
+  );
+  const { rows } = await db.query<{ total: number; valid: number }>(
+    `SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE ${VALID_SOURCE_ROW})::int AS valid
+       FROM ${OUTLET_DIRECTORY_TABLE} o
+      WHERE ($1::varchar IS NULL OR o.outlet_id = $1)`,
+    [outletId ?? null],
+  );
+  return { changed: rowCount ?? 0, total: rows[0].total, skipped: rows[0].total - rows[0].valid };
+}
+
+export async function listOutlets(db: Queryable = pool): Promise<OutletRef[]> {
+  const { rows } = await db.query<OutletRef>(`SELECT ${OUTLET_COLUMNS} FROM outlets_ref ORDER BY outlet_id`);
+  return rows;
+}
 
 export async function clearDeferredForServed(servedOn: string, db: Queryable): Promise<number> {
   const { rowCount } = await db.query(

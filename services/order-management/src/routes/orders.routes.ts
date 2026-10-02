@@ -5,6 +5,7 @@ import { pingDatabase } from '../db/pool.js';
 import { requireRole, verifyToken } from '../middleware/authGuard.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { resolveCreateOutlet } from '../middleware/outletScope.js';
+import { referenceDataStatus } from '../services/referenceData.js';
 import { validateQuery, validateRequest } from '../middleware/validate.js';
 import {
   AtRiskQuerySchema,
@@ -33,6 +34,8 @@ router.get(
       service: 'order-management',
       status: dbUp ? 'healthy' : 'degraded',
       db: dbUp ? 'up' : 'down',
+      // Informational: when outlets were last copied from Fleet & Directory's table.
+      reference_data: referenceDataStatus(),
       timestamp: new Date().toISOString(),
     });
   }),

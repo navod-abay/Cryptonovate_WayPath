@@ -28,8 +28,12 @@ declare global {
 /**
  * Middleware: Verifies the Access JWT token signature statelessly
  */
-export const verifyToken = (jwtSecret?: string) => {
-  const secret = jwtSecret || process.env.JWT_ACCESS_SECRET || 'waypoint_default_jwt_access_secret_key_2026';
+export const verifyToken = (jwtSecret: string) => {
+  // No fallback secret: a baked-in default would let anyone who has read the repo mint tokens.
+  if (!jwtSecret) {
+    throw new Error('verifyToken requires the JWT access secret');
+  }
+  const secret = jwtSecret;
 
   return (req: Request, res: Response, next: NextFunction): void => {
     const authHeader = req.headers.authorization;
