@@ -16,8 +16,8 @@ Boot order: connect → assert schema → seed → listen → start the cutoff t
 
 | Data | When | Controlled by |
 |---|---|---|
-| **120 outlets** (`outlets_ref`: Fresh OUT001–080, Style OUT081–105, Tech OUT106–120) | every boot, `ON CONFLICT DO NOTHING` | always on while `OUTLET_SOURCE=local`, because orders cannot be placed without outlets |
-| **Demo orders** (~1,700): 2 weeks of history, a live board for today, an over-capacity peak day tomorrow, at-risk outlets, one `draft` on OUT001 | **once per database**, guarded by a `service_jobs('seed_demo','v1')` row | `SEED_DEMO_DATA` (default `true`) |
+| **120 outlets** (`outlets_ref`): a snapshot of the real `data/outlets.csv`, the same file Fleet & Directory loads, so both agree | every boot; inserted, or corrected if the master attributes drifted. Fairness counters are never overwritten | always on while `OUTLET_SOURCE=local`, because orders cannot be placed without outlets |
+| **Demo orders** (~1,700): 2 weeks of history, a live board for today, a peak day tomorrow whose Peliyagoda chilled demand is ~1.4× the real reefer capacity (9 reefers, 207.5 m³), at-risk outlets, one `draft` on OUT001. Orders are generated (the dataset has no order file for the live system); outlets and vehicle IDs are real | **once per database**, guarded by a `service_jobs('seed_demo','v1')` row | `SEED_DEMO_DATA` (default `true`) |
 
 Seed data is deterministic (fixed PRNG seed) and dated relative to the day it ran. Because it is
 one-shot, **the flag only matters on a database that has not been seeded yet**. Turning it off later
@@ -61,7 +61,7 @@ docker compose run --rm -d --no-deps --name om_empty -p 3102:3102 \
 curl localhost:3102/health
 ```
 
-Without demo data, `npm run verify` passes **43/45**. Scenario 42 (the over-capacity peak day) and
+Without demo data, `npm run verify` passes **46/48**. Scenario 42 (the over-capacity peak day) and
 scenario 43 (pagination over 25+ rows) need the demo orders.
 
 ### Outside Docker (local Node)
@@ -85,6 +85,37 @@ native service, or run the service inside compose as shown above.
 | auth-rbac: `column "full_name" of relation "users" does not exist` | Known repo issue with `01-seed.sql`. See NOTES.md, issue 1. |
 | `env file … .env not found` | `cp .env.example .env` at the repo root. |
 | verify scenarios 4–7 fail | `NODE_ENV=production` disables the `X-Test-Now` clock. `.env` must set `development`. |
+
+## Swagger / OpenAPI
+
+| Where | URL |
+|---|---|
+| Swagger UI served by this service | `http://localhost:3002/api/orders/docs` (gateway: `http://localhost/api/orders/docs`) |
+| Raw spec | `http://localhost:3002/api/orders/openapi.json` |
+| Platform-wide Swagger UI (all services) | `http://localhost:8080`, started with the compose `dev` profile; it reads `openapi.yaml` |
+
+Every operation has named request-body examples, documented headers (`Authorization`,
+`Idempotency-Key`, `X-Test-Now`), a success example, and one example per error code.
+
+To try a call: log in through auth-rbac, press **Authorize**, paste the access token, pick an
+example from the dropdown, then **Execute**.
+
+The spec is code-first. `src/docs/openapi.ts` builds it from the same Zod schemas that validate
+requests, and `openapi.yaml` is generated from it with `npm run openapi`. A unit test fails if a
+route is added without documenting it, or if any request or response lacks an example.
+
+## Reference data
+
+Outlets, vehicles and holidays come from the challenge datasets in `/data`:
+
+- `src/seed/outlets.fixture.ts` is a snapshot of `outlets.csv`.
+- `src/seed/fleet.fixture.ts` is a snapshot of `vehicles.csv`.
+- `src/domain/holidays.ts` lists the closed days from `calendar.csv`. That file ends on
+  2026-06-28; later holidays go in `HOLIDAY_DATES`.
+
+Snapshots are used because the Docker build context is this folder only, so the CSVs are not
+reachable at runtime. `GET /summary` reads live refrigerated capacity from Fleet's `vehicles` table
+when it exists in the shared database, and falls back to the snapshot otherwise.
 
 ## Database migration
 
@@ -122,6 +153,7 @@ work with or without the `/api/orders` prefix. Every route except `/health` requ
 | GET | `/api/orders/:ref/history` | store_manager (own), dispatcher | Full audit trail, oldest first |
 | GET | `/api/orders/confirmed?date=&depot=` | dispatcher, loader | **Planning contract**: confirmed pool with outlet access fields and totals |
 | PATCH | `/api/orders/status-batch` | dispatcher | Planning write-back (≤500 updates, all-or-nothing) |
+| PATCH | `/api/orders/:ref/status` | loader (`loaded`), driver (`out_for_delivery`, `delivered`), dispatcher | Single status change from the dock or the road |
 | POST | `/api/orders/:ref/defer` | dispatcher | Single deferral with a `reason_code` |
 | GET | `/api/orders/at-risk?depot=&min_deferrals=&min_days=` | dispatcher | Outlets at risk of a repeat skip |
 | GET | `/api/orders/summary?date=&depot=` | dispatcher | Counts by status/brand, chilled vs. ambient, reefer capacity check |
@@ -150,13 +182,16 @@ Deferral reason codes: `CAPACITY_WEIGHT`, `CAPACITY_VOLUME`, `NO_REEFER_AVAILABL
 | `OUTLET_SOURCE` / `FLEET_SERVICE_URL` | `local` / `http://fleet-directory:3004` | outlet directory backend |
 | `SEED_DEMO_DATA` | `true` | seed demo orders once |
 | `CUTOFF_JOB_INTERVAL_MS` | `60000` | cutoff timer tick |
-| `REEFER_VEHICLE_COUNT` / `REEFER_VOLUME_M3` / `CHILLED_TRIPS_PER_DAY` | `16` / `8` / `1` | `/summary` capacity reference |
+| `CHILLED_TRIPS_PER_DAY` | `1` | chilled trips a reefer can make before the 08:00 deadline; used by `/summary` |
 
 ## Tests
 
 ```bash
-npm test          # unit tests (node:test): calendar, cutoff table, status machine, rollups, refs, reasons
-npm run verify    # 45 endpoint scenarios against the running stack
+npm test              # unit tests (node:test): calendar + dataset holidays, cutoff table, status machine,
+                      # rollups, refs, reasons, dataset snapshots, and route-vs-OpenAPI coverage
+npm run verify        # 48 endpoint scenarios against the running stack
+npm run openapi       # regenerate openapi.yaml from src/docs/openapi.ts
+npm run openapi:check # fail if openapi.yaml is stale
 ```
 
 `verify` writes its orders onto a synthetic far-future week (unique per run), and freezes the

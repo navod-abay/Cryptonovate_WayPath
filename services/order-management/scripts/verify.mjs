@@ -187,7 +187,7 @@ const batch = (updates, now) => call('PATCH', '/status-batch', { token: tokens.d
 async function deliver(ref) {
   expectStatus(
     await batch([
-      { order_ref: ref, status: 'allocated', vehicle_id: 'VEH-021', trip_id: 1 },
+      { order_ref: ref, status: 'allocated', vehicle_id: 'VEH001', trip_id: 1 },
       { order_ref: ref, status: 'loaded' },
       { order_ref: ref, status: 'out_for_delivery' },
       { order_ref: ref, status: 'delivered' },
@@ -326,7 +326,7 @@ async function main() {
 
   await scenario(14, 'Edit items on an allocated order → 409 ORDER_NOT_EDITABLE', async () => {
     ctx.allocated = await confirmedOrder(tokens.dispatcher, 'OUT060', 'ambient', WED);
-    expectStatus(await batch([{ order_ref: ctx.allocated, status: 'allocated', vehicle_id: 'VEH-030', trip_id: 2 }]), 200);
+    expectStatus(await batch([{ order_ref: ctx.allocated, status: 'allocated', vehicle_id: 'VEH030', trip_id: 2 }]), 200);
     expectStatus(
       await call('PUT', `/${ctx.allocated}/items`, { token: tokens.dispatcher, body: { items: AMBIENT_ITEMS.slice(0, 1) }, now: PRE_CUTOFF }),
       409,
@@ -384,13 +384,13 @@ async function main() {
   await scenario(19, 'PATCH /status-batch → 2× allocated persists vehicle/trip and writes events', async () => {
     const data = expectStatus(
       await batch([
-        { order_ref: ctx.planA, status: 'allocated', vehicle_id: 'VEH-012', trip_id: 1 },
-        { order_ref: ctx.planB, status: 'allocated', vehicle_id: 'VEH-003', trip_id: 1 },
+        { order_ref: ctx.planA, status: 'allocated', vehicle_id: 'VEH012', trip_id: 1 },
+        { order_ref: ctx.planB, status: 'allocated', vehicle_id: 'VEH003', trip_id: 1 },
       ]),
       200,
     );
     check(data.updated === 2, `updated ${data.updated}`);
-    for (const [ref, veh] of [[ctx.planA, 'VEH-012'], [ctx.planB, 'VEH-003']]) {
+    for (const [ref, veh] of [[ctx.planA, 'VEH012'], [ctx.planB, 'VEH003']]) {
       const o = await getOrder(ref);
       check(o.status === 'allocated' && o.vehicle_id === veh && o.trip_id === 1, `${ref} not allocated to ${veh}`);
       const ev = await history(ref);
@@ -400,7 +400,7 @@ async function main() {
 
   await scenario(20, 'PATCH /status-batch with trip_id 3 → 422, nothing applied', async () => {
     ctx.c = await confirmedOrder(tokens.dispatcher, 'OUT054', 'ambient', TUE);
-    const res = await batch([{ order_ref: ctx.c, status: 'allocated', vehicle_id: 'VEH-040', trip_id: 3 }]);
+    const res = await batch([{ order_ref: ctx.c, status: 'allocated', vehicle_id: 'VEH040', trip_id: 3 }]);
     expectStatus(res, 422);
     check(res.body.error.details?.failures?.[0]?.order_ref === ctx.c, 'failure must name the order');
     const o = await getOrder(ctx.c);
@@ -409,8 +409,8 @@ async function main() {
 
   await scenario(21, 'PATCH /status-batch valid + unknown ref → 422 and the valid one is NOT applied', async () => {
     const res = await batch([
-      { order_ref: ctx.c, status: 'allocated', vehicle_id: 'VEH-040', trip_id: 1 },
-      { order_ref: 'ORD-00000000-99999', status: 'allocated', vehicle_id: 'VEH-041', trip_id: 1 },
+      { order_ref: ctx.c, status: 'allocated', vehicle_id: 'VEH040', trip_id: 1 },
+      { order_ref: 'ORD-00000000-99999', status: 'allocated', vehicle_id: 'VEH041', trip_id: 1 },
     ]);
     expectStatus(res, 422);
     const failures = res.body.error.details?.failures ?? [];
@@ -641,7 +641,48 @@ async function main() {
     );
     check(d.hack === undefined && d.priority === undefined, 'unknown fields must not be echoed or stored');
   });
+
+  await scenario(46, 'PATCH /:ref/status: loader loads, driver takes out and delivers; roles recorded', async () => {
+    ctx.g = await confirmedOrder(tokens.dispatcher, 'OUT060', 'ambient', THU);
+    expectStatus(await call('PATCH', `/${ctx.g}/status`, { token: tokens.dispatcher, body: { status: 'allocated', vehicle_id: 'VEH020', trip_id: 2 } }), 200);
+    expectStatus(await call('PATCH', `/${ctx.g}/status`, { token: tokens.loader, body: { status: 'loaded' } }), 200);
+    expectStatus(await call('PATCH', `/${ctx.g}/status`, { token: tokens.driver, body: { status: 'out_for_delivery' } }), 200);
+    const data = expectStatus(await call('PATCH', `/${ctx.g}/status`, { token: tokens.driver, body: { status: 'delivered', reason_note: 'POD signed' } }), 200);
+    check(data.status === 'delivered' && data.vehicle_id === 'VEH020' && data.trip_id === 2, `unexpected order ${data.status} ${data.vehicle_id}`);
+    const roles = (await history(ctx.g)).slice(-4).map((e) => `${e.to_status}:${e.actor_role}`);
+    check(
+      JSON.stringify(roles) === JSON.stringify(['allocated:dispatcher', 'loaded:loader', 'out_for_delivery:driver', 'delivered:driver']),
+      `events ${roles}`,
+    );
+  });
+
+  await scenario(47, 'PATCH /:ref/status enforces role limits and the state machine', async () => {
+    const o = await confirmedOrder(tokens.dispatcher, 'OUT060', 'ambient', SAT);
+    expectStatus(await call('PATCH', `/${o}/status`, { token: tokens.driver, body: { status: 'allocated', vehicle_id: 'VEH020', trip_id: 1 } }), 403, 'FORBIDDEN');
+    expectStatus(await call('PATCH', `/${o}/status`, { token: tokens.loader, body: { status: 'delivered' } }), 403, 'FORBIDDEN');
+    expectStatus(await call('PATCH', `/${o}/status`, { token: tokens.manager, body: { status: 'loaded' } }), 403, 'FORBIDDEN');
+    const res = await call('PATCH', `/${o}/status`, { token: tokens.driver, body: { status: 'delivered' } });
+    expectStatus(res, 409, 'INVALID_STATE_TRANSITION');
+    check(Array.isArray(res.body.error.details?.allowed), 'allowed[] must be populated');
+    expectStatus(await call('PATCH', `/${o}/status`, { token: tokens.dispatcher, body: { status: 'received' } }), 409, 'INVALID_STATE_TRANSITION');
+    check((await getOrder(o)).status === 'confirmed', 'order must be untouched');
+  });
+
+  await scenario(48, 'Swagger: /openapi.json and /docs are public and cover every operation with examples', async () => {
+    const res = await call('GET', '/openapi.json');
+    check(res.status === 200 && res.body.openapi?.startsWith('3.'), `openapi.json: HTTP ${res.status}`);
+    const ops = Object.values(res.body.paths).flatMap((p) => Object.values(p));
+    check(ops.length >= 16, `expected ≥16 operations, got ${ops.length}`);
+    check(ops.every((op) => op.operationId), 'every operation needs an operationId');
+    const create = res.body.paths['/'].post;
+    check(Object.keys(create.requestBody.content['application/json'].examples).length >= 2, 'create needs request examples');
+    check(create.parameters.some((p) => p.name === 'Idempotency-Key' && p.in === 'header'), 'Idempotency-Key header undocumented');
+    const html = await fetch(`${BASE_URL}/docs/`);
+    check(html.status === 200 && (await html.text()).includes('swagger-ui'), `/docs/: HTTP ${html.status}`);
+  });
 }
+
+const TOTAL_SCENARIOS = 48;
 
 main()
   .catch((err) => {
@@ -650,6 +691,6 @@ main()
   })
   .finally(() => {
     const count = (s) => results.filter((r) => r.status === s).length;
-    console.log(`\nSummary: ${count('PASS')} passed, ${count('FAIL')} failed, ${count('SKIP')} skipped (of 45)`);
-    process.exit(count('FAIL') > 0 || results.length < 45 ? 1 : 0);
+    console.log(`\nSummary: ${count('PASS')} passed, ${count('FAIL')} failed, ${count('SKIP')} skipped (of ${TOTAL_SCENARIOS})`);
+    process.exit(count('FAIL') > 0 || results.length < TOTAL_SCENARIOS ? 1 : 0);
   });

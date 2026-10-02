@@ -7,6 +7,8 @@ import { assertSchema, SchemaAssertionError } from './db/assertSchema.js';
 import { seedData } from './db/seed.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import { testClock } from './middleware/testClock.js';
+import swaggerUi from 'swagger-ui-express';
+import { buildOpenApiSpec } from './docs/openapi.js';
 import ordersRouter from './routes/orders.routes.js';
 import { startCutoffTimer, stopCutoffTimer } from './services/cutoffJob.js';
 
@@ -20,6 +22,13 @@ app.use(cors());
 app.use(express.json({ limit: '1mb' }));
 // After body parsing so the frozen clock survives into async handlers.
 app.use(testClock);
+
+const openApiSpec = buildOpenApiSpec();
+// Registered before the routers so the '/' mount's auth guard does not intercept them.
+for (const base of ['/api/orders', '']) {
+  app.get(`${base}/openapi.json`, (_req, res) => res.json(openApiSpec));
+  app.use(`${base}/docs`, swaggerUi.serve, swaggerUi.setup(openApiSpec, { customSiteTitle: 'Order Management API' }));
+}
 
 // Mount order matters: the '/' mount's auth guard would otherwise intercept /api/orders/health.
 app.use('/api/orders', ordersRouter); // direct: curl localhost:3002/api/orders/...

@@ -17,6 +17,7 @@ Examples are captured from a running instance.
   [history](#get-order_refhistory) ·
   [confirmed (Planning)](#get-confirmed--the-planning-contract) ·
   [status-batch](#patch-status-batch--planning-write-back) ·
+  [status](#patch-order_refstatus) ·
   [defer](#post-order_refdefer) ·
   [at-risk](#get-at-risk) ·
   [summary](#get-summary) ·
@@ -30,6 +31,9 @@ Examples are captured from a running instance.
 **Base path.** Through the gateway: `http://localhost/api/orders/...`. Direct: `http://localhost:3002/api/orders/...`
 or `http://localhost:3002/...`. The same router is mounted at both paths because nginx strips the
 `/api/orders/` prefix. The list endpoint needs a trailing slash through the gateway (`/api/orders/`).
+
+**Swagger UI.** Interactive docs at `http://localhost:3002/api/orders/docs` (gateway: `http://localhost/api/orders/docs`);
+raw OpenAPI 3 JSON at `/api/orders/openapi.json`. Use **Authorize** with an access token.
 
 **Auth.** Every route except `/health` needs `Authorization: Bearer <access_token>` from auth-rbac
 (`POST /api/auth/login` with `{username, password}`). Tokens are verified statelessly with the shared
@@ -320,7 +324,7 @@ Sorted `order_date DESC, order_ref ASC`. The sort is total, so pages never overl
     "window_open_time": "05:00", "window_close_time": "07:30",
     "placed_by": "9595b3cf-…", "placed_by_username": "manager_out001",
     "placed_at": "…Z", "confirmed_at": "…Z", "cutoff_applied_at": "…Z",
-    "deferral_count": 0, "vehicle_id": "VEH-021", "trip_id": 1, "idempotency_key": null,
+    "deferral_count": 0, "vehicle_id": "VEH001", "trip_id": 1, "idempotency_key": null,
     "created_at": "…Z", "updated_at": "…Z",
     "items": [ { "id": "…", "order_ref": "…", "sku": "MLK-1L", "description": "Fresh milk 1L", "quantity": 120,
                  "unit_weight_kg": 1.03, "unit_volume_m3": 0.0011, "is_chilled": true, "created_at": "…Z" } ],
@@ -391,7 +395,7 @@ The confirmed pool for one delivery date. This is what Planning & Allocation rea
                 "chilled_orders": 66, "chilled_volume_m3": 179.639 },
     "orders": [
       { "order_ref": "ORD-20260925-01374", "outlet_id": "OUT045", "brand": "Fresh", "depot": "Peliyagoda",
-        "district": "Galle", "temp_requirement": "ambient",
+        "district": "Kalutara", "temp_requirement": "ambient",
         "order_units": 42, "order_weight_kg": 282.5, "order_volume_m3": 1.091,
         "window_open_time": "04:45", "window_close_time": "07:45",
         "dock_type": "rear_dock", "parking_constraint": "normal", "mall_window": false,
@@ -414,9 +418,9 @@ The confirmed pool for one delivery date. This is what Planning & Allocation rea
 
 ```jsonc
 { "updates": [
-  { "order_ref": "ORD-20260929-00042", "status": "allocated", "vehicle_id": "VEH-012", "trip_id": 1 },
+  { "order_ref": "ORD-20260929-00042", "status": "allocated", "vehicle_id": "VEH001", "trip_id": 1 },
   { "order_ref": "ORD-20260929-00043", "status": "deferred",
-    "reason_code": "NO_REEFER_AVAILABLE", "reason_note": "all 16 reefers committed to trip 1" }
+    "reason_code": "NO_REEFER_AVAILABLE", "reason_note": "all 9 Peliyagoda reefers committed to trip 1" }
 ] }
 ```
 
@@ -454,6 +458,48 @@ Possible codes per failure: `ORDER_NOT_FOUND`, `INVALID_STATE_TRANSITION` (with 
 `VALIDATION_ERROR` (vehicle/trip), `DEFERRAL_REASON_REQUIRED`. A structurally invalid body (not an
 array, over 500 entries, unknown status value) returns **400 `VALIDATION_ERROR`** before anything
 runs.
+
+---
+
+## `PATCH /:order_ref/status`
+
+**Roles:** loader, driver, dispatcher. **Body:** `{ "status": "...", "vehicle_id"?, "trip_id"?, "reason_code"?, "reason_note"? }`.
+
+A single-order status change for the dock and the road. It exists for Execution & Sync, which
+reports one stop at a time. It runs the same code path as one `status-batch` entry, so the state
+machine and audit trail are identical.
+
+**Who may set what:**
+
+| Role | Statuses |
+|---|---|
+| loader | `loaded` |
+| driver | `out_for_delivery`, `delivered` |
+| dispatcher | anything `status-batch` allows |
+
+The role limit keeps the audit trail honest: each event records the role that physically did the
+step. `received` and `disputed` are never set here, only through the
+[receipt](#post-order_refreceipt) endpoint, because they need unit counts.
+
+```jsonc
+// driver
+{ "status": "delivered", "reason_note": "POD signed 06:42" }
+```
+
+**200** returns the full order.
+
+| Error | When |
+|---|---|
+| 400 `VALIDATION_ERROR` | unknown `status`, or `allocated` without `vehicle_id` / `trip_id` ∈ {1,2} |
+| 403 `FORBIDDEN` | the role may not set that status. `details.permitted` |
+| 404 `ORDER_NOT_FOUND` | |
+| 409 `INVALID_STATE_TRANSITION` | not a legal next step, or a receipt-only/system status. `details.allowed[]` |
+| 422 `DEFERRAL_REASON_REQUIRED` | `deferred` without a valid reason |
+
+**Note for Execution & Sync:** calls must carry `Authorization: Bearer <token>` (the driver's or
+loader's own token). Store confirmation and disputes map to `POST /:order_ref/receipt`, not to a
+`confirmed` / `disputed` status here. In this service `confirmed` means "accepted into the
+delivery pool".
 
 ---
 
@@ -519,7 +565,7 @@ simply haven't ordered would flood the list. Results are sorted by worst first.
 ```jsonc
 { "success": true, "data": {
   "criteria": { "min_deferrals": 2, "min_days": 3, "depot": "Peliyagoda" },
-  "outlets": [ { "outlet_id": "OUT045", "brand": "Fresh", "district": "Galle", "depot": "Peliyagoda",
+  "outlets": [ { "outlet_id": "OUT045", "brand": "Fresh", "district": "Kalutara", "depot": "Peliyagoda",
     "deferred_yesterday": true, "days_since_last_served": 9, "last_served_date": "2026-09-18",
     "max_deferral_count": 3, "open_orders": 3, "overdue_open_orders": 1, "aged_out_orders": 1,
     "flags": ["CONSECUTIVE_DEFERRAL_RISK", "STALE_SERVICE", "AGED_OUT_RECENTLY"] } ] } }
@@ -537,18 +583,23 @@ Dispatcher dashboard for one date:
 - a **chilled-capacity check** against the refrigerated fleet.
 
 Chilled capacity is the tightest constraint in the business (16 of 60 vehicles), so the summary
-shows at a glance whether deferrals are unavoidable that day. Capacity comes from config
-(`REEFER_VEHICLE_COUNT × REEFER_VOLUME_M3 × CHILLED_TRIPS_PER_DAY`) until Fleet exposes real
-numbers.
+shows at a glance whether deferrals are unavoidable that day.
+
+Capacity = total volume of the refrigerated vehicles (for the depot, if given) × `CHILLED_TRIPS_PER_DAY`
+(default 1, because chilled goods must arrive before 08:00). The vehicles are read from Fleet &
+Directory's `vehicles` table when it exists in the shared database, skipping any not `available`
+(`source: "fleet.vehicles"`). Otherwise the `vehicles.csv` snapshot is used
+(`source: "dataset-snapshot"`).
 
 ```jsonc
 { "success": true, "data": {
-  "date": "2026-09-28", "depot": "Peliyagoda",
-  "by_status": { "confirmed": 157 },
-  "by_brand": { "Fresh": { "orders": 134, "units": 47767, "weight_kg": 114847.25, "volume_m3": 288.099 }, "Style": { … }, "Tech": { … } },
-  "by_temperature": { "ambient": { "orders": 91, … , "volume_m3": 164.245 }, "chilled": { "orders": 66, … , "volume_m3": 179.639 } },
-  "chilled_capacity_reference": { "note": "…", "reefer_vehicles": 16, "volume_m3_per_reefer_trip": 8,
-    "chilled_trips_per_day": 1, "capacity_m3": 128, "demand_m3": 179.639, "utilisation_pct": 140.3, "exceeds_capacity": true } } }
+  "date": "2026-10-03", "depot": "Peliyagoda",
+  "by_status": { "confirmed": 119 },
+  "by_brand": { "Fresh": { "orders": 97, … }, "Style": { … }, "Tech": { … } },
+  "by_temperature": { "ambient": { … }, "chilled": { "orders": 48, … , "volume_m3": 291.664 } },
+  "chilled_capacity_reference": { "note": "…", "source": "fleet.vehicles", "reefer_vehicles": 9,
+    "reefer_volume_m3": 207.5, "chilled_trips_per_day": 1, "capacity_m3": 207.5, "demand_m3": 291.664,
+    "utilisation_pct": 140.6, "exceeds_capacity": true } } }
 ```
 
 ---
