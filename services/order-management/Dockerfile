@@ -1,17 +1,14 @@
 FROM node:20-alpine
 WORKDIR /app
 
-COPY package.json package-lock.json* ./
-COPY packages ./packages
-COPY services/order-management ./services/order-management
-
+# Build context is this service's folder only (fully isolated)
+COPY package.json package-lock.json ./
 RUN npm ci
 
-WORKDIR /app/packages/shared-types
+COPY tsconfig.json ./
+COPY src ./src
 RUN npm run build
 
-WORKDIR /app/services/order-management
-RUN npm run build
-
+# Starts in dev mode (ts-node-dev watches /app/src, mounted by docker-compose)
 EXPOSE 3002
 CMD ["npm", "run", "dev"]

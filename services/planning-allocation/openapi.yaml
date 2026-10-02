@@ -1,0 +1,61 @@
+openapi: 3.0.3
+info:
+  title: Planning & Allocation Service
+  version: 0.1.0
+  description: Route planning and resource allocation engine (Go).
+servers:
+  - url: http://localhost/api/planning
+    description: Via API gateway
+  - url: http://localhost:3003
+    description: Direct (local container)
+tags:
+  - name: Planning
+  - name: System
+
+paths:
+  /health:
+    get:
+      tags: [System]
+      summary: Health check
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+  /optimize:
+    post:
+      tags: [Planning]
+      summary: Run route optimisation (placeholder)
+      responses:
+        '200':
+          description: Optimisation result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: OPTIMIZED
+                  routesGenerated:
+                    type: integer
+                    example: 3
+                  estimatedFuelSavedPercent:
+                    type: number
+                    example: 14.5
+
+components:
+  schemas:
+    Health:
+      type: object
+      properties:
+        service:
+          type: string
+        status:
+          type: string
+          example: healthy
+        timestamp:
+          type: string
+          format: date-time

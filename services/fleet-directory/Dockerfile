@@ -1,17 +1,14 @@
 FROM node:20-alpine
 WORKDIR /app
 
-COPY package.json package-lock.json* ./
-COPY packages ./packages
-COPY services/fleet-directory ./services/fleet-directory
-
+# Build context is this service's folder only (fully isolated)
+COPY package.json package-lock.json ./
 RUN npm ci
 
-WORKDIR /app/packages/shared-types
+COPY tsconfig.json ./
+COPY src ./src
 RUN npm run build
 
-WORKDIR /app/services/fleet-directory
-RUN npm run build
-
+# Starts in dev mode (ts-node-dev watches /app/src, mounted by docker-compose)
 EXPOSE 3004
 CMD ["npm", "run", "dev"]

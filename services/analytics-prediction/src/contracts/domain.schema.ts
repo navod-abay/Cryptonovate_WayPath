@@ -1,3 +1,4 @@
+// Copied from the former packages/shared-types. This service owns its copy; the cross-service contract is openapi.yaml.
 import { z } from 'zod';
 
 /**

@@ -1,0 +1,18 @@
+# Lint config for the per-service OpenAPI specs.
+# Run: docker compose run --rm docs-lint   (or: npx @redocly/cli lint)
+extends:
+  - minimal
+
+apis:
+  auth-rbac:
+    root: services/auth-rbac/openapi.yaml
+  order-management:
+    root: services/order-management/openapi.yaml
+  planning-allocation:
+    root: services/planning-allocation/openapi.yaml
+  fleet-directory:
+    root: services/fleet-directory/openapi.yaml
+  execution-sync:
+    root: services/execution-sync/openapi.yaml
+  analytics-prediction:
+    root: services/analytics-prediction/openapi.yaml

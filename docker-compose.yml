@@ -14,8 +14,6 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres_password}
       POSTGRES_DB: ${POSTGRES_DB:-delivery_db}
-    ports:
-      - "5432:5432"
     volumes:
       - ./infrastructure/postgres-init:/docker-entrypoint-initdb.d
       - postgres_data:/var/lib/postgresql/data
@@ -31,8 +29,8 @@ services:
   # ============================================================================
   auth-rbac:
     build:
-      context: .
-      dockerfile: ./services/auth-rbac/Dockerfile
+      context: ./services/auth-rbac
+      dockerfile: Dockerfile
     container_name: service_auth_rbac
     restart: unless-stopped
     env_file:
@@ -43,7 +41,7 @@ services:
     ports:
       - "3001:3001"
     volumes:
-      - ./services/auth-rbac/src:/app/services/auth-rbac/src
+      - ./services/auth-rbac/src:/app/src
       - /app/node_modules
     depends_on:
       postgres:
@@ -51,8 +49,8 @@ services:
 
   order-management:
     build:
-      context: .
-      dockerfile: ./services/order-management/Dockerfile
+      context: ./services/order-management
+      dockerfile: Dockerfile
     container_name: service_order_management
     restart: unless-stopped
     env_file:
@@ -63,7 +61,7 @@ services:
     ports:
       - "3002:3002"
     volumes:
-      - ./services/order-management/src:/app/services/order-management/src
+      - ./services/order-management/src:/app/src
       - /app/node_modules
     depends_on:
       postgres:
@@ -71,8 +69,8 @@ services:
 
   planning-allocation:
     build:
-      context: .
-      dockerfile: ./services/planning-allocation/Dockerfile
+      context: ./services/planning-allocation
+      dockerfile: Dockerfile
     container_name: service_planning_allocation
     restart: unless-stopped
     env_file:
@@ -82,17 +80,14 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres_password}@postgres:5432/${POSTGRES_DB:-delivery_db}
     ports:
       - "3003:3003"
-    volumes:
-      - ./services/planning-allocation/src:/app/services/planning-allocation/src
-      - /app/node_modules
     depends_on:
       postgres:
         condition: service_healthy
 
   fleet-directory:
     build:
-      context: .
-      dockerfile: ./services/fleet-directory/Dockerfile
+      context: ./services/fleet-directory
+      dockerfile: Dockerfile
     container_name: service_fleet_directory
     restart: unless-stopped
     env_file:
@@ -103,7 +98,7 @@ services:
     ports:
       - "3004:3004"
     volumes:
-      - ./services/fleet-directory/src:/app/services/fleet-directory/src
+      - ./services/fleet-directory/src:/app/src
       - /app/node_modules
     depends_on:
       postgres:
@@ -111,8 +106,8 @@ services:
 
   execution-sync:
     build:
-      context: .
-      dockerfile: ./services/execution-sync/Dockerfile
+      context: ./services/execution-sync
+      dockerfile: Dockerfile
     container_name: service_execution_sync
     restart: unless-stopped
     env_file:
@@ -123,7 +118,7 @@ services:
     ports:
       - "3005:3005"
     volumes:
-      - ./services/execution-sync/src:/app/services/execution-sync/src
+      - ./services/execution-sync/src:/app/src
       - /app/node_modules
     depends_on:
       postgres:
@@ -131,8 +126,8 @@ services:
 
   analytics-prediction:
     build:
-      context: .
-      dockerfile: ./services/analytics-prediction/Dockerfile
+      context: ./services/analytics-prediction
+      dockerfile: Dockerfile
     container_name: service_analytics_prediction
     restart: unless-stopped
     env_file:
@@ -143,7 +138,7 @@ services:
     ports:
       - "3006:3006"
     volumes:
-      - ./services/analytics-prediction/src:/app/services/analytics-prediction/src
+      - ./services/analytics-prediction/src:/app/src
       - /app/node_modules
     depends_on:
       postgres:
@@ -154,8 +149,8 @@ services:
   # ============================================================================
   frontend:
     build:
-      context: .
-      dockerfile: ./frontend/Dockerfile
+      context: ./frontend
+      dockerfile: Dockerfile
     container_name: app_frontend
     restart: unless-stopped
     env_file:
@@ -166,9 +161,9 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      - ./frontend/src:/app/frontend/src
-      - /app/frontend/node_modules
-      - /app/frontend/.next
+      - ./frontend/src:/app/src
+      - /app/node_modules
+      - /app/.next
     depends_on:
       - auth-rbac
       - order-management
@@ -194,6 +189,51 @@ services:
       - fleet-directory
       - execution-sync
       - analytics-prediction
+
+  # ============================================================================
+  # DEV ONLY: API DOCS (Swagger UI for every microservice) -> http://localhost:8080
+  #   docker compose --profile dev up
+  # ============================================================================
+  api-docs:
+    image: swaggerapi/swagger-ui:v5.33.0
+    profiles: [dev]
+    container_name: dev_api_docs
+    restart: unless-stopped
+    environment:
+      # To add a service: mount its openapi.yaml below and add an entry here.
+      URLS: >-
+        [
+          { name: "auth-rbac", url: "specs/auth-rbac.yaml" },
+          { name: "order-management", url: "specs/order-management.yaml" },
+          { name: "planning-allocation", url: "specs/planning-allocation.yaml" },
+          { name: "fleet-directory", url: "specs/fleet-directory.yaml" },
+          { name: "execution-sync", url: "specs/execution-sync.yaml" },
+          { name: "analytics-prediction", url: "specs/analytics-prediction.yaml" }
+        ]
+      URLS_PRIMARY_NAME: auth-rbac
+      PERSIST_AUTHORIZATION: "true"
+      DISPLAY_REQUEST_DURATION: "true"
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./services/auth-rbac/openapi.yaml:/usr/share/nginx/html/specs/auth-rbac.yaml:ro
+      - ./services/order-management/openapi.yaml:/usr/share/nginx/html/specs/order-management.yaml:ro
+      - ./services/planning-allocation/openapi.yaml:/usr/share/nginx/html/specs/planning-allocation.yaml:ro
+      - ./services/fleet-directory/openapi.yaml:/usr/share/nginx/html/specs/fleet-directory.yaml:ro
+      - ./services/execution-sync/openapi.yaml:/usr/share/nginx/html/specs/execution-sync.yaml:ro
+      - ./services/analytics-prediction/openapi.yaml:/usr/share/nginx/html/specs/analytics-prediction.yaml:ro
+
+  # ============================================================================
+  # DEV ONLY: SPEC LINTER (on demand, no Node needed on the host)
+  #   docker compose run --rm docs-lint
+  # ============================================================================
+  docs-lint:
+    image: redocly/cli:2.57.0
+    profiles: [tools]
+    working_dir: /spec
+    volumes:
+      - ./:/spec:ro
+    command: ["lint"]
 
 volumes:
   postgres_data:
