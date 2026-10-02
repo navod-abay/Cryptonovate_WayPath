@@ -14,11 +14,10 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres_password}
       POSTGRES_DB: ${POSTGRES_DB:-delivery_db}
-    ports:
-      - "5432:5432"
     volumes:
       - ./infrastructure/postgres-init:/docker-entrypoint-initdb.d
       - postgres_data:/var/lib/postgresql/data
+      - ./data:/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-delivery_db}"]
       interval: 5s
@@ -26,10 +25,8 @@ services:
       retries: 5
 
   # ============================================================================
-  # BACKEND MICROSERVICES (Isolated Contexts, Live Reload, Anonymous node_modules)
+  # BACKEND MICROSERVICES
   # ============================================================================
-
-  # 1. Auth & RBAC Microservice
   auth-rbac:
     build:
       context: ./services/auth-rbac
@@ -44,15 +41,12 @@ services:
     ports:
       - "3001:3001"
     volumes:
-      # Live Reloading: Mount local source into container
       - ./services/auth-rbac/src:/app/src
-      # Anonymous Volume: Prevent host OS node_modules from overriding container binaries
       - /app/node_modules
     depends_on:
       postgres:
         condition: service_healthy
 
-  # 2. Order Management Microservice
   order-management:
     build:
       context: ./services/order-management
@@ -73,7 +67,6 @@ services:
       postgres:
         condition: service_healthy
 
-  # 3. Planning & Allocation Microservice
   planning-allocation:
     build:
       context: ./services/planning-allocation
@@ -87,14 +80,10 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres_password}@postgres:5432/${POSTGRES_DB:-delivery_db}
     ports:
       - "3003:3003"
-    volumes:
-      - ./services/planning-allocation/src:/app/src
-      - /app/node_modules
     depends_on:
       postgres:
         condition: service_healthy
 
-  # 4. Fleet Directory Microservice
   fleet-directory:
     build:
       context: ./services/fleet-directory
@@ -115,7 +104,6 @@ services:
       postgres:
         condition: service_healthy
 
-  # 5. Execution Sync Microservice
   execution-sync:
     build:
       context: ./services/execution-sync
@@ -136,7 +124,6 @@ services:
       postgres:
         condition: service_healthy
 
-  # 6. Analytics & Prediction Microservice
   analytics-prediction:
     build:
       context: ./services/analytics-prediction
@@ -202,6 +189,51 @@ services:
       - fleet-directory
       - execution-sync
       - analytics-prediction
+
+  # ============================================================================
+  # DEV ONLY: API DOCS (Swagger UI for every microservice) -> http://localhost:8080
+  #   docker compose --profile dev up
+  # ============================================================================
+  api-docs:
+    image: swaggerapi/swagger-ui:v5.33.0
+    profiles: [dev]
+    container_name: dev_api_docs
+    restart: unless-stopped
+    environment:
+      # To add a service: mount its openapi.yaml below and add an entry here.
+      URLS: >-
+        [
+          { name: "auth-rbac", url: "specs/auth-rbac.yaml" },
+          { name: "order-management", url: "specs/order-management.yaml" },
+          { name: "planning-allocation", url: "specs/planning-allocation.yaml" },
+          { name: "fleet-directory", url: "specs/fleet-directory.yaml" },
+          { name: "execution-sync", url: "specs/execution-sync.yaml" },
+          { name: "analytics-prediction", url: "specs/analytics-prediction.yaml" }
+        ]
+      URLS_PRIMARY_NAME: auth-rbac
+      PERSIST_AUTHORIZATION: "true"
+      DISPLAY_REQUEST_DURATION: "true"
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./services/auth-rbac/openapi.yaml:/usr/share/nginx/html/specs/auth-rbac.yaml:ro
+      - ./services/order-management/openapi.yaml:/usr/share/nginx/html/specs/order-management.yaml:ro
+      - ./services/planning-allocation/openapi.yaml:/usr/share/nginx/html/specs/planning-allocation.yaml:ro
+      - ./services/fleet-directory/openapi.yaml:/usr/share/nginx/html/specs/fleet-directory.yaml:ro
+      - ./services/execution-sync/openapi.yaml:/usr/share/nginx/html/specs/execution-sync.yaml:ro
+      - ./services/analytics-prediction/openapi.yaml:/usr/share/nginx/html/specs/analytics-prediction.yaml:ro
+
+  # ============================================================================
+  # DEV ONLY: SPEC LINTER (on demand, no Node needed on the host)
+  #   docker compose run --rm docs-lint
+  # ============================================================================
+  docs-lint:
+    image: redocly/cli:2.57.0
+    profiles: [tools]
+    working_dir: /spec
+    volumes:
+      - ./:/spec:ro
+    command: ["lint"]
 
 volumes:
   postgres_data:

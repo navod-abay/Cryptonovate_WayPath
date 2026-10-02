@@ -1,6 +1,6 @@
 # Delivery Planning Microservices Monorepo
 
-Enterprise multi-role logistics & delivery planning platform built with Node.js microservices, Next.js SaaS frontend, PostgreSQL database, and NGINX API Gateway.
+Enterprise multi-role logistics & delivery planning platform built with fully isolated Node.js and Go microservices, Next.js SaaS frontend, PostgreSQL database, and NGINX API Gateway.
 
 ---
 
@@ -8,11 +8,12 @@ Enterprise multi-role logistics & delivery planning platform built with Node.js 
 
 ```plaintext
 TeamName_SolutionName/
-├── docker-compose.yml       # Docker Compose setup for all services
+├── docker-compose.yml       # All services; dev-only tools sit behind the `dev`/`tools` profiles
+├── redocly.yaml             # OpenAPI lint config
 ├── .env.example             # Environment variables template
 ├── README.md                # Repository documentation
-├── setup.sh                 # Single copy-pasteable monorepo generation script
 ├── docs/                    
+│   ├── api_docs.md          # API documentation (Swagger) guide
 │   ├── architecture.md      # Microservice topology & NGINX routing
 │   ├── data_model.md        # Database schema & seeded credentials
 │   └── ai_disclosure.md     # AI assistance disclosure
@@ -31,37 +32,32 @@ TeamName_SolutionName/
 │   │   └── store_manager/   # Store manager UI module
 │   ├── package.json         # Next.js + Tailwind CSS configuration
 │   └── Dockerfile
-└── services/                
-    ├── auth-rbac/           # Auth & RBAC service (Port 5001)
-    ├── order-management/    # Orders lifecycle service (Port 5002)
-    ├── planning-allocation/ # Route optimization service (Port 5003)
-    ├── fleet-directory/     # Vehicles & drivers registry (Port 5004)
-    ├── execution-sync/      # Telemetry & GPS sync service (Port 5005)
-    └── analytics-prediction/# Predictive ETA & analytics service (Port 5006)
+└── services/                # Each service is standalone: own Dockerfile, deps and openapi.yaml
+    ├── auth-rbac/           # Auth & RBAC service (Node, port 3001)
+    ├── order-management/    # Orders lifecycle service (Node, port 3002)
+    ├── planning-allocation/ # Route optimization service (Go, port 3003)
+    ├── fleet-directory/     # Vehicles & drivers registry (Node, port 3004)
+    ├── execution-sync/      # Telemetry & GPS sync service (Node, port 3005)
+    └── analytics-prediction/# Predictive ETA & analytics service (Node, port 3006)
 ```
 
 ---
 
 ## 🚀 Quick Start Guide
 
-### 1. Execute Monorepo Setup Script (Bash)
-
-```bash
-chmod +x setup.sh
-./setup.sh
-```
-
-### 2. Configure Environment Variables
+### 1. Configure Environment Variables
 
 ```bash
 cp .env.example .env
 ```
 
-### 3. Launch Containerized Monorepo
+### 2. Launch Containerized Stack
 
 ```bash
-docker-compose up --build
+docker compose up --build
 ```
+
+Every service builds from its own folder (`services/<name>/`), so there is no root `package.json` and no shared workspace. To work on one service outside Docker, run `npm install` (Node) or `go run .` (Go) inside its folder.
 
 ---
 
@@ -77,6 +73,18 @@ docker-compose up --build
 | **Execution Sync** | `5005` | `http://localhost/api/execution/` |
 | **Analytics & Prediction** | `5006` | `http://localhost/api/analytics/` |
 | **PostgreSQL Database** | `5432` | `localhost:5432` |
+
+---
+
+## 📖 API Documentation (Swagger, dev only)
+
+Start the stack with the `dev` profile, then open **http://localhost:8080** to browse every service's API in one Swagger UI:
+
+```bash
+docker compose --profile dev up --build
+```
+
+Use the **Select a definition** dropdown to switch between services. A plain `docker compose up` (production) doesn't start the docs container. See [docs/api_docs.md](docs/api_docs.md) for how to add or update a service's spec.
 
 ---
 

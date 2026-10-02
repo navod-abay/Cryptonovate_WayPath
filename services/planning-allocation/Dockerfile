@@ -1,15 +1,14 @@
-FROM node:20-alpine
+FROM golang:1.22-alpine AS build
+WORKDIR /src
 
-WORKDIR /app
+COPY go.mod ./
+RUN go mod download
 
-COPY package.json ./
-RUN npm install
+COPY . .
+RUN CGO_ENABLED=0 go build -o /out/planning-allocation .
 
-COPY tsconfig.json ./
-COPY src ./src
+FROM alpine:3.20
+COPY --from=build /out/planning-allocation /usr/local/bin/planning-allocation
 
-RUN npm run build
-
-EXPOSE 5003
-
-CMD ["node", "dist/index.js"]
+EXPOSE 3003
+CMD ["planning-allocation"]

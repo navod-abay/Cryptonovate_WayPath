@@ -1,3 +1,4 @@
+// Copied from the former packages/shared-types. This service owns its copy; the cross-service contract is openapi.yaml.
 import { z } from 'zod';
 
 /**
@@ -45,9 +46,31 @@ export const OutletSchema = z.object({
   depot: DepotEnum,
   dock_type: DockTypeEnum,
   parking_constraint: ParkingConstraintEnum,
-  mall_window: z.boolean(),
-  window_open_time: z.string().regex(timeFormatRegex, 'window_open_time must be HH:mm format'),
-  window_close_time: z.string().regex(timeFormatRegex, 'window_close_time must be HH:mm format'),
+  mall_window: z.string().nullable().optional(), // Fixed: Changed from boolean to string
+  window_open_time: z.string().regex(timeFormatRegex, 'window_open_time must be HH:mm format').nullable().optional(),
+  window_close_time: z.string().regex(timeFormatRegex, 'window_close_time must be HH:mm format').nullable().optional(),
 });
 
 export type Outlet = z.infer<typeof OutletSchema>;
+
+
+export const RoadClassEnum = z.enum(['urban', 'suburban', 'highway', 'hill']);
+export const DistrictTravelSchema = z.object({
+  district: z.string().min(1),
+  depot: DepotEnum,
+  road_class: RoadClassEnum,
+  free_flow_kmh: z.number().positive(),
+  depot_to_district_km: z.number().nonnegative(),
+  depot_to_district_freeflow_min: z.number().nonnegative(),
+  inter_stop_km: z.number().nonnegative(),
+  inter_stop_freeflow_min: z.number().nonnegative(),
+});
+export type DistrictTravel = z.infer<typeof DistrictTravelSchema>;
+
+
+export const ServiceAllowanceSchema = z.object({
+  brand: BrandEnum,
+  dock_type: DockTypeEnum,
+  service_allowance_min: z.number().nonnegative(),
+});
+export type ServiceAllowance = z.infer<typeof ServiceAllowanceSchema>;
