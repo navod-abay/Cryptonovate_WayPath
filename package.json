@@ -6,7 +6,8 @@
   "workspaces": [
     "frontend",
     "services/*",
-    "packages/*"
+    "packages/*",
+    "driver_mobile"
   ],
   "scripts": {
     "build": "npm run build --workspaces",
