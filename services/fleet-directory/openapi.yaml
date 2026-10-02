@@ -1,0 +1,71 @@
+openapi: 3.0.3
+info:
+  title: Fleet Directory Service
+  version: 0.1.0
+  description: Fleet, vehicle and driver registry.
+servers:
+  - url: http://localhost/api/fleet
+    description: Via API gateway
+  - url: http://localhost:3004
+    description: Direct (local container)
+tags:
+  - name: Fleet
+  - name: System
+
+paths:
+  /health:
+    get:
+      tags: [System]
+      summary: Health check
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+  /vehicles:
+    get:
+      tags: [Fleet]
+      summary: List vehicles (placeholder data)
+      responses:
+        '200':
+          description: Vehicles
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  vehicles:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Vehicle'
+
+components:
+  schemas:
+    Health:
+      type: object
+      properties:
+        service:
+          type: string
+        status:
+          type: string
+          example: healthy
+        timestamp:
+          type: string
+          format: date-time
+    Vehicle:
+      type: object
+      properties:
+        id:
+          type: string
+          example: v_1
+        licensePlate:
+          type: string
+          example: TRK-9921
+        type:
+          type: string
+          example: Refrigerated Van
+        status:
+          type: string
+          example: AVAILABLE
