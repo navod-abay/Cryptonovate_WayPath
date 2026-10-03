@@ -1,14 +1,17 @@
 FROM node:20-alpine
-WORKDIR /app
+WORKDIR /app/src/dispatcher
 
-# Copy dispatcher app files
-COPY package.json package-lock.json* ./
+# Build context is frontend, including the existing shared UI package.
+COPY packages/ui /app/packages/ui
+COPY package.json /app/package.json
+COPY src/dispatcher/package.json src/dispatcher/package-lock.json ./
 RUN npm ci
-
-COPY . .
+# Shared source files resolve React/types through their frontend ancestor.
+RUN ln -s /app/src/dispatcher/node_modules /app/node_modules
+COPY src/dispatcher .
+ARG VITE_API_BASE_URL
+ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
+RUN npm run build
 
 EXPOSE 4173
-
-ENV HOST=0.0.0.0
-
-CMD ["npm", "start"]
+CMD ["npm", "start", "--", "--host", "0.0.0.0"]

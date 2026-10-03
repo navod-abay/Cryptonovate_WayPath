@@ -1,127 +1,58 @@
 # WayPath Dispatcher
 
-A standalone React + TypeScript + Vite web application for logistics dispatch management.
-Lives at `frontend/src/dispatcher/` and is fully self-contained — its own `package.json`,
-`vite.config.ts`, `tsconfig.json`, Tailwind/PostCSS config, and `Dockerfile`.
-
----
-
-## Quick Start
+Standalone React + TypeScript + Vite app using Atkinson Hyperlegible Next throughout. Shared UI components come from `frontend/packages/ui`. Layouts support tablet portrait and landscape, with touch controls and scrollable tables.
 
 ```sh
 cd frontend/src/dispatcher
-
-# Install dependencies (first time only)
-npm install
-
-# Start the dev server
+npm ci
 npm run dev
-# → http://127.0.0.1:5173/dispatcher
 ```
 
----
+Open http://127.0.0.1:5173/ to see the sign-in page. The predefined test username is **dispatcher** and password is **Dispatcher123!**. Incorrect credentials stay on the form. Dispatcher routes redirect to sign-in until the test login succeeds. **Sign out** returns to sign-in; a full reload also resets the in-memory login, so startup always requires signing in. No password or login token is stored.
 
-## All Commands
+The default `VITE_LOGIN_MODE=demo` works without an authentication backend. This is a frontend testing gate, not production security. When the service team is ready, set `VITE_LOGIN_MODE=api` in `.env.local` and restart Vite to use the existing `POST /api/auth/login` call instead. API login failures are shown and never bypassed with fixture data. Backend authentication/session enforcement remains the service team's responsibility.
 
-| Command | Description |
-|---|---|
-| `npm run dev` | Start Vite dev server at `http://127.0.0.1:5173` |
-| `npm run typecheck` | Run TypeScript type-checking (`tsc --noEmit`) |
-| `npm run build` | Type-check then build production bundle to `dist/` |
-| `npm start` | Serve the production build locally via `vite preview` |
+## API calls and local test data
 
----
+`data/dispatcherRepository.ts` contains the API calls and response-to-screen mappings. `data/http.ts` tries the API first with a three-second timeout. If the connection fails or the endpoint returns an error (including an unavailable database), it fetches `public/data/dispatcher.json` over HTTP. `data/fileData.ts` translates that file into the response shape the screen expects.
 
-## Project Structure
+Edit [the JSON file](public/data/dispatcher.json) and refresh the browser to change test data. Order `dateOffset` values are relative to today in Asia/Colombo: 0 means today, 1 tomorrow. IDs connect order, trip, vehicle and incident details. Sample metrics are independent fixture values for demonstrating the designs. File data is cached for the current page session.
 
-```
-frontend/src/dispatcher/
-├── package.json          # Own dependencies — react, vite, tailwind, react-router-dom
-├── vite.config.ts        # Vite config — resolves @waypoint/ui from packages/ui/src
-├── tsconfig.json         # TypeScript config — paths for @waypoint/ui
-├── tailwind.config.js    # Tailwind scoped to dispatcher files only
-├── postcss.config.js     # PostCSS — tailwindcss + autoprefixer
-├── index.html            # HTML entry point
-├── Dockerfile            # Docker image for production deployment
-├── .dockerignore
-│
-├── main.tsx              # React root — mounts App, imports fonts + global styles
-├── App.tsx               # Router — defines all /dispatcher/* routes
-├── styles.css            # Dispatcher-scoped styles using --wp-* design tokens
-│
-├── components/
-│   ├── Navbar.tsx        # Top navigation bar
-│   ├── DemandChart.tsx   # Order demand bar chart
-│   ├── OrdersTable.tsx   # Tabular orders list
-│   ├── OrderAccordion.tsx# Expandable order row
-│   └── common.tsx        # Shared badge/icon/layout primitives
-│
-├── pages/
-│   ├── Dashboard.tsx     # /dispatcher — overview dashboard
-│   ├── Schedule.tsx      # /dispatcher/schedule/today — daily schedule
-│   ├── Upcoming.tsx      # /dispatcher/schedule/upcoming — upcoming orders
-│   ├── Orders.tsx        # /dispatcher/orders — orders with search & filter
-│   ├── Fleet.tsx         # /dispatcher/fleet — vehicle list
-│   └── Details.tsx       # Detail pages for trips, orders, vehicles, incidents
-│
-└── data/
-    ├── types.ts               # TypeScript interfaces (Trip, Order, Vehicle, etc.)
-    ├── seed.ts                # Static fixture data (demo clock: 28 Sep 2026, 10:30 Colombo)
-    └── dispatcherRepository.ts # Single data access boundary — no live API calls
-```
+A small banner identifies file fallback. Requests retry APIs on the normal polling interval; successful APIs replace file data. Empty successful API results stay empty. No backend implementations are added by Dispatcher.
 
----
+The dev proxy forwards `/api/auth`, `/api/orders`, `/api/planning`, `/api/fleet`, `/api/execution` and `/api/analytics` to local ports 3001–3006. For a remote gateway, set `VITE_API_BASE_URL` in `.env.local` and restart Vite. Set `VITE_FILE_FALLBACK=false` to expose failed API requests during integration testing.
 
-## Routes
+## Schedule availability
 
-| Route | Page |
-|---|---|
-| `/dispatcher` | Dashboard — warehouse KPIs, demand chart, live alerts |
-| `/dispatcher/schedule/today` | Daily schedule — trips grouped by warehouse |
-| `/dispatcher/schedule/upcoming` | Upcoming orders with live countdown timers |
-| `/dispatcher/schedule/trips/:tripId` | Trip detail — route legs, warehouse & outlet info |
-| `/dispatcher/orders` | Orders — search, category & status filters |
-| `/dispatcher/orders/:orderId` | Order detail — items, deferred reason, inventory modal |
-| `/dispatcher/fleet` | Fleet — vehicle list with warehouse filter |
-| `/dispatcher/fleet/:vehicleId` | Vehicle detail — specs and assigned trips |
-| `/dispatcher/incidents/:incidentId` | Incident report — full details and linked vehicle |
+Schedules are prepared at 5 PM Sri Lanka time on the previous day. Tomorrow's schedule is unavailable before today's 5 PM cutoff; later dates stay unavailable until their respective previous-day cutoff. The date selector remains usable and shows the preparation date with a link to upcoming orders. The screen checks the cutoff automatically and only starts schedule API requests when the selected date becomes eligible. Actual trips still depend on the Planning API or local test file.
 
-Browser Back/Forward and refreshed deep links all work via React Router.
-Production hosting must rewrite all frontend routes to `index.html`.
+## Fleet availability and details
 
----
+Each vehicle has a **Change availability** action. Select one or more inclusive date ranges, save them, or clear the unavailable dates. Overlapping/adjacent ranges merge. Future ranges leave the vehicle available today; an active range marks it unavailable through its end date, shown on hover, keyboard focus or a tablet tap.
 
-## Shared Design System (`@waypoint/ui`)
+The frontend calls the proposed `PUT /api/fleet/vehicles/{id}/availability` endpoint. When that endpoint is absent/unavailable, the JSON fixture is the base and edits are persisted in this browser's local storage under `waypath.dispatcher.test-availability`. This does not modify the source JSON file. Validation/auth rejections are shown rather than treated as successful saves. Remove that key to reset test edits. Once the service returns `unavailable_periods` in its vehicle list, that server data takes precedence over local test overrides.
 
-The dispatcher uses the shared `@waypoint/ui` component library located at
-`frontend/packages/ui/`. Vite resolves it directly from source — **no build step needed**.
+Vehicle details display weight capacity, volume capacity, weekly fuel quota and remaining fuel quota. Capacity/quota fields already exist in Fleet's vehicle response. Remaining quota is calculated from the selected vehicle's quota and consumption returned by the proposed weekly fuel endpoint. Unknown quantities remain unavailable.
 
-Components used: `Badge`, `CarrotIcon`, `PrimaryButton`, `ItemsListModal`,
-`WarehouseCard`, `OutletRow`.
+Existing protected APIs may reject unauthenticated requests; those requests use the local test file. Dispatcher does not alter backend authentication. Your service developers can connect their testing endpoints by updating the repository URLs/response mapping.
 
-Design tokens (`--wp-*` CSS variables) are imported once via `@waypoint/ui/styles` in
-`main.tsx`. Dispatcher-specific styles live in `styles.css` and use those same tokens.
+See [integration notes](../../../docs/dispatcher-integration.md) for the available API mappings and the optional endpoints that can be wired as services become ready.
 
----
+## Commands
 
-## Demo Data
+| Command | Purpose |
+| --- | --- |
+| `npm run dev` | Development server and API proxy |
+| `npm run typecheck` | TypeScript validation |
+| `npm test` | API success, fallback and cancellation tests |
+| `npm run build` | Production build |
+| `npm start` | Preview build on port 4173, with file fallback |
 
-All data is static fixture data — no API or backend is required to run the app.
+For deployment, configure `VITE_API_BASE_URL` before building and serve `dist` with SPA fallback to `index.html`. Preview does not use the dev API proxy, but the JSON test file works there too.
 
-- `data/seed.ts` — isolated fixture data
-- `data/dispatcherRepository.ts` — the only data access boundary; swap this adapter when a real API exists
-- Demo clock starts at **28 Sep 2026, 10:30 Asia/Colombo** and ticks while Upcoming is open; resets on page reload
-
----
-
-## Docker
+Docker is optional. Build from the repository root with the frontend context (for shared UI):
 
 ```sh
-# Build the image (run from frontend/src/dispatcher/)
-docker build -t waypath-dispatcher .
-
-# Run — serves the production build on port 4173
+docker build -f frontend/src/dispatcher/Dockerfile -t waypath-dispatcher frontend
 docker run -p 4173:4173 waypath-dispatcher
-
-# → http://localhost:4173/dispatcher
 ```
