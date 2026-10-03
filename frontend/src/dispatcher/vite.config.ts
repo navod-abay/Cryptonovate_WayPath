@@ -17,6 +17,9 @@ export default defineConfig({
   server: {
     host: '127.0.0.1',
     port: 5173,
+    proxy: Object.fromEntries(Object.entries({ auth:3001,orders:3002,planning:3003,fleet:3004,execution:3005,analytics:3006 }).map(([service,port])=>[
+      `/api/${service}`, { target:`http://127.0.0.1:${port}`, changeOrigin:true, rewrite:(path:string)=>path.replace(new RegExp(`^/api/${service}`),'') || '/' },
+    ])),
   },
   preview: {
     host: '127.0.0.1',

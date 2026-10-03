@@ -11,6 +11,9 @@
     "noEmit": true,
     "types": ["vite/client", "node"],
     "paths": {
+      "react": ["./node_modules/@types/react/index.d.ts"],
+      "react/jsx-runtime": ["./node_modules/@types/react/jsx-runtime.d.ts"],
+      "react/jsx-dev-runtime": ["./node_modules/@types/react/jsx-dev-runtime.d.ts"],
       "@waypoint/ui": ["../../packages/ui/src/index.ts"],
       "@waypoint/ui/styles": ["../../packages/ui/src/styles.css"]
     }
