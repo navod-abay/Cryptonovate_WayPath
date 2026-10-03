@@ -4,5 +4,6 @@ export { TechIcon } from './TechIcon';
 export { StyleIcon } from './StyleIcon';
 export { RedFlagIcon } from './RedFlagIcon';
 export { DoubleTickIcon } from './DoubleTickIcon';
+export { AlertIcon } from './AlertIcon';
 export { TruckIcon } from './TruckIcon';
 export { VanIcon } from './VanIcon';

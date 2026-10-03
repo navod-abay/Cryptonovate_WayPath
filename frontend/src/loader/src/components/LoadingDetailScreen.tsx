@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { RedFlagIcon, DoubleTickIcon } from './icons';
+import { RedFlagIcon, DoubleTickIcon, AlertIcon } from './icons';
 import { Vehicle } from './VehicleCard';
 import { CommonHeader } from './CommonHeader';
 
@@ -30,6 +30,7 @@ export function LoadingDetailScreen({
   const [departMinutes, setDepartMinutes] = useState(39);
   const [items, setItems] = useState<LoadingItem[]>(initialItems);
   const [showDamageModal, setShowDamageModal] = useState(false);
+  const [showMissingModal, setShowMissingModal] = useState(false);
   const [selectedItem, setSelectedItem] = useState<LoadingItem | null>(null);
   const [damageCount, setDamageCount] = useState(1);
 
@@ -64,6 +65,21 @@ export function LoadingDetailScreen({
     setShowDamageModal(false);
     setSelectedItem(null);
     setDamageCount(1);
+  };
+
+  const incompleteItems = items.filter((item) => item.loaded < item.total);
+
+  const handleFinishClick = () => {
+    if (incompleteItems.length > 0) {
+      setShowMissingModal(true);
+    } else {
+      onFinish(vehicle.id);
+    }
+  };
+
+  const handleConfirmFinish = () => {
+    setShowMissingModal(false);
+    onFinish(vehicle.id);
   };
 
   return (
@@ -162,14 +178,12 @@ export function LoadingDetailScreen({
                   onClick={() => handleItemSelect(item)}
                   className="flex items-center justify-between py-3 md:py-4 border-b-2 border-slate-300 last:border-0 cursor-pointer hover:bg-slate-50 transition-colors"
                 >
-                  <span className={`text-sm md:text-base ${isComplete ? 'text-[#1a3a5c]' : 'text-slate-500'}`}>{item.name}</span>
+                  <div className="flex items-center gap-2">
+                    {hasDamage && <AlertIcon size={20} />}
+                    <span className={`text-sm md:text-base ${isComplete ? 'text-[#1a3a5c]' : 'text-slate-500'}`}>{item.name}</span>
+                  </div>
                   <div className="flex items-center gap-2">
                     {isComplete && <DoubleTickIcon size={20} />}
-                    {hasDamage && (
-                      <span className="text-xs font-medium text-red-500 bg-red-50 px-1.5 py-0.5 rounded">
-                        {item.damaged} damaged
-                      </span>
-                    )}
                     <span className={`text-sm md:text-base font-medium ${isComplete ? 'text-[#1a3a5c]' : 'text-slate-500'}`}>
                       {item.loaded}/{item.total}
                     </span>
@@ -191,7 +205,7 @@ export function LoadingDetailScreen({
               <RedFlagIcon size={48} />
             </button>
             <button
-              onClick={() => onFinish(vehicle.id)}
+              onClick={handleFinishClick}
               className="flex-1 h-14 bg-[#1a3a5c] text-white text-sm md:text-base font-semibold rounded-xl
                          hover:bg-[#0f2a44] active:bg-[#0a1f33]
                          transition-colors cursor-pointer"
@@ -284,6 +298,58 @@ export function LoadingDetailScreen({
                            transition-colors cursor-pointer"
               >
                 Report
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Missing Items Modal */}
+      {showMissingModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl w-full max-w-sm shadow-xl overflow-hidden">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-6 pt-6 pb-4">
+              <h3 className="text-xl font-bold text-[#FF334E]">Missing Items !</h3>
+              <button
+                onClick={() => setShowMissingModal(false)}
+                className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
+                aria-label="Close"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="h-px bg-slate-200" />
+
+            {/* Modal Body */}
+            <div className="px-6 py-5">
+              <p className="text-sm text-slate-600 mb-5">
+                Order list of <span className="font-bold text-slate-800">{outlets[activeOutlet]}</span> is not complete yet. Do you still want to finish loading?
+              </p>
+
+              <div className="mb-5">
+                {incompleteItems.map((item) => (
+                  <div key={item.id} className="flex items-center justify-between py-3 border-b border-slate-200 last:border-0">
+                    <span className="text-base font-bold text-[#1a3a5c]">{item.name}</span>
+                    <span className="text-base font-bold text-[#FF334E]">
+                      {item.loaded}/{item.total}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Report & Finish Button */}
+              <button
+                onClick={handleConfirmFinish}
+                className="w-full py-4 bg-[#1a3a5c] text-white text-base font-semibold rounded-xl
+                           hover:bg-[#0f2a44] active:bg-[#0a1f33]
+                           transition-colors cursor-pointer"
+              >
+                Report & Finish
               </button>
             </div>
           </div>
