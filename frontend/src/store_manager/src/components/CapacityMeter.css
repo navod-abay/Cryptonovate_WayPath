@@ -1,0 +1,10 @@
+.sm-cap { padding: 16px 0 14px; border-bottom: 1px solid var(--sm-gray-200); display: flex; flex-direction: column; gap: 10px; }
+.sm-cap__row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.sm-cap__label { color: var(--sm-gray-500); font-size: 18px; }
+.sm-cap__value { font-size: 22px; font-weight: 500; white-space: nowrap; }
+.sm-cap__max { font-size: 16px; color: var(--sm-gray-500); font-weight: 400; }
+.sm-cap__bar { height: 8px; border-radius: 4px; background: var(--sm-gray-100); overflow: hidden; }
+.sm-cap__bar span { display: block; height: 100%; border-radius: 4px; background: var(--sm-cyan-600); transition: width .2s; }
+.sm-cap--near .sm-cap__bar span { background: var(--sm-amber-500); }
+.sm-cap--full .sm-cap__bar span { background: var(--sm-maroon-500); }
+.sm-cap--full .sm-cap__value { color: var(--sm-maroon-500); }

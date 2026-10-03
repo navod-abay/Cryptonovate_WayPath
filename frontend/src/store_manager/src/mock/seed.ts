@@ -1,6 +1,8 @@
-import type { Delivery, Order, OrderLine, Outlet, Update } from '@/types';
+import type { Delivery, DeliveryItem, Order, OrderLine, OrderType, Outlet, Update } from '@/types';
 import { now } from './clock';
-import { productById } from './catalogue';
+import { PRODUCTS, productById } from './catalogue';
+import { CATEGORY } from '@/config/categories';
+import { unitName } from '@/utils/text';
 import { addDays, nextDeliveryDate, startOfDay, toISODate } from '@/utils/date';
 
 export interface SeedState {
@@ -11,7 +13,7 @@ export interface SeedState {
   /** Quantities from the previous order of each product ("Last Order" column). */
   lastOrderQty: Record<string, number>;
   /** Units that came up short last time and can be re-requested. */
-  missingFromLast: Record<'chilled' | 'dry', OrderLine[]>;
+  missingFromLast: Record<OrderType, OrderLine[]>;
 }
 
 const line = (productId: string, quantity: number, carriedOver?: number): OrderLine => ({
@@ -30,7 +32,14 @@ const at = (base: Date, hh: number, mm: number) => {
 const hoursAgo = (h: number) => new Date(now().getTime() - h * 3600_000).toISOString();
 const daysAgo = (d: number, hh = 10) => at(addDays(startOfDay(now()), -d), hh, 0);
 
-export function createSeed(): SeedState {
+const noMissing = (): Record<OrderType, OrderLine[]> => ({ chilled: [], dry: [], tech: [], style: [] });
+
+/** Mock data for the logged-in store. Grocery stores get the Figma scenario; tech/style get a generated one. */
+export function createSeed(outlet: Outlet): SeedState {
+  return outlet.storeType === 'grocery' ? createGrocerySeed(outlet) : createSingleCategorySeed(outlet, outlet.categories[0]);
+}
+
+function createGrocerySeed(outlet: Outlet): SeedState {
   const today = startOfDay(now());
   const todayISO = toISODate(today);
   const next = nextDeliveryDate(now());
@@ -188,17 +197,94 @@ export function createSeed(): SeedState {
   };
 
   // Short-shipped at loading today: 1 chicken tray + 1 fish tray
-  const missingFromLast = {
-    chilled: [line('CH-CHICK', 1), line('CH-FISH', 1)],
-    dry: [] as OrderLine[],
-  };
+  const missingFromLast = { ...noMissing(), chilled: [line('CH-CHICK', 1), line('CH-FISH', 1)] };
 
   return {
-    outlet: { id: 'OUT015', city: 'Colombo', managerName: 'Tharindu' },
+    outlet,
     orders,
     deliveries,
     updates,
     lastOrderQty,
     missingFromLast,
+  };
+}
+
+/** Generated scenario for a store with a single category (tech or style). */
+function createSingleCategorySeed(outlet: Outlet, type: OrderType): SeedState {
+  const today = startOfDay(now());
+  const todayISO = toISODate(today);
+  const yesterday = addDays(today, -1);
+  const products = PRODUCTS.filter((p) => p.type === type).slice(0, 5);
+  const vehicle = type === 'tech' ? 'VEH071' : 'VEH088';
+  const code = CATEGORY[type].code;
+  const ref = (n: string) => `ORD-${outlet.id}-${code}-${n}`;
+  const label = CATEGORY[type].short;
+
+  const ordered = [6, 4, 3, 8, 5];
+  const items: DeliveryItem[] = products.map((p, i) => {
+    const sent = i === 1 ? ordered[i] - 1 : ordered[i]; // one unit removed at loading
+    return { productId: p.id, name: p.name, ordered: ordered[i], sent, received: sent };
+  });
+  const short = items[1];
+
+  const orders: Order[] = [
+    {
+      id: ref('0512'), type, deliveryDate: todayISO, status: 'on_the_way',
+      lines: items.map((it) => line(it.productId, it.ordered)),
+      placedAt: at(yesterday, 12, 20), scheduledAt: at(yesterday, 17, 30),
+      loadedAt: at(today, 6, 45), dispatchedAt: at(today, 7, 30), eta: '09:40', vehicle,
+    },
+    {
+      id: ref('0497'), type, deliveryDate: toISODate(addDays(today, -2)), status: 'deferred',
+      lines: items.slice(0, 3).map((it) => line(it.productId, 2)),
+      placedAt: at(addDays(today, -3), 14, 5), scheduledAt: at(addDays(today, -3), 17, 10),
+      deferredReason: `The ${label.toLowerCase()} trucks were fully booked that day. Your order was moved to the next available run.`,
+    },
+  ];
+
+  const deliveries: Delivery[] = [
+    {
+      id: `DEL-${code}0512`, orderId: ref('0512'), type, vehicle, date: todayISO,
+      eta: '09:40', window: ['09:30', '10:00'], status: 'arrived', arrivedAt: at(today, 9, 40),
+      stops: [{ label: 'Warehouse', done: true }, { label: 'Outlet 1', done: true }],
+      items, reports: [],
+    },
+  ];
+
+  [1, 2, 4].forEach((n, i) => {
+    const d = addDays(today, -n);
+    if (d.getDay() === 0) return;
+    const id = `DEL-${code}P${i + 1}`;
+    const pastItems = items.slice(0, 3).map((it) => ({ ...it, ordered: 3, sent: 3, received: 3 }));
+    orders.push({
+      id: ref(`P${i + 1}`), type, deliveryDate: toISODate(d), status: 'delivered',
+      lines: pastItems.map((it) => line(it.productId, it.ordered)),
+      placedAt: at(addDays(d, -1), 11, 0), scheduledAt: at(addDays(d, -1), 17, 0),
+      loadedAt: at(d, 6, 30), dispatchedAt: at(d, 7, 15), receivedAt: at(d, 9, 50), eta: '09:35', vehicle,
+    });
+    deliveries.push({
+      id, orderId: ref(`P${i + 1}`), type, vehicle, date: toISODate(d), eta: '09:35', window: ['09:30', '10:00'],
+      status: 'delivered', arrivedAt: at(d, 9, 35), confirmedAt: at(d, 9, 50),
+      stops: [{ label: 'Warehouse', done: true }, { label: 'Outlet 1', done: true }],
+      items: pastItems, reports: [],
+    });
+  });
+
+  const updates: Update[] = [
+    { id: 'U1', source: 'driver', message: `${vehicle} has reached your outlet !`, at: hoursAgo(1), link: `/deliveries/today?d=DEL-${code}0512`, read: false },
+    { id: 'U2', source: 'loader', message: `1 ${unitName(short.name, 1)} was removed at loading !`, at: hoursAgo(4), read: true },
+    { id: 'U3', source: 'dispatcher', message: `${label} order was deferred !`, at: daysAgo(2, 18), link: `/orders/${ref('0497')}`, read: true },
+    { id: 'U4', source: 'dispatcher', message: `${label} delivery window moved to 09:30 !`, at: daysAgo(6), read: true },
+  ];
+
+  const lastOrderQty = Object.fromEntries(products.map((p, i) => [p.id, ordered[i]]));
+
+  return {
+    outlet,
+    orders,
+    deliveries,
+    updates,
+    lastOrderQty,
+    missingFromLast: { ...noMissing(), [type]: [line(short.productId, 1)] },
   };
 }

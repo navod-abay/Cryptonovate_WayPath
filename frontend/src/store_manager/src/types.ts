@@ -1,15 +1,50 @@
-export type OrderType = 'chilled' | 'dry';
+/** Order category. A store orders one or more of these (grocery: chilled + dry, tech: tech, style: style). */
+export type OrderType = 'chilled' | 'dry' | 'tech' | 'style';
+
+export type StoreType = 'grocery' | 'tech' | 'style';
 
 export interface Outlet {
   id: string;
   city: string;
+  /** First name used in the greeting. */
   managerName: string;
+  storeName: string;
+  storeType: StoreType;
+  /** Order categories this store receives; decides the icons and order screens shown. */
+  categories: OrderType[];
+  address: string;
+}
+
+export interface User {
+  username: string;
+  fullName: string;
+  role: 'store_manager';
+  email: string;
+  phone: string;
+  /** ISO date the account was created. */
+  memberSince: string;
+}
+
+export interface Session {
+  token: string;
+  user: User;
+  outlet: Outlet;
 }
 
 export interface Product {
   id: string;
   name: string;
   type: OrderType;
+  /** Weight of one unit (crate, tray, sack...) in kg. */
+  weightKg: number;
+  /** Volume of one unit in cubic metres. */
+  volumeM3: number;
+}
+
+/** Maximum load of the vehicle that carries one order type. */
+export interface TruckCapacity {
+  maxWeightKg: number;
+  maxVolumeM3: number;
 }
 
 export interface OrderLine {

@@ -1,4 +1,5 @@
 import type { OrderType } from '@/types';
+import { CATEGORY } from '@/config/categories';
 
 export const ORDER_CUTOFF_HOUR = 16; // orders close 4:00 PM the day before delivery
 
@@ -101,7 +102,7 @@ export const splitDuration = (ms: number) => {
   return { h: Math.floor(total / 3600), m: Math.floor((total % 3600) / 60), s: total % 60, total };
 };
 
-export const ORDER_TYPE_LABEL: Record<OrderType, string> = {
-  chilled: 'Chilled Order',
-  dry: 'Dry Groceries',
-};
+/** Card / list label per category (kept for older imports; see config/categories). */
+export const ORDER_TYPE_LABEL = Object.fromEntries(
+  Object.entries(CATEGORY).map(([k, v]) => [k, v.label]),
+) as Record<OrderType, string>;

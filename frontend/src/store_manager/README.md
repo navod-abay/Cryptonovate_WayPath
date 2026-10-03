@@ -14,6 +14,18 @@ npm run dev        # http://localhost:5173
 
 Other scripts: `npm run build` (type-check + production build to `dist/`), `npm run preview`, `npm run typecheck`.
 
+### Signing in
+
+The app opens on the login page. Demo store manager accounts (password `Password123!` for all):
+
+| Username | Store | Order categories |
+|---|---|---|
+| `manager_out015` | OUT015 Colombo, grocery store | Chilled + Dry groceries |
+| `manager_out021` | OUT021 Kandy, tech store | Tech |
+| `manager_out034` | OUT034 Galle, style store | Style |
+
+The store type decides the category icons in the navbar, the order screens and the mock data. The session is kept for the browser tab, so a reload keeps you signed in. Accounts live in `src/mock/users.ts`, and `src/api/authApi.ts` is the only file to change when auth-rbac is connected.
+
 ### Demo clock
 
 Order windows close at **4:00 PM the day before delivery**, so what the screens show depends on the time of day.
@@ -28,6 +40,8 @@ Mock data resets on page reload.
 
 | Route | Screen (Figma frame) |
 |---|---|
+| `/login` | Store manager sign in (layout from the loader login) |
+| `/profile` | Profile: account details, store, change password, log out |
 | `/` | Home: today's deliveries, orders for the next delivery day, recent updates, this week, alerts (2, 9, 17, 20) |
 | `/orders/new/:type` | Place / edit a chilled or dry order (4, 10, 11, 12) |
 | `/orders/:orderId` | Order progress, ETA or deferred reason (13, 14) |
@@ -36,7 +50,7 @@ Mock data resets on page reload.
 | `/deliveries/:id/receive` | Confirm what arrived, report damaged/missing, confirmation code (5, 6, 7, 8, 15, 19) |
 | `/deliveries/past` | Past deliveries (not in Figma) |
 
-Navbar shortcuts: the snowflake and carrot tiles open a new chilled / dry order.
+Navbar shortcuts: each category tile (snowflake, carrot, game controller, t-shirt) opens a new order of that type, and the profile icon on the right opens the profile page.
 
 ## Structure
 
@@ -44,12 +58,17 @@ Navbar shortcuts: the snowflake and carrot tiles open a new chilled / dry order.
 src/
   api/storeManagerApi.ts   # the only place that changes data; each function notes the backend endpoint it will call
   state/store.ts           # tiny global store (useSyncExternalStore); pages read with useAppStore(selector)
-  mock/                    # seed data, product catalogue, demo clock
+  config/categories.ts     # label, icon, colours and vehicle for each order category
+  mock/                    # seed data per store, product catalogue, demo accounts, demo clock
   components/              # store-manager components (Navbar, Modal, QuantityStepper, Timeline, ...)
   pages/                   # one file per route
   styles/tokens.css        # store-manager tokens (cyan / amber / maroon scales, font) on top of --wp-* vars
   utils/                   # date + text helpers
 ```
+
+### Truck capacity (mock)
+
+Each product has a weight and volume per unit, and each order type has a truck limit (chilled: 800 kg / 4 m³, dry: 2,000 kg / 10 m³). Both live in `src/mock/catalogue.ts` until the backend provides them. The order page shows total weight and volume in the summary and won't let a quantity go past the truck limit.
 
 ### Shared components
 

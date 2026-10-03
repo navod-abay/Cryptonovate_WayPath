@@ -8,6 +8,7 @@ import { orderLineValue } from '@/components/NextOrdersCard';
 import { useAppStore } from '@/state/store';
 import type { Order, OrderStatus } from '@/types';
 import { formatClock, formatDayMonth, formatHHmm, fromISODate } from '@/utils/date';
+import { CATEGORY } from '@/config/categories';
 import './OrderStatusPage.css';
 
 const STEP_OF: Record<OrderStatus, number> = {
@@ -49,7 +50,7 @@ export default function OrderStatusPage() {
     <main className="sm-page sm-status">
       <Card className="sm-status__main">
         <h1 className="sm-status__head">
-          <TypeIcon type={order.type} size={48} /> {order.type === 'chilled' ? 'Chilled order' : 'Dry groceries order'}
+          <TypeIcon type={order.type} size={48} /> {CATEGORY[order.type].orderTitle}
         </h1>
         <h2 className="sm-status__title">{justPlaced ? 'Order placed successfully !' : TITLE[order.status]}</h2>
         <Timeline steps={steps} current={STEP_OF[order.status]} alert={order.status === 'deferred'} />

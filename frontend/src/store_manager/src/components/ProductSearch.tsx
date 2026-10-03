@@ -8,10 +8,12 @@ interface Props {
   products: Product[];
   onPick: (p: Product) => void;
   autoFocus?: boolean;
+  /** Return a reason to show a product as unavailable (e.g. no space left in the truck). */
+  unavailable?: (p: Product) => string | null;
 }
 
 /** "Search item" input with a suggestions list (Add Product row). */
-export default function ProductSearch({ products, onPick, autoFocus }: Props) {
+export default function ProductSearch({ products, onPick, autoFocus, unavailable }: Props) {
   const [q, setQ] = useState('');
   const [open, setOpen] = useState(!!autoFocus);
   const [hi, setHi] = useState(0);
@@ -41,7 +43,7 @@ export default function ProductSearch({ products, onPick, autoFocus }: Props) {
         onKeyDown={(e) => {
           if (e.key === 'ArrowDown') { e.preventDefault(); setHi((h) => Math.min(h + 1, matches.length - 1)); }
           if (e.key === 'ArrowUp') { e.preventDefault(); setHi((h) => Math.max(h - 1, 0)); }
-          if (e.key === 'Enter' && matches[hi]) { e.preventDefault(); pick(matches[hi]); }
+          if (e.key === 'Enter' && matches[hi] && !unavailable?.(matches[hi])) { e.preventDefault(); pick(matches[hi]); }
         }}
       />
       {open && (
@@ -49,8 +51,15 @@ export default function ProductSearch({ products, onPick, autoFocus }: Props) {
           {matches.length ? (
             matches.map((p, i) => (
               <li key={p.id} role="option" aria-selected={i === hi}>
-                <button type="button" className={i === hi ? 'is-hi' : ''} onMouseEnter={() => setHi(i)} onClick={() => pick(p)}>
+                <button
+                  type="button"
+                  className={i === hi ? 'is-hi' : ''}
+                  disabled={!!unavailable?.(p)}
+                  onMouseEnter={() => setHi(i)}
+                  onClick={() => pick(p)}
+                >
                   {p.name}
+                  {unavailable?.(p) && <small>{unavailable(p)}</small>}
                 </button>
               </li>
             ))

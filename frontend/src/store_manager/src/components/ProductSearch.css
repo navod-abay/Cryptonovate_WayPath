@@ -7,6 +7,8 @@
   list-style: none; margin: 0; padding: 6px; background: var(--sm-white);
   border-radius: 12px; box-shadow: var(--sm-shadow-pop); max-height: 320px; overflow: auto;
 }
-.sm-search__list button { width: 100%; text-align: left; background: none; border: 0; padding: 12px; border-radius: 8px; font-size: 18px; }
+.sm-search__list button { width: 100%; display: flex; justify-content: space-between; align-items: baseline; gap: 12px; text-align: left; background: none; border: 0; padding: 12px; border-radius: 8px; font-size: 18px; }
 .sm-search__list button.is-hi { background: var(--sm-cyan-50); }
 .sm-search__none { padding: 12px; color: var(--sm-gray-500); }
+.sm-search__list button small { font-size: 13px; color: var(--sm-maroon-500); }
+.sm-search__list button:disabled { color: var(--sm-gray-200); cursor: not-allowed; }

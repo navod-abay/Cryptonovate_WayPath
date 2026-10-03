@@ -1,4 +1,4 @@
-import { Carrot, Snowflake } from '@phosphor-icons/react';
+import { CATEGORY, CATEGORY_ICON_COLOR } from '@/config/categories';
 import type { OrderType } from '@/types';
 import './TypeIcon.css';
 
@@ -11,22 +11,20 @@ interface Props {
   title?: string;
 }
 
-/** Square tile with the chilled (snowflake) or dry-groceries (carrot) icon. */
+/** Square tile with the category icon (snowflake, carrot, game controller, t-shirt). */
 export default function TypeIcon({ type, size = 48, faded = false, title }: Props) {
-  const glyph = Math.round(size * 0.55);
+  const meta = CATEGORY[type];
+  const Glyph = meta.icon;
+  const label = title ?? meta.label;
   return (
     <span
-      className={`sm-type-icon sm-type-icon--${type}${faded ? ' sm-type-icon--faded' : ''}`}
-      style={{ width: size, height: size }}
-      title={title ?? (type === 'chilled' ? 'Chilled' : 'Dry groceries')}
+      className={`sm-type-icon${faded ? ' sm-type-icon--faded' : ''}`}
+      style={{ width: size, height: size, background: faded ? meta.tileFaded : meta.tile, color: CATEGORY_ICON_COLOR }}
+      title={label}
       role="img"
-      aria-label={title ?? (type === 'chilled' ? 'Chilled' : 'Dry groceries')}
+      aria-label={label}
     >
-      {type === 'chilled' ? (
-        <Snowflake size={glyph} weight="regular" />
-      ) : (
-        <Carrot size={glyph} weight="regular" />
-      )}
+      <Glyph size={Math.round(size * 0.6)} weight="regular" />
     </span>
   );
 }

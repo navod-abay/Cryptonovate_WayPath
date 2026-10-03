@@ -90,10 +90,13 @@ export default function ReceiveDeliveryPage() {
                       aria-label={flagged ? `${flagged} reported for ${item.name}, report more` : `Report a problem with ${item.name}`}
                       title="Report damaged or missing"
                     >
-                      {flagged ? flagged : <Flag size={28} />}
+                      <Flag size={28} />
+                      {flagged > 0 && <span>{flagged}</span>}
                     </button>
                   )}
-                  {done && flagged > 0 && <span className="sm-table__flag is-flagged">{flagged}</span>}
+                  {done && flagged > 0 && (
+                    <span className="sm-table__flag is-flagged"><Flag size={28} /><span>{flagged}</span></span>
+                  )}
                 </span>
               </div>
             );

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Flag } from '@phosphor-icons/react';
 import { Badge, PrimaryButton } from '@waypoint/ui';
 import Card from '@/components/Card';
 import TypeIcon from '@/components/TypeIcon';
@@ -90,6 +91,7 @@ export default function TodayDeliveriesPage() {
             <PrimaryButton
               title="Report"
               variant="outline"
+              iconLeft={<Flag size={32} />}
               onClick={() => setProblemOpen(true)}
               style={{ borderColor: 'var(--sm-maroon-500)', color: 'var(--sm-maroon-500)', borderRadius: 16, minHeight: 84, fontSize: 22, fontWeight: 500, borderWidth: 2 }}
             />

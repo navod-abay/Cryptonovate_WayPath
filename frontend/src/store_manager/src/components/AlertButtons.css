@@ -7,6 +7,5 @@
   transition: background .15s, border-color .15s;
 }
 .sm-alerts__btn:hover { background: var(--sm-white); }
-.sm-alerts__btn.is-active { background: var(--sm-amber-50); }
-.sm-alerts__btn.has-unread { border-color: var(--sm-amber-500); background: var(--sm-amber-50); }
+.sm-alerts__btn.is-active { background: var(--sm-amber-50); border-color: var(--sm-amber-500); }
 .sm-alerts__count { margin-left: 4px; }

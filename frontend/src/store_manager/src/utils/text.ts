@@ -4,7 +4,8 @@ import { pad2 } from './date';
 /** "Yoghurt Crates", 1 -> "yoghurt crate"; 3 -> "yoghurt crates" */
 export function unitName(itemName: string, qty: number) {
   const lower = itemName.toLowerCase();
-  return qty === 1 ? lower.replace(/s$/, '') : lower;
+  if (qty !== 1) return lower;
+  return /(x|ch|sh|ss)es$/.test(lower) ? lower.slice(0, -2) : lower.replace(/s$/, '');
 }
 
 /** "01 yoghurt crate damaged - crushed / leaking" */

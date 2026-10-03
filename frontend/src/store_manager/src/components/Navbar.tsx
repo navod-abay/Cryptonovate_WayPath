@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { CaretDown } from '@phosphor-icons/react';
+import { CaretDown, UserCircle } from '@phosphor-icons/react';
+import { CATEGORY } from '@/config/categories';
 import TypeIcon from './TypeIcon';
 import { useAppStore } from '@/state/store';
 import { useClickOutside } from '@/hooks/useClickOutside';
@@ -63,8 +64,7 @@ export default function Navbar() {
             label="Orders"
             active={pathname.startsWith('/orders')}
             items={[
-              { label: 'Chilled Order', to: '/orders/new/chilled' },
-              { label: 'Dry Groceries Order', to: '/orders/new/dry' },
+              ...outlet.categories.map((c) => ({ label: `${CATEGORY[c].label.replace(/ Order$/, '')} Order`, to: `/orders/new/${c}` })),
               { label: 'Order History', to: '/orders' },
             ]}
           />
@@ -79,16 +79,18 @@ export default function Navbar() {
         </nav>
 
         <div className="sm-nav__right">
-          <Link to="/orders/new/chilled" aria-label="New chilled order" title="New chilled order">
-            <TypeIcon type="chilled" size={48} title="New chilled order" />
-          </Link>
-          <Link to="/orders/new/dry" aria-label="New dry groceries order" title="New dry groceries order">
-            <TypeIcon type="dry" size={48} title="New dry groceries order" />
-          </Link>
+          {outlet.categories.map((c) => (
+            <Link key={c} to={`/orders/new/${c}`} aria-label={`New ${CATEGORY[c].short.toLowerCase()} order`} title={`New ${CATEGORY[c].short.toLowerCase()} order`}>
+              <TypeIcon type={c} size={48} title={`New ${CATEGORY[c].short.toLowerCase()} order`} />
+            </Link>
+          ))}
           <div className="sm-nav__outlet">
-            <span>{outlet.id}</span>
-            <span>{outlet.city}</span>
+            <span className="sm-nav__outlet-id">{outlet.id}</span>
+            <span className="sm-nav__outlet-city">{outlet.city}</span>
           </div>
+          <NavLink to="/profile" className={({ isActive }) => `sm-nav__profile${isActive ? ' is-active' : ''}`} aria-label="Your profile" title="Your profile">
+            <UserCircle size={44} weight="light" />
+          </NavLink>
         </div>
       </div>
     </header>

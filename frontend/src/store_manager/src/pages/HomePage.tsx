@@ -57,7 +57,7 @@ export default function HomePage() {
 
       <section className="sm-home__orders" aria-labelledby="orders-for">
         <h2 id="orders-for" className="sm-home__h2">Orders for {formatDayMonth(nextDate)}</h2>
-        <NextOrdersCard deliveryDate={nextDate} cutoff={cutoff} now={now} orders={orders} />
+        <NextOrdersCard deliveryDate={nextDate} cutoff={cutoff} now={now} orders={orders} categories={outlet.categories} />
       </section>
 
       <section className="sm-home__updates" aria-labelledby="recent-updates">

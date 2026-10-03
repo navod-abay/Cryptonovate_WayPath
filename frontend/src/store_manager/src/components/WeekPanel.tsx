@@ -16,6 +16,7 @@ const weekOfMonth = (monday: Date) => Math.ceil(monday.getDate() / 7);
 /** "This Week" panel: one row per delivery day with the order types going out. */
 export default function WeekPanel({ today }: { today: Date }) {
   const orders = useAppStore((s) => s.orders);
+  const categories = useAppStore((s) => s.outlet.categories);
   const navigate = useNavigate();
   const [offset, setOffset] = useState(0);
   const monday = addDays(mondayOf(today), offset * 7);
@@ -27,17 +28,17 @@ export default function WeekPanel({ today }: { today: Date }) {
       const date = addDays(monday, i);
       if (!isDeliveryDay(date)) continue;
       const iso = toISODate(date);
-      const marks: Mark[] = (['dry', 'chilled'] as OrderType[]).flatMap<Mark>((type) => {
+      const marks: Mark[] = [...categories].reverse().flatMap<Mark>((type) => {
         const order = orders.find((o) => o.deliveryDate === iso && o.type === type);
         if (order) return [{ type, order, faded: order.status === 'confirmed' || order.status === 'deferred' }];
-        // Past days without seeded orders: show the usual pattern (dry daily, chilled Mon/Wed/Fri).
-        if (iso < todayISO && (type === 'dry' || [1, 3, 5].includes(date.getDay()))) return [{ type, faded: false }];
+        // Past days without seeded orders: main category daily, the second one Mon/Wed/Fri.
+        if (iso < todayISO && (type === categories[categories.length - 1] || [1, 3, 5].includes(date.getDay()))) return [{ type, faded: false }];
         return [];
       });
       out.push({ date, iso, marks });
     }
     return out;
-  }, [monday, orders, todayISO]);
+  }, [monday, orders, todayISO, categories]);
 
   return (
     <Card tone="soft" className="sm-week">

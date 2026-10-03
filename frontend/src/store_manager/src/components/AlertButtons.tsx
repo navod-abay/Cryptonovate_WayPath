@@ -26,7 +26,7 @@ export default function AlertButtons({ updates, active, onToggle }: Props) {
             key={s}
             type="button"
             aria-pressed={active === s}
-            className={`sm-alerts__btn${active === s ? ' is-active' : ''}${unread ? ' has-unread' : ''}`}
+            className={`sm-alerts__btn${active === s ? ' is-active' : ''}`}
             onClick={() => onToggle(s)}
           >
             <Icon size={30} aria-hidden />

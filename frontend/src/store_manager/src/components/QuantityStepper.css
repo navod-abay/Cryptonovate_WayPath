@@ -11,3 +11,9 @@
 .sm-stepper output { min-width: 32px; text-align: center; font-size: 26px; font-weight: 500; }
 .sm-stepper--lg button { width: 84px; height: 84px; }
 .sm-stepper--lg output { min-width: 48px; }
+.sm-stepper__input {
+  width: 56px; height: 50px; text-align: center; font-size: 26px; font-weight: 500;
+  border: 1px solid transparent; border-radius: 10px; background: transparent;
+}
+.sm-stepper__input:hover { border-color: var(--sm-gray-200); }
+.sm-stepper__input:focus { outline: none; border-color: var(--sm-cyan-500); background: var(--sm-white); }

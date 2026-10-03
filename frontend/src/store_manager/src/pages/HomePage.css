@@ -13,7 +13,7 @@
 .sm-home__greeting { grid-area: greet; padding-top: 16px; }
 .sm-home__hello { font-size: 22px; font-weight: 500; }
 .sm-home__headline { font-size: 34px; font-weight: 500; margin-top: 12px; }
-.sm-home__today { grid-area: today; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.sm-home__today { grid-area: today; display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); gap: 16px; }
 .sm-home__orders { grid-area: orders; }
 .sm-home__updates { grid-area: updates; }
 .sm-home__orders, .sm-home__updates { display: flex; flex-direction: column; gap: 12px; min-height: 0; }

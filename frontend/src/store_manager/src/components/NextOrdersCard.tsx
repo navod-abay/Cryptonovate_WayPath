@@ -5,7 +5,8 @@ import Card from './Card';
 import Banner from './Banner';
 import KeyValueList from './KeyValueList';
 import type { Order, OrderType } from '@/types';
-import { formatClock, formatDayMonth, ORDER_TYPE_LABEL, splitDuration, toISODate, weekdayLong } from '@/utils/date';
+import { formatClock, formatDayMonth, splitDuration, toISODate, weekdayLong } from '@/utils/date';
+import { CATEGORY } from '@/config/categories';
 import './NextOrdersCard.css';
 
 interface Props {
@@ -13,16 +14,17 @@ interface Props {
   cutoff: Date;
   now: Date;
   orders: Order[];
+  categories: OrderType[];
 }
 
-const typeName = (t: OrderType) => (t === 'chilled' ? 'Chilled' : 'Dry grocery');
+const typeName = (t: OrderType) => CATEGORY[t].short;
 
 export function orderLineValue(quantity: number, carriedOver?: number) {
   return carriedOver ? `${quantity} + ${carriedOver} missed` : String(quantity);
 }
 
 /** Home: status of the orders for the next delivery day (open / closed / not placed). */
-export default function NextOrdersCard({ deliveryDate, cutoff, now, orders }: Props) {
+export default function NextOrdersCard({ deliveryDate, cutoff, now, orders, categories }: Props) {
   const navigate = useNavigate();
   const open = now < cutoff;
   const left = splitDuration(cutoff.getTime() - now.getTime());
@@ -30,7 +32,7 @@ export default function NextOrdersCard({ deliveryDate, cutoff, now, orders }: Pr
   const iso = toISODate(deliveryDate);
 
   // Types that still need an order go first: that's the action the manager must take.
-  const sections = (['chilled', 'dry'] as OrderType[])
+  const sections = categories
     .map((type) => ({ type, order: orders.find((o) => o.type === type && o.deliveryDate === iso) }))
     .sort((a, b) => Number(!!a.order) - Number(!!b.order));
 
@@ -47,7 +49,7 @@ export default function NextOrdersCard({ deliveryDate, cutoff, now, orders }: Pr
                 <>
                   <Banner tone="amber">You can’t place the order after {formatClock(cutoff)}</Banner>
                   <PrimaryButton
-                    title={`Place ${type === 'chilled' ? 'Chilled' : 'Dry'} Order`}
+                    title={`Place ${CATEGORY[type].buttonName} Order`}
                     onClick={() => navigate(`/orders/new/${type}?date=${iso}`)}
                     style={{ borderRadius: 16, minHeight: 84, fontSize: 22, fontWeight: 500 }}
                   />
@@ -62,7 +64,7 @@ export default function NextOrdersCard({ deliveryDate, cutoff, now, orders }: Pr
           ) : (
             <>
               <div className="sm-next__head">
-                <h3>{ORDER_TYPE_LABEL[type]}</h3>
+                <h3>{CATEGORY[type].label}</h3>
                 {open && (
                   <button
                     type="button"

@@ -4,7 +4,8 @@ import { Badge } from '@waypoint/ui';
 import TypeIcon from './TypeIcon';
 import VehicleTag from './VehicleTag';
 import type { Delivery } from '@/types';
-import { formatHHmm, ORDER_TYPE_LABEL } from '@/utils/date';
+import { formatHHmm } from '@/utils/date';
+import { CATEGORY } from '@/config/categories';
 import './TodayDeliveryCard.css';
 
 /** Home: one card per delivery arriving today (chilled = cyan, dry = cream). */
@@ -14,12 +15,13 @@ export default function TodayDeliveryCard({ delivery }: { delivery: Delivery }) 
   return (
     <button
       type="button"
-      className={`sm-today-card sm-today-card--${delivered ? 'done' : delivery.type}`}
+      className={`sm-today-card${delivered ? ' sm-today-card--done' : ''}`}
+      style={delivered ? undefined : { background: CATEGORY[delivery.type].cardBg }}
       onClick={() => navigate(`/deliveries/today?d=${delivery.id}`)}
     >
       <span className="sm-today-card__head">
         <TypeIcon type={delivery.type} size={64} />
-        <span className="sm-today-card__title">{ORDER_TYPE_LABEL[delivery.type]}</span>
+        <span className="sm-today-card__title">{CATEGORY[delivery.type].label}</span>
         {delivered && <Badge label="Delivered" backgroundColor="var(--sm-green-600)" />}
         {delivery.status === 'arrived' && <Badge label="Arrived" backgroundColor="var(--sm-cyan-600)" />}
         <CaretDown size={26} className="sm-today-card__caret" aria-hidden />

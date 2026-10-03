@@ -9,6 +9,14 @@ import type { ConfirmationCode, IssueKind, IssueReport, Order, OrderLine, OrderT
 import { getState, setState } from '@/state/store';
 import { now } from '@/mock/clock';
 import { formatClock } from '@/utils/date';
+import { CATEGORY } from '@/config/categories';
+
+const MOCK_PLAN: Record<OrderType, { eta: string; vehicle: string }> = {
+  chilled: { eta: '09:12', vehicle: 'VEH056' },
+  dry: { eta: '10:40', vehicle: 'VEH003' },
+  tech: { eta: '09:40', vehicle: 'VEH071' },
+  style: { eta: '11:10', vehicle: 'VEH088' },
+};
 
 const delay = (ms = 350) => new Promise((r) => setTimeout(r, ms));
 const uid = (prefix: string) => `${prefix}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
@@ -18,7 +26,7 @@ export async function placeOrder(input: { type: OrderType; deliveryDate: string;
   await delay();
   const placedAt = now();
   const order: Order = {
-    id: `ORD-${getState().outlet.id}-${input.type === 'chilled' ? 'C' : 'D'}-${Math.floor(1000 + Math.random() * 8999)}`,
+    id: `ORD-${getState().outlet.id}-${CATEGORY[input.type].code}-${Math.floor(1000 + Math.random() * 8999)}`,
     type: input.type,
     deliveryDate: input.deliveryDate,
     status: 'scheduled',
@@ -26,8 +34,7 @@ export async function placeOrder(input: { type: OrderType; deliveryDate: string;
     placedAt: placedAt.toISOString(),
     // The planning engine would set these; we fake a plan two hours later.
     scheduledAt: new Date(placedAt.getTime() + 2 * 3600_000).toISOString(),
-    eta: input.type === 'chilled' ? '09:12' : '10:40',
-    vehicle: input.type === 'chilled' ? 'VEH056' : 'VEH003',
+    ...MOCK_PLAN[input.type],
   };
   setState((s) => ({
     ...s,
@@ -38,9 +45,12 @@ export async function placeOrder(input: { type: OrderType; deliveryDate: string;
   return order;
 }
 
-/** Store manager dismissed the "receive missing items" prompt. */
-export async function dismissMissingItems(type: OrderType) {
-  setState((s) => ({ ...s, missingFromLast: { ...s.missingFromLast, [type]: [] } }));
+/** Store manager said "No, don't add" to one missing item from the last order. */
+export async function dismissMissingItem(type: OrderType, productId: string) {
+  setState((s) => ({
+    ...s,
+    missingFromLast: { ...s.missingFromLast, [type]: s.missingFromLast[type].filter((l) => l.productId !== productId) },
+  }));
 }
 
 /** POST /api/execution-sync/orders/:orderRef/dispute */

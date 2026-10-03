@@ -1,7 +1,7 @@
 import type { HTMLAttributes, ReactNode } from 'react';
 import './Card.css';
 
-type Tone = 'white' | 'soft' | 'chilled' | 'dry';
+type Tone = 'white' | 'soft';
 
 interface Props extends HTMLAttributes<HTMLDivElement> {
   tone?: Tone;
