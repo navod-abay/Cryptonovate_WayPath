@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, NavLink, useLocation } from 'react-router-dom';
 import { ChevronDown } from 'lucide-react';
+import { signOut } from '../data/signIn';
 
 export default function Navbar() {
   const [open, setOpen] = useState(false);
@@ -17,6 +18,7 @@ export default function Navbar() {
   const linkClass = ({ isActive }: { isActive: boolean }) => `nav-link${isActive ? ' active' : ''}`;
   return <header className="navbar"><div className="navbar-inner">
     <Link className="brand" to="/dispatcher">WayPath</Link>
+    <button type="button" className="login-nav-link" onClick={signOut}>Sign out</button>
     <nav aria-label="Dispatcher navigation">
       <NavLink className={linkClass} end to="/dispatcher">Dashboard</NavLink>
       <div ref={container} className="nav-menu">

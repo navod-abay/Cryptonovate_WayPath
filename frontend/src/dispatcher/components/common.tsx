@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { Badge, CarrotIcon, COLORS } from '@waypoint/ui';
 import { Gamepad2, Shirt, Snowflake, Truck, Bus } from 'lucide-react';
-import { categories } from '../data/seed';
+import { categories } from '../data/presentation';
 import type { Category, Vehicle } from '../data/types';
 
 export function CategoryIcon({ category, small = false }: { category: Category; small?: boolean }) {
