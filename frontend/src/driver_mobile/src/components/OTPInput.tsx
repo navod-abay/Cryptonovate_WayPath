@@ -1,6 +1,6 @@
 import React, { useRef } from 'react';
 import { View, TextInput, StyleSheet } from 'react-native';
-import { COLORS, SPACING, scale } from '../utils/constants';
+import { COLORS, SPACING, scale, FONT_FAMILY } from '../utils/constants';
 
 interface OTPInputProps {
   code: string[];
@@ -55,6 +55,7 @@ const styles = StyleSheet.create({
     borderRadius: scale(8),
     textAlign: 'center',
     fontSize: scale(24),   // Font size will scale proportionally
+    fontFamily: FONT_FAMILY.bold,
     color: COLORS.textMain,
     backgroundColor: COLORS.surface,
   },

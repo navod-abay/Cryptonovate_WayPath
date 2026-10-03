@@ -37,11 +37,11 @@ export const SPACING = {
 } as const;
 
 export const FONT_SIZE = {
-  sm: scale(14),
-  md: scale(16),   // Standard body text
-  lg: scale(20),   // Button text (as per your design)
-  xl: scale(24),   // Subheaders or OTP input text
-  xxl: scale(30),  // Main header text (as per your design)
+  sm: scale(16),
+  md: scale(18),   // Standard body text
+  lg: scale(22),   // Button text (as per your design)
+  xl: scale(26),   // Subheaders or OTP input text
+  xxl: scale(32),  // Main header text (as per your design)
 } as const;
 
 export const FONT_WEIGHT = {
@@ -49,4 +49,11 @@ export const FONT_WEIGHT = {
   medium: '500',
   semibold: '600',
   bold: '700',
+} as const;
+
+export const FONT_FAMILY = {
+  regular: 'AtkinsonHyperlegibleNext-Regular',
+  medium: 'AtkinsonHyperlegibleNext-Medium',
+  semibold: 'AtkinsonHyperlegibleNext-SemiBold',
+  bold: 'AtkinsonHyperlegibleNext-Bold',
 } as const;

@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView, StatusBar, ScrollView, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
+import {View, StyleSheet, TouchableOpacity, SafeAreaView, StatusBar, ScrollView, TextInput, KeyboardAvoidingView, Platform} from 'react-native';
+import CustomText from '../../components/CustomText';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RouteProp } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RootStackParamList } from '../../navigation/AppNavigator';
-import { COLORS, SPACING, FONT_SIZE, FONT_WEIGHT, scale } from '../../utils/constants';
+import { COLORS, SPACING, FONT_SIZE, FONT_WEIGHT, scale, FONT_FAMILY } from '../../utils/constants';
 import PrimaryButton from '../../components/PrimaryButton';
 import SelectableCard from '../../components/SelectableCard';
 import SelectableChip from '../../components/SelectableChip';
@@ -60,11 +61,11 @@ export default function ReportIssueScreen({ navigation, route }: Props) {
       {/* HEADER */}
       <View style={[styles.header, { paddingTop: insets.top + SPACING.sm }]}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-          <Text style={styles.backArrow}>{'<-'}</Text>
+          <CustomText style={styles.backArrow}>{'<-'}</CustomText>
         </TouchableOpacity>
         <View style={styles.headerTitles}>
-          <Text style={styles.headerTitle}>Report Issue</Text>
-          <Text style={styles.headerSubtitle}>{tripId} - {nodeTitle}</Text>
+          <CustomText style={styles.headerTitle}>Report Issue</CustomText>
+          <CustomText style={styles.headerSubtitle}>{tripId} - {nodeTitle}</CustomText>
         </View>
         <View style={styles.backButton} />
       </View>
@@ -76,7 +77,7 @@ export default function ReportIssueScreen({ navigation, route }: Props) {
         <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
           
           {/* SECTION 1: What's Wrong? */}
-          <Text style={styles.sectionTitle}>What's Wrong ?</Text>
+          <CustomText style={styles.sectionTitle}>What's Wrong ?</CustomText>
           <View style={styles.gridContainer}>
             {issues.map((issue) => (
               <SelectableCard
@@ -90,7 +91,7 @@ export default function ReportIssueScreen({ navigation, route }: Props) {
           </View>
 
           {/* SECTION 2: Actions Taken */}
-          <Text style={styles.sectionTitle}>Did you take any of these actions?</Text>
+          <CustomText style={styles.sectionTitle}>Did you take any of these actions?</CustomText>
           <View style={styles.chipsContainer}>
             {actions.map((action) => (
               <SelectableChip
@@ -122,7 +123,7 @@ export default function ReportIssueScreen({ navigation, route }: Props) {
       <View style={[styles.footer, { paddingBottom: insets.bottom || SPACING.lg }]}>
         <TouchableOpacity style={styles.addPhotoBtn}>
            <Ionicons name="camera-outline" style={styles.addPhotoIcon} />
-          <Text style={styles.addPhotoText}>Add Photo (Optional)</Text>
+          <CustomText style={styles.addPhotoText}>Add Photo (Optional)</CustomText>
         </TouchableOpacity>
         
         <PrimaryButton 
@@ -153,7 +154,8 @@ const styles = StyleSheet.create({
   headerSubtitle: { color: COLORS.surface, fontSize: scale(12), marginTop: scale(2), opacity: 0.9 },
   
   content: { flex: 1, padding: SPACING.lg },
-  sectionTitle: { fontSize: FONT_SIZE.md, color: COLORS.textMain, fontWeight: FONT_WEIGHT.medium, textAlign: 'center', marginBottom: SPACING.lg, marginTop: SPACING.sm },
+  sectionTitle: { fontSize: FONT_SIZE.md, fontFamily: FONT_FAMILY.regular,
+    color: COLORS.textMain, fontWeight: FONT_WEIGHT.medium, textAlign: 'center', marginBottom: SPACING.lg, marginTop: SPACING.sm },
   gridContainer: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
   chipsContainer: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', marginBottom: SPACING.lg },
   
@@ -163,6 +165,7 @@ const styles = StyleSheet.create({
     borderRadius: scale(8),
     padding: SPACING.md,
     fontSize: FONT_SIZE.sm,
+    fontFamily: FONT_FAMILY.regular,
     color: COLORS.textMain,
     minHeight: scale(100),
     textAlignVertical: 'top',

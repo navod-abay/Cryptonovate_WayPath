@@ -1,0 +1,21 @@
+{
+  "migIndex": 1,
+  "data": [
+    {
+      "path": "assets/fonts/AtkinsonHyperlegibleNext-Bold.ttf",
+      "sha1": "6b765bde83603007cdc7b113529504bd10d3ddb9"
+    },
+    {
+      "path": "assets/fonts/AtkinsonHyperlegibleNext-Medium.ttf",
+      "sha1": "0ef90149db7e1bb18a394982ec2f3836e8cb9824"
+    },
+    {
+      "path": "assets/fonts/AtkinsonHyperlegibleNext-Regular.ttf",
+      "sha1": "feee979c4dd774aa52bcebe3af456ec9212489a1"
+    },
+    {
+      "path": "assets/fonts/AtkinsonHyperlegibleNext-SemiBold.ttf",
+      "sha1": "87edf52da597e7d94dd919ec29551e405e9b622e"
+    }
+  ]
+}

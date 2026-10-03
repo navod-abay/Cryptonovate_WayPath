@@ -1,5 +1,6 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import {View, StyleSheet} from 'react-native';
+import CustomText from './CustomText';
 import { COLORS, SPACING, FONT_SIZE, FONT_WEIGHT, scale } from '../utils/constants';
 import Badge from './Badge';
 import { TripNode } from '../types/trip';
@@ -11,16 +12,16 @@ interface Props {
 export default function OutletRow({ node }: Props) {
   return (
     <View style={styles.outletRow}>
-      <Text style={styles.outletIndex}>{node.sequence}</Text>
+      <CustomText style={styles.outletIndex}>{node.sequence}</CustomText>
       <View style={styles.outletDetails}>
         <View style={styles.rowSpaceBetween}>
-          <Text style={styles.outletTitle}>{node.title}</Text>
+          <CustomText style={styles.outletTitle}>{node.title}</CustomText>
           <Badge label={node.badgeText} />
         </View>
-        <Text style={styles.outletLocation}>{node.location}</Text>
-        <Text style={styles.timeWindow}>{node.scheduledStart} - {node.scheduledEnd}</Text>
+        <CustomText style={styles.outletLocation}>{node.location}</CustomText>
+        <CustomText style={styles.timeWindow}>{node.scheduledStart} - {node.scheduledEnd}</CustomText>
         {node.estimatedArrival && (
-          <Text style={styles.estimatedTime}>Estimated Arrival - {node.estimatedArrival}</Text>
+          <CustomText style={styles.estimatedTime}>Estimated Arrival - {node.estimatedArrival}</CustomText>
         )}
       </View>
     </View>
@@ -31,7 +32,7 @@ const styles = StyleSheet.create({
   outletRow: {
     flexDirection: 'row',
     backgroundColor: COLORS.surface,
-    borderRadius: scale(12),
+    borderRadius: scale(16),
     padding: SPACING.md,
     borderWidth: 1,
     borderColor: COLORS.border,

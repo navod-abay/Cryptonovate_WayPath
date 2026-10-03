@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, FlatList, StatusBar, TouchableOpacity, ActivityIndicator } from 'react-native';
+import {View, StyleSheet, FlatList, StatusBar, TouchableOpacity, ActivityIndicator} from 'react-native';
+import CustomText from '../../components/CustomText';
 import { useSafeAreaInsets, SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../navigation/AppNavigator';
@@ -9,6 +10,7 @@ import WarehouseCard from '../../components/WarehouseCard';
 import OutletRow from '../../components/OutletRow';
 import { TripPayload } from '../../types/trip';
 import Fontisto from 'react-native-vector-icons/Fontisto';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Dashboard'>;
@@ -105,19 +107,21 @@ export default function TripListScreen({ navigation }: Props) {
       {/* HEADER SECTION */}
       <View style={[styles.header, { paddingTop: insets.top + SPACING.md }]}>
         <View>
-          <Text style={styles.greeting}>Hello Nimal !</Text>
-          <Text style={styles.subGreeting}>02 Trips Today</Text>
+          <CustomText style={styles.greeting}>Hello Nimal !</CustomText>
+          <CustomText style={styles.subGreeting}>02 Trips Today</CustomText>
         </View>
-        <Fontisto name="history" style={{ color: COLORS.surface, fontSize: FONT_SIZE.xl }}/>
+        <TouchableOpacity onPress={() => navigation.navigate('History')}>
+          <Fontisto name="history" style={{ color: COLORS.surface, fontSize: FONT_SIZE.xl }}/>
+        </TouchableOpacity>
       </View>
 
       {/* TABS SECTION */}
       <View style={styles.tabContainer}>
         <TouchableOpacity style={[styles.tab, styles.activeTab]}>
-          <Text style={styles.activeTabText}>{tripData.activeTripId}</Text>
+          <CustomText style={styles.activeTabText}>{tripData.activeTripId}</CustomText>
         </TouchableOpacity>
         <TouchableOpacity style={styles.tab}>
-          <Text style={styles.inactiveTabText}>Trip 2</Text>
+          <CustomText style={styles.inactiveTabText}>Trip 2</CustomText>
         </TouchableOpacity>
       </View>
 
@@ -136,9 +140,14 @@ export default function TripListScreen({ navigation }: Props) {
         showsVerticalScrollIndicator={false}
       />
 
+      {/* BOTTOM NAV */}
       <View style={[styles.bottomNav, { paddingBottom: insets.bottom || SPACING.md }]}>
-        <Text style={{ fontSize: FONT_SIZE.xl, color: COLORS.primaryDark }}>🏠</Text>
-        <Text style={{ fontSize: FONT_SIZE.xl, color: COLORS.textSecondary }}>👤</Text>
+        <TouchableOpacity style={styles.navItem}>
+          <Ionicons name="home" size={scale(24)} color={COLORS.primaryDark} />
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.navItem} onPress={() => navigation.navigate('Profile')}>
+          <Ionicons name="person-outline" size={scale(24)} color={COLORS.textSecondary} />
+        </TouchableOpacity>
       </View>
     </View>
   );
@@ -156,5 +165,6 @@ const styles = StyleSheet.create({
   activeTabText: { color: COLORS.primaryDark, fontWeight: FONT_WEIGHT.bold, fontSize: FONT_SIZE.md },
   inactiveTabText: { color: COLORS.tabInactive, fontWeight: FONT_WEIGHT.medium, fontSize: FONT_SIZE.md },
   listContent: { padding: SPACING.lg },
-  bottomNav: { flexDirection: 'row', justifyContent: 'space-around', backgroundColor: COLORS.surface, paddingTop: SPACING.md, borderTopWidth: 1, borderTopColor: COLORS.border }
+  bottomNav: { flexDirection: 'row', justifyContent: 'space-around', backgroundColor: COLORS.surface, paddingTop: SPACING.md, borderTopWidth: 1, borderTopColor: COLORS.border },
+  navItem: { flex: 1, alignItems: 'center', justifyContent: 'center' }
 });

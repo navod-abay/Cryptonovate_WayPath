@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView, StatusBar, ScrollView } from 'react-native';
+import {View, StyleSheet, TouchableOpacity, SafeAreaView, StatusBar, ScrollView} from 'react-native';
+import CustomText from '../../components/CustomText';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RouteProp } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -86,21 +87,21 @@ export default function ActiveTripScreen({ navigation, route }: Props) {
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
            <AntDesign name="arrowleft" style={styles.backArrow} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>{tripData.activeTripId}</Text>
+        <CustomText style={styles.headerTitle}>{tripData.activeTripId}</CustomText>
         <View style={styles.backButton} />
       </View>
 
       {/* DYNAMIC STATUS BANNERS */}
       {isStarted && currentNode.status === 'arrived' && (
         <View style={[styles.banner, { backgroundColor: COLORS.success }]}>
-          <Text style={styles.bannerText}>
+          <CustomText style={styles.bannerText}>
             {isWarehouse ? '1 hr 04 mins in Warehouse' : 'Arrived at Outlet'}
-          </Text>
+          </CustomText>
         </View>
       )}
       {isStarted && currentNode.status === 'ready_to_depart' && (
         <View style={[styles.banner, { backgroundColor: COLORS.danger }]}>
-          <Text style={styles.bannerText}>Departure in 3 mins</Text>
+          <CustomText style={styles.bannerText}>Departure in 3 mins</CustomText>
         </View>
       )}
 
@@ -111,8 +112,8 @@ export default function ActiveTripScreen({ navigation, route }: Props) {
         </TouchableOpacity>
         
         <View style={styles.paginatorCenter}>
-          <Text style={styles.paginatorTitle}>{isWarehouse ? 'Warehouse' : 'Outlet'}</Text>
-          <Text style={styles.paginatorSubtitle}>{isWarehouse ? `${totalOutlets} outlets` : `${currentOutletIndex} of ${totalOutlets}`}</Text>
+          <CustomText style={styles.paginatorTitle}>{isWarehouse ? 'Warehouse' : 'Outlet'}</CustomText>
+          <CustomText style={styles.paginatorSubtitle}>{isWarehouse ? `${totalOutlets} outlets` : `${currentOutletIndex} of ${totalOutlets}`}</CustomText>
         </View>
 
         <TouchableOpacity onPress={() => setCurrentIndex(prev => prev + 1)} disabled={currentIndex === nodes.length - 1} style={styles.arrowButton}>
@@ -125,20 +126,20 @@ export default function ActiveTripScreen({ navigation, route }: Props) {
         {/* Title & Status Icon Row */}
         <View style={styles.titleRow}>
           <View style={styles.titleLeft}>
-            <Text style={styles.nodeTitle}>{currentNode.title}</Text>
+            <CustomText style={styles.nodeTitle}>{currentNode.title}</CustomText>
           </View>
           
           {currentNode.status === 'completed' ? (
             <View style={styles.checkCircle}>
-              <Text style={styles.checkIcon}>✓</Text>
+              <CustomText style={styles.checkIcon}>✓</CustomText>
             </View>
           ) : (
             <TouchableOpacity onPress={handleFlagPress} style={{ flexDirection: 'row', alignItems: 'center' }}>
               {/* Conditionally render the report count if greater than 0[cite: 11] */}
               {(currentNode.reportCount ?? 0) > 0 && (
-                <Text style={{ color: COLORS.danger, fontSize: FONT_SIZE.sm, marginRight: scale(4), textDecorationLine: 'underline' }}>
+                <CustomText style={{ color: COLORS.danger, fontSize: FONT_SIZE.sm, marginRight: scale(4), textDecorationLine: 'underline' }}>
                   {currentNode.reportCount} Report
-                </Text>
+                </CustomText>
               )}
               <Feather name="flag" color={COLORS.danger} size={scale(20)} />
             </TouchableOpacity>
@@ -157,30 +158,30 @@ export default function ActiveTripScreen({ navigation, route }: Props) {
         {isWarehouse ? (
           <View style={styles.timeBlocksContainer}>
             <View style={styles.timeBlock}>
-              <Text style={styles.timeBlockLabel}>Arrive</Text>
-              <Text style={[styles.timeBlockValue, { color: COLORS.primaryDark }]}>{currentNode.scheduledStart}</Text>
+              <CustomText style={styles.timeBlockLabel}>Arrive</CustomText>
+              <CustomText style={[styles.timeBlockValue, { color: COLORS.primaryDark }]}>{currentNode.scheduledStart}</CustomText>
             </View>
             <View style={styles.timeBlock}>
-              <Text style={styles.timeBlockLabel}>Depart</Text>
-              <Text style={[styles.timeBlockValue, { color: COLORS.danger }]}>{currentNode.scheduledEnd}</Text>
+              <CustomText style={styles.timeBlockLabel}>Depart</CustomText>
+              <CustomText style={[styles.timeBlockValue, { color: COLORS.danger }]}>{currentNode.scheduledEnd}</CustomText>
             </View>
           </View>
         ) : (
-          <Text style={styles.outletTimeWindow}>{currentNode.scheduledStart} - {currentNode.scheduledEnd}</Text>
+          <CustomText style={styles.outletTimeWindow}>{currentNode.scheduledStart} - {currentNode.scheduledEnd}</CustomText>
         )}
 
         {/* View Items Link */}
         <TouchableOpacity style={styles.itemsLinkRow} onPress={() => setItemsVisible(true)}>
           <FontAwesome name="list-alt" style={styles.itemsIcon} />
-          <Text style={styles.itemsText}>View Items List</Text>
+          <CustomText style={styles.itemsText}>View Items List</CustomText>
         </TouchableOpacity>
 
         {/* Activity Logs (Arrival / Departure Timestamps) */}
         <View style={styles.logsContainer}>
           {currentNode.logs?.map((log, index) => (
             <View key={index} style={styles.logRow}>
-              <Text style={styles.logTime}>{log.time}</Text>
-              <Text style={styles.logAction}>{log.action}</Text>
+              <CustomText style={styles.logTime}>{log.time}</CustomText>
+              <CustomText style={styles.logAction}>{log.action}</CustomText>
             </View>
           ))}
         </View>

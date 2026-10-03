@@ -1,5 +1,6 @@
 import React from 'react';
-import { TouchableOpacity, Text, StyleSheet, View } from 'react-native';
+import {TouchableOpacity, StyleSheet, View} from 'react-native';
+import CustomText from './CustomText';
 import { COLORS, SPACING, FONT_SIZE, FONT_WEIGHT, scale } from '../utils/constants';
 
 interface Props {
@@ -16,8 +17,8 @@ export default function SelectableCard({ title, icon, isSelected, onPress }: Pro
       onPress={onPress}
       activeOpacity={0.8}
     >
-      <Text style={[styles.icon, isSelected && styles.textSelected]}>{icon}</Text>
-      <Text style={[styles.title, isSelected && styles.textSelected]}>{title}</Text>
+      <CustomText style={[styles.icon, isSelected && styles.textSelected]}>{icon}</CustomText>
+      <CustomText style={[styles.title, isSelected && styles.textSelected]}>{title}</CustomText>
     </TouchableOpacity>
   );
 }
