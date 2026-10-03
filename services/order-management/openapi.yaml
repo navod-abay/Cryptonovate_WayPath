@@ -1,0 +1,3077 @@
+# GENERATED FILE — do not edit by hand.
+# Source: src/docs/openapi.ts. Regenerate with `npm run openapi`.
+openapi: 3.0.3
+info:
+  title: Waypoint Order Management API
+  version: 1.0.0
+  description: >-
+    Order lifecycle for the Waypoint delivery logistics platform: drafts, the 16:00 Asia/Colombo cutoff,
+
+    deferrals, Planning write-back, store receipts and the dispatcher dashboard.
+
+
+    ### Authentication
+
+    Every route except `/health` needs the header `Authorization: Bearer <access_token>`.
+
+    Get a token from auth-rbac (through the gateway your environment uses), then press **Authorize** and paste it
+
+    (without the `Bearer ` prefix):
+
+
+    ```bash
+
+    curl -X POST "$GATEWAY_URL/api/auth/login" \
+      -H 'Content-Type: application/json' \
+      -d '{"username":"manager_out001","password":"Password123!"}'
+    ```
+
+
+    Seeded accounts (password `Password123!`): `dispatcher_admin`, `manager_out001` (outlet OUT001),
+
+    `loader_peliyagoda`, `driver_colombo`.
+
+
+    ### Headers
+
+    | Header | Where | Purpose |
+
+    |---|---|---|
+
+    | `Authorization: Bearer <token>` | all but `/health` | access token from auth-rbac |
+
+    | `Content-Type: application/json` | requests with a body | |
+
+    | `Idempotency-Key` | `POST /` | safe retries of create |
+
+    | `X-Test-Now` | any (non-production) | freeze the business clock for one request |
+
+
+    ### Responses
+
+    Success: `{ "success": true, "data": … }`. Failure: `{ "success": false, "error": { code, message, details? } }`.
+
+    Dates are `YYYY-MM-DD`, delivery windows `HH:mm` (Asia/Colombo), instants ISO 8601 UTC.
+
+
+    ### Example flow
+
+    1. `POST /` create a draft → 2. `POST /{order_ref}/confirm` → 3. `GET /confirmed?date=` (Planning reads)
+
+    → 4. `PATCH /status-batch` (allocate or defer) → 5. `PATCH /{order_ref}/status` (loaded → out_for_delivery →
+    delivered)
+
+    → 6. `POST /{order_ref}/receipt`.
+
+
+    Full reference with the reasoning behind each rule: `services/order-management/docs/API.md`.
+servers:
+  - url: "{baseUrl}/api/orders"
+    description: API gateway or this service; set baseUrl to the origin of your environment
+    variables:
+      baseUrl:
+        default: ""
+        description: Scheme and host (and port, if any), without a trailing slash. Empty = same origin as this page.
+tags:
+  - name: Health
+    description: Liveness and readiness
+  - name: Orders
+    description: Create, edit, confirm, cancel, read
+  - name: Planning
+    description: Contract with Planning & Allocation
+  - name: Execution
+    description: Status updates from the dock and the road
+  - name: Dispatch
+    description: Deferral, risk and dashboard views
+  - name: Store
+    description: Receipt at the outlet
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: "Access token from `POST /api/auth/login`. Sent as `Authorization: Bearer <token>`."
+  schemas:
+    ErrorResponse:
+      type: object
+      required:
+        - success
+        - error
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: object
+          required:
+            - code
+            - message
+          properties:
+            code:
+              type: string
+              example: CUTOFF_PASSED
+            message:
+              type: string
+            details:
+              description: Field list, next_available_date, failures[] etc.
+    OrderStatus:
+      type: string
+      enum:
+        - draft
+        - confirmed
+        - allocated
+        - loaded
+        - out_for_delivery
+        - delivered
+        - received
+        - disputed
+        - deferred
+        - not_run
+        - cancelled
+    OrderItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        order_ref:
+          type: string
+        sku:
+          type: string
+          example: MLK-1L
+        description:
+          type: string
+        quantity:
+          type: integer
+        unit_weight_kg:
+          type: number
+        unit_volume_m3:
+          type: number
+        is_chilled:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+    OrderEvent:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        order_ref:
+          type: string
+        from_status:
+          type: string
+          nullable: true
+        to_status:
+          $ref: "#/components/schemas/OrderStatus"
+        reason_code:
+          type: string
+          nullable: true
+        reason_note:
+          type: string
+          nullable: true
+        actor_id:
+          type: string
+          nullable: true
+        actor_role:
+          type: string
+        occurred_at:
+          type: string
+          format: date-time
+    Order:
+      type: object
+      properties:
+        order_ref:
+          type: string
+          example: ORD-20260929-00042
+        outlet_id:
+          type: string
+          example: OUT001
+        brand:
+          type: string
+          enum:
+            - Fresh
+            - Style
+            - Tech
+        depot:
+          type: string
+          enum:
+            - Peliyagoda
+            - Kandy
+        order_date:
+          type: string
+          format: date
+        original_order_date:
+          type: string
+          format: date
+        requested_order_date:
+          type: string
+          format: date
+          nullable: true
+        temp_requirement:
+          type: string
+          enum:
+            - ambient
+            - chilled
+        status:
+          $ref: "#/components/schemas/OrderStatus"
+        order_units:
+          type: integer
+        order_weight_kg:
+          type: number
+        order_volume_m3:
+          type: number
+        window_open_time:
+          type: string
+          example: 05:00
+        window_close_time:
+          type: string
+          example: 07:30
+        placed_by:
+          type: string
+          nullable: true
+        placed_by_username:
+          type: string
+        placed_at:
+          type: string
+          format: date-time
+        confirmed_at:
+          type: string
+          format: date-time
+          nullable: true
+        cutoff_applied_at:
+          type: string
+          format: date-time
+          nullable: true
+        deferral_count:
+          type: integer
+        vehicle_id:
+          type: string
+          nullable: true
+        trip_id:
+          type: integer
+          nullable: true
+        idempotency_key:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    OrderDetail:
+      allOf:
+        - $ref: "#/components/schemas/Order"
+        - type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/OrderItem"
+            events:
+              type: array
+              description: Latest 20, oldest first
+              items:
+                $ref: "#/components/schemas/OrderEvent"
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      tags:
+        - Health
+      summary: Liveness and DB readiness
+      description: Public. Pings the database; returns 503 when it is unreachable. `reference_data.outlets` reports when
+        outlets were last copied from Fleet & Directory's `outlets` table.
+      security: []
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  service:
+                    type: string
+                  status:
+                    type: string
+                  db:
+                    type: string
+                    enum:
+                      - up
+                      - down
+                  reference_data:
+                    type: object
+                    properties:
+                      outlets:
+                        type: object
+                        properties:
+                          source:
+                            type: string
+                          last_synced_at:
+                            type: string
+                            format: date-time
+                            nullable: true
+                          outlets:
+                            type: integer
+                            nullable: true
+                          skipped_invalid:
+                            type: integer
+                            nullable: true
+                          last_error:
+                            type: string
+                            nullable: true
+                  timestamp:
+                    type: string
+                    format: date-time
+              example:
+                service: order-management
+                status: healthy
+                db: up
+                reference_data:
+                  outlets:
+                    source: "database: outlets (Fleet & Directory)"
+                    last_synced_at: 2026-09-27T18:05:02.118Z
+                    outlets: 120
+                    skipped_invalid: 0
+                    last_error: null
+                timestamp: 2026-09-27T18:07:31.046Z
+        "503":
+          description: Database unreachable
+          content:
+            application/json:
+              example:
+                service: order-management
+                status: degraded
+                db: down
+                timestamp: 2026-09-27T18:07:31.046Z
+  /:
+    get:
+      operationId: listOrders
+      tags:
+        - Orders
+      summary: List orders
+      description: "Roles: store_manager (forced to own outlet), dispatcher, loader. Items are not included. Sorted by
+        order_date DESC, order_ref ASC."
+      security: &a1
+        - bearerAuth: []
+      parameters:
+        - name: outlet_id
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Exact outlet
+          example: OUT001
+        - &a6
+          name: depot
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - Peliyagoda
+              - Kandy
+          description: Filter to one depot
+          example: Peliyagoda
+        - name: brand
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - Fresh
+              - Style
+              - Tech
+        - name: temp_requirement
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - ambient
+              - chilled
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: array
+            items:
+              $ref: "#/components/schemas/OrderStatus"
+          description: Repeatable (`?status=a&status=b`) or comma-separated
+          style: form
+          explode: true
+          example:
+            - confirmed
+            - allocated
+        - name: from
+          in: query
+          required: false
+          description: Inclusive, on order_date
+          schema:
+            type: string
+            format: date
+          example: 2026-09-29
+        - name: to
+          in: query
+          required: false
+          description: Inclusive, on order_date; from must be <= to
+          schema:
+            type: string
+            format: date
+          example: 2026-09-29
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: page_size
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        "200":
+          description: Page of orders
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      orders:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/Order"
+                      page:
+                        type: integer
+                      page_size:
+                        type: integer
+                      total:
+                        type: integer
+              example:
+                success: true
+                data:
+                  orders:
+                    - order_ref: ORD-20260929-00042
+                      outlet_id: OUT001
+                      brand: Fresh
+                      depot: Peliyagoda
+                      order_date: 2026-09-29
+                      original_order_date: 2026-09-29
+                      requested_order_date: null
+                      temp_requirement: chilled
+                      status: confirmed
+                      order_units: 120
+                      order_weight_kg: 123.6
+                      order_volume_m3: 0.132
+                      window_open_time: 05:00
+                      window_close_time: 07:30
+                      placed_by: 9595b3cf-eec1-4559-9fcc-889ef5a9280c
+                      placed_by_username: manager_out001
+                      placed_at: 2026-09-28T04:30:00.000Z
+                      confirmed_at: 2026-09-28T04:35:00.000Z
+                      cutoff_applied_at: 2026-09-28T04:35:00.000Z
+                      deferral_count: 0
+                      vehicle_id: null
+                      trip_id: null
+                      idempotency_key: null
+                      created_at: 2026-09-28T04:30:00.412Z
+                      updated_at: 2026-09-28T04:35:00.108Z
+                  page: 1
+                  page_size: 50
+                  total: 1
+        "400":
+          description: VALIDATION_ERROR
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                VALIDATION_ERROR:
+                  summary: VALIDATION_ERROR
+                  value:
+                    success: false
+                    error:
+                      code: VALIDATION_ERROR
+                      message: Invalid request query parameters
+                      details:
+                        - field: from
+                          message: "'from' must be on or before 'to'"
+        "401": &a4
+          description: UNAUTHORIZED · INVALID_TOKEN · INVALID_TOKEN_TYPE
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                UNAUTHORIZED:
+                  summary: UNAUTHORIZED
+                  value:
+                    success: false
+                    error:
+                      code: UNAUTHORIZED
+                      message: Bearer authorization token required
+                INVALID_TOKEN:
+                  summary: INVALID_TOKEN
+                  value:
+                    success: false
+                    error:
+                      code: INVALID_TOKEN
+                      message: Invalid or expired access token
+                INVALID_TOKEN_TYPE:
+                  summary: INVALID_TOKEN_TYPE
+                  value:
+                    success: false
+                    error:
+                      code: INVALID_TOKEN_TYPE
+                      message: Token must be an access token
+        "403":
+          description: FORBIDDEN · OUTLET_SCOPE_VIOLATION
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                FORBIDDEN:
+                  summary: FORBIDDEN
+                  value:
+                    success: false
+                    error:
+                      code: FORBIDDEN
+                      message: "Access denied. Requires one of roles: [store_manager, dispatcher]"
+                OUTLET_SCOPE_VIOLATION:
+                  summary: OUTLET_SCOPE_VIOLATION
+                  value:
+                    success: false
+                    error:
+                      code: OUTLET_SCOPE_VIOLATION
+                      message: Store manager for OUT001 may not access outlet OUT050
+                      details:
+                        token_outlet_id: OUT001
+                        requested_outlet_id: OUT050
+        "503": &a5
+          description: DB_UNAVAILABLE
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                DB_UNAVAILABLE:
+                  summary: DB_UNAVAILABLE
+                  value:
+                    success: false
+                    error:
+                      code: DB_UNAVAILABLE
+                      message: Database is unavailable, please retry shortly
+    post:
+      operationId: createOrder
+      tags:
+        - Orders
+      summary: Create a draft order
+      description: >-
+        Roles: store_manager (own outlet; `outlet_id` is taken from the token), dispatcher (`outlet_id` required).
+
+
+        Chilled orders are Fresh-only and every item `is_chilled` must match `temp_requirement`. Omit `order_date` for
+        "next available run" — the date is then fixed at confirm time.
+      security: *a1
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: false
+          description: "Optional. 1–100 printable characters. The same key with the same body returns the original order (200,
+            `idempotent_replay: true`); the same key with a different body returns 409 IDEMPOTENCY_KEY_CONFLICT."
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 100
+          example: out001-2026-09-29-chilled-1
+        - &a10
+          name: X-Test-Now
+          in: header
+          required: false
+          description: Non-production only. Evaluates this request as if it were the given instant (offset mandatory), so cutoff
+            behaviour can be demonstrated at any time of day. Ignored when NODE_ENV=production.
+          schema:
+            type: string
+            format: date-time
+          example: 2026-09-28T15:00:00+05:30
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                outlet_id:
+                  type: string
+                  minLength: 1
+                  maxLength: 20
+                temp_requirement:
+                  type: string
+                  enum:
+                    - ambient
+                    - chilled
+                order_date:
+                  type: string
+                items:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      sku:
+                        type: string
+                        minLength: 1
+                        maxLength: 40
+                        pattern: ^[A-Za-z0-9][A-Za-z0-9._\-/]*$
+                      description:
+                        type: string
+                        minLength: 1
+                        maxLength: 200
+                      quantity:
+                        type: integer
+                        exclusiveMinimum: true
+                        minimum: 0
+                        maximum: 1000000
+                      unit_weight_kg:
+                        type: number
+                        minimum: 0
+                        maximum: 99999.999
+                      unit_volume_m3:
+                        type: number
+                        minimum: 0
+                        maximum: 9999.9999
+                      is_chilled:
+                        type: boolean
+                        default: false
+                    required:
+                      - sku
+                      - description
+                      - quantity
+                      - unit_weight_kg
+                      - unit_volume_m3
+                    additionalProperties: false
+                  maxItems: 500
+                  default: []
+              required:
+                - temp_requirement
+              additionalProperties: false
+            examples:
+              storeManagerChilled:
+                summary: Store manager — chilled order for the next run (outlet from token)
+                value:
+                  temp_requirement: chilled
+                  items:
+                    - &a13
+                      sku: MLK-1L
+                      description: Fresh milk 1L
+                      quantity: 120
+                      unit_weight_kg: 1.03
+                      unit_volume_m3: 0.0011
+                      is_chilled: true
+              dispatcherAmbientDated:
+                summary: Dispatcher — ambient order for a specific date
+                value:
+                  outlet_id: OUT050
+                  temp_requirement: ambient
+                  order_date: 2026-10-01
+                  items:
+                    - &a11
+                      sku: RICE-5KG
+                      description: Samba rice 5kg bag
+                      quantity: 10
+                      unit_weight_kg: 5.05
+                      unit_volume_m3: 0.007
+                      is_chilled: false
+                    - &a12
+                      sku: TEA-400G
+                      description: Ceylon tea 400g
+                      quantity: 20
+                      unit_weight_kg: 0.42
+                      unit_volume_m3: 0.0009
+                      is_chilled: false
+              emptyDraft:
+                summary: Empty draft (add items later with PUT /{order_ref}/items)
+                value:
+                  outlet_id: OUT050
+                  temp_requirement: ambient
+      responses:
+        "200":
+          description: Idempotent replay of an earlier create
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: "#/components/schemas/OrderDetail"
+              example:
+                success: true
+                data:
+                  order_ref: ORD-20260929-00042
+                  outlet_id: OUT001
+                  brand: Fresh
+                  depot: Peliyagoda
+                  order_date: 2026-09-29
+                  original_order_date: 2026-09-29
+                  requested_order_date: null
+                  temp_requirement: chilled
+                  status: draft
+                  order_units: 120
+                  order_weight_kg: 123.6
+                  order_volume_m3: 0.132
+                  window_open_time: 05:00
+                  window_close_time: 07:30
+                  placed_by: 9595b3cf-eec1-4559-9fcc-889ef5a9280c
+                  placed_by_username: manager_out001
+                  placed_at: 2026-09-28T04:30:00.000Z
+                  confirmed_at: null
+                  cutoff_applied_at: null
+                  deferral_count: 0
+                  vehicle_id: null
+                  trip_id: null
+                  idempotency_key: null
+                  created_at: 2026-09-28T04:30:00.412Z
+                  updated_at: 2026-09-28T04:35:00.108Z
+                  items: &a2
+                    - &a7
+                      id: 93774585-618a-433c-b13e-d1643eeec746
+                      order_ref: ORD-20260929-00042
+                      sku: MLK-1L
+                      description: Fresh milk 1L
+                      quantity: 120
+                      unit_weight_kg: 1.03
+                      unit_volume_m3: 0.0011
+                      is_chilled: true
+                      created_at: 2026-09-28T04:30:00.412Z
+                  events: &a3
+                    - id: b3620ebe-62a7-4578-99d8-233e335c5781
+                      order_ref: ORD-20260929-00042
+                      from_status: null
+                      to_status: draft
+                      reason_code: null
+                      reason_note: null
+                      actor_id: 9595b3cf-eec1-4559-9fcc-889ef5a9280c
+                      actor_role: store_manager
+                      occurred_at: 2026-09-28T04:30:00.412Z
+                  idempotent_replay: true
+        "201":
+          description: Draft created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: "#/components/schemas/OrderDetail"
+              example:
+                success: true
+                data: &a14
+                  order_ref: ORD-20260929-00042
+                  outlet_id: OUT001
+                  brand: Fresh
+                  depot: Peliyagoda
+                  order_date: 2026-09-29
+                  original_order_date: 2026-09-29
+                  requested_order_date: null
+                  temp_requirement: chilled
+                  status: draft
+                  order_units: 120
+                  order_weight_kg: 123.6
+                  order_volume_m3: 0.132
+                  window_open_time: 05:00
+                  window_close_time: 07:30
+                  placed_by: 9595b3cf-eec1-4559-9fcc-889ef5a9280c
+                  placed_by_username: manager_out001
+                  placed_at: 2026-09-28T04:30:00.000Z
+                  confirmed_at: null
+                  cutoff_applied_at: null
+                  deferral_count: 0
+                  vehicle_id: null
+                  trip_id: null
+                  idempotency_key: null
+                  created_at: 2026-09-28T04:30:00.412Z
+                  updated_at: 2026-09-28T04:35:00.108Z
+                  items: *a2
+                  events: *a3
+        "400": &a15
+          description: VALIDATION_ERROR
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                VALIDATION_ERROR:
+                  summary: VALIDATION_ERROR
+                  value:
+                    success: false
+                    error:
+                      code: VALIDATION_ERROR
+                      message: Invalid request payload format
+                      details:
+                        - field: items.0.quantity
+                          message: quantity must be greater than 0
+        "401": *a4
+        "403":
+          description: FORBIDDEN · OUTLET_SCOPE_VIOLATION
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                FORBIDDEN:
+                  summary: FORBIDDEN
+                  value:
+                    success: false
+                    error:
+                      code: FORBIDDEN
+                      message: "Access denied. Requires one of roles: [store_manager, dispatcher]"
+                OUTLET_SCOPE_VIOLATION:
+                  summary: OUTLET_SCOPE_VIOLATION
+                  value:
+                    success: false
+                    error:
+                      code: OUTLET_SCOPE_VIOLATION
+                      message: Store manager for OUT001 may not access outlet OUT050
+                      details:
+                        token_outlet_id: OUT001
+                        requested_outlet_id: OUT050
+        "404":
+          description: OUTLET_NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                OUTLET_NOT_FOUND:
+                  summary: OUTLET_NOT_FOUND
+                  value:
+                    success: false
+                    error:
+                      code: OUTLET_NOT_FOUND
+                      message: Outlet OUT999 does not exist
+                      details:
+                        outlet_id: OUT999
+        "409":
+          description: DUPLICATE_ORDER · CUTOFF_PASSED · IDEMPOTENCY_KEY_CONFLICT
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                DUPLICATE_ORDER:
+                  summary: DUPLICATE_ORDER
+                  value:
+                    success: false
+                    error:
+                      code: DUPLICATE_ORDER
+                      message: Outlet OUT001 already has an active chilled order for 2026-09-29
+                      details:
+                        existing_order_ref: ORD-20260929-00042
+                        outlet_id: OUT001
+                        order_date: 2026-09-29
+                        temp_requirement: chilled
+                CUTOFF_PASSED:
+                  summary: CUTOFF_PASSED
+                  value:
+                    success: false
+                    error:
+                      code: CUTOFF_PASSED
+                      message: Ordering for 2026-09-29 has closed
+                      details:
+                        requested_date: 2026-09-29
+                        next_available_date: 2026-09-30
+                IDEMPOTENCY_KEY_CONFLICT:
+                  summary: IDEMPOTENCY_KEY_CONFLICT
+                  value:
+                    success: false
+                    error:
+                      code: IDEMPOTENCY_KEY_CONFLICT
+                      message: This Idempotency-Key was already used with a different request body
+                      details:
+                        idempotency_key: out001-2026-09-29-chilled-1
+                        order_ref: ORD-20260929-00042
+        "422":
+          description: CHILLED_MISMATCH · NON_OPERATING_DATE
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                CHILLED_MISMATCH:
+                  summary: CHILLED_MISMATCH
+                  value:
+                    success: false
+                    error:
+                      code: CHILLED_MISMATCH
+                      message: Every item on an ambient order must have is_chilled=false. Place chilled and ambient goods on separate orders.
+                      details:
+                        temp_requirement: ambient
+                        mismatched_items:
+                          - index: 0
+                            sku: MLK-1L
+                            is_chilled: true
+                NON_OPERATING_DATE:
+                  summary: NON_OPERATING_DATE
+                  value:
+                    success: false
+                    error:
+                      code: NON_OPERATING_DATE
+                      message: 2026-10-04 is not an operating day
+                      details:
+                        order_date: 2026-10-04
+                        next_operating_day: 2026-10-05
+        "503": *a5
+  /confirmed:
+    get:
+      operationId: getConfirmedOrders
+      tags:
+        - Planning
+      summary: Confirmed pool for one delivery date (the Planning contract)
+      description: "Roles: dispatcher, loader. Most-deferred and longest-unserved first. Outlet access fields are joined onto
+        each row so Planning can check feasibility without a second call. `totals` equal the sum of the rows."
+      security: *a1
+      parameters:
+        - name: date
+          in: query
+          required: true
+          description: Delivery date
+          schema:
+            type: string
+            format: date
+          example: 2026-09-29
+        - *a6
+      responses:
+        "200":
+          description: Confirmed orders with totals
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      date:
+                        type: string
+                        format: date
+                      depot:
+                        type: string
+                        nullable: true
+                      totals:
+                        type: object
+                        properties:
+                          orders:
+                            type: integer
+                          units:
+                            type: integer
+                          weight_kg:
+                            type: number
+                          volume_m3:
+                            type: number
+                          chilled_orders:
+                            type: integer
+                          chilled_volume_m3:
+                            type: number
+                      orders:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            order_ref:
+                              type: string
+                            outlet_id:
+                              type: string
+                            brand:
+                              type: string
+                            depot:
+                              type: string
+                            district:
+                              type: string
+                            temp_requirement:
+                              type: string
+                            order_units:
+                              type: integer
+                            order_weight_kg:
+                              type: number
+                            order_volume_m3:
+                              type: number
+                            window_open_time:
+                              type: string
+                            window_close_time:
+                              type: string
+                            dock_type:
+                              type: string
+                              enum:
+                                - rear_dock
+                                - street
+                                - mall_bay
+                            parking_constraint:
+                              type: string
+                              enum:
+                                - normal
+                                - van_only
+                                - mall_dock
+                            mall_window:
+                              type: boolean
+                            deferral_count:
+                              type: integer
+                            deferred_yesterday:
+                              type: boolean
+                            days_since_last_served:
+                              type: integer
+                            original_order_date:
+                              type: string
+                              format: date
+              example:
+                success: true
+                data:
+                  date: 2026-09-29
+                  depot: Peliyagoda
+                  totals:
+                    orders: 2
+                    units: 162
+                    weight_kg: 406.1
+                    volume_m3: 1.223
+                    chilled_orders: 1
+                    chilled_volume_m3: 0.132
+                  orders:
+                    - order_ref: ORD-20260925-01374
+                      outlet_id: OUT045
+                      brand: Fresh
+                      depot: Peliyagoda
+                      district: Kalutara
+                      temp_requirement: ambient
+                      order_units: 42
+                      order_weight_kg: 282.5
+                      order_volume_m3: 1.091
+                      window_open_time: 03:00
+                      window_close_time: 08:00
+                      dock_type: rear_dock
+                      parking_constraint: normal
+                      mall_window: false
+                      deferral_count: 2
+                      deferred_yesterday: true
+                      days_since_last_served: 9
+                      original_order_date: 2026-09-25
+                    - order_ref: ORD-20260929-00042
+                      outlet_id: OUT001
+                      brand: Fresh
+                      depot: Peliyagoda
+                      district: Colombo
+                      temp_requirement: chilled
+                      order_units: 120
+                      order_weight_kg: 123.6
+                      order_volume_m3: 0.132
+                      window_open_time: 05:00
+                      window_close_time: 07:30
+                      dock_type: street
+                      parking_constraint: van_only
+                      mall_window: false
+                      deferral_count: 0
+                      deferred_yesterday: false
+                      days_since_last_served: 1
+                      original_order_date: 2026-09-29
+        "400":
+          description: VALIDATION_ERROR
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                VALIDATION_ERROR:
+                  summary: VALIDATION_ERROR
+                  value:
+                    success: false
+                    error:
+                      code: VALIDATION_ERROR
+                      message: Invalid request query parameters
+                      details:
+                        - field: date
+                          message: Required
+        "401": *a4
+        "403":
+          description: FORBIDDEN
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                FORBIDDEN:
+                  summary: FORBIDDEN
+                  value:
+                    success: false
+                    error:
+                      code: FORBIDDEN
+                      message: "Access denied. Requires one of roles: [store_manager, dispatcher]"
+        "503": *a5
+  /at-risk:
+    get:
+      operationId: getAtRiskOutlets
+      tags:
+        - Dispatch
+      summary: Outlets at risk of being skipped again
+      description: "Role: dispatcher. Flags: CONSECUTIVE_DEFERRAL_RISK, STALE_SERVICE, AGED_OUT_RECENTLY. Worst first."
+      security: *a1
+      parameters:
+        - *a6
+        - name: min_deferrals
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 2
+        - name: min_days
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 365
+            default: 3
+      responses:
+        "200":
+          description: At-risk outlets
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      criteria:
+                        type: object
+                      outlets:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            outlet_id:
+                              type: string
+                            brand:
+                              type: string
+                            district:
+                              type: string
+                            depot:
+                              type: string
+                            deferred_yesterday:
+                              type: boolean
+                            days_since_last_served:
+                              type: integer
+                            last_served_date:
+                              type: string
+                              format: date
+                              nullable: true
+                            max_deferral_count:
+                              type: integer
+                            open_orders:
+                              type: integer
+                            overdue_open_orders:
+                              type: integer
+                            aged_out_orders:
+                              type: integer
+                            flags:
+                              type: array
+                              items:
+                                type: string
+                                enum:
+                                  - CONSECUTIVE_DEFERRAL_RISK
+                                  - STALE_SERVICE
+                                  - AGED_OUT_RECENTLY
+              example:
+                success: true
+                data:
+                  criteria:
+                    min_deferrals: 2
+                    min_days: 3
+                    depot: Peliyagoda
+                  outlets:
+                    - outlet_id: OUT045
+                      brand: Fresh
+                      district: Kalutara
+                      depot: Peliyagoda
+                      deferred_yesterday: true
+                      days_since_last_served: 9
+                      last_served_date: 2026-09-18
+                      max_deferral_count: 3
+                      open_orders: 3
+                      overdue_open_orders: 1
+                      aged_out_orders: 1
+                      flags:
+                        - CONSECUTIVE_DEFERRAL_RISK
+                        - STALE_SERVICE
+                        - AGED_OUT_RECENTLY
+        "400":
+          description: VALIDATION_ERROR
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                VALIDATION_ERROR:
+                  summary: VALIDATION_ERROR
+                  value:
+                    success: false
+                    error:
+                      code: VALIDATION_ERROR
+                      message: Invalid request query parameters
+                      details:
+                        - field: min_days
+                          message: Number must be greater than or equal to 1
+        "401": *a4
+        "403":
+          description: FORBIDDEN
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                FORBIDDEN:
+                  summary: FORBIDDEN
+                  value:
+                    success: false
+                    error:
+                      code: FORBIDDEN
+                      message: "Access denied. Requires one of roles: [store_manager, dispatcher]"
+        "503": *a5
+  /summary:
+    get:
+      operationId: getSummary
+      tags:
+        - Dispatch
+      summary: Dispatcher dashboard for one date
+      description: "Role: dispatcher. Counts by status, totals by brand and temperature, and chilled demand against
+        refrigerated fleet capacity. Capacity is the available reefers reported by Fleet & Directory's API. If Fleet
+        cannot be reached, `available` is false and the capacity figures are null; nothing is estimated."
+      security: *a1
+      parameters:
+        - name: date
+          in: query
+          required: false
+          description: "Default: next operating day"
+          schema:
+            type: string
+            format: date
+          example: 2026-09-29
+        - *a6
+      responses:
+        "200":
+          description: Summary
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      date:
+                        type: string
+                        format: date
+                      depot:
+                        type: string
+                        nullable: true
+                      by_status:
+                        type: object
+                        additionalProperties:
+                          type: integer
+                      by_brand:
+                        type: object
+                        additionalProperties:
+                          type: object
+                      by_temperature:
+                        type: object
+                        additionalProperties:
+                          type: object
+                      chilled_capacity_reference:
+                        type: object
+                        properties:
+                          available:
+                            type: boolean
+                            description: false when Fleet & Directory could not be reached
+                          note:
+                            type: string
+                          reefer_vehicles:
+                            type: integer
+                            nullable: true
+                          reefer_volume_m3:
+                            type: number
+                            nullable: true
+                          chilled_trips_per_day:
+                            type: integer
+                          capacity_m3:
+                            type: number
+                            nullable: true
+                          demand_m3:
+                            type: number
+                          utilisation_pct:
+                            type: number
+                            nullable: true
+                          exceeds_capacity:
+                            type: boolean
+                            nullable: true
+              example:
+                success: true
+                data:
+                  date: 2026-09-29
+                  depot: Peliyagoda
+                  by_status:
+                    confirmed: 131
+                    cancelled: 2
+                  by_brand:
+                    Fresh:
+                      orders: 105
+                      units: 61240
+                      weight_kg: 148210.4
+                      volume_m3: 412.87
+                    Style:
+                      orders: 16
+                      units: 512
+                      weight_kg: 4012.5
+                      volume_m3: 48.9
+                    Tech:
+                      orders: 10
+                      units: 22
+                      weight_kg: 911
+                      volume_m3: 6.27
+                  by_temperature:
+                    ambient:
+                      orders: 75
+                      units: 9480
+                      weight_kg: 35210.6
+                      volume_m3: 177.54
+                    chilled:
+                      orders: 56
+                      units: 52294
+                      weight_kg: 117923.3
+                      volume_m3: 290.5
+                  chilled_capacity_reference:
+                    available: true
+                    note: Volume of the available refrigerated vehicles, from Fleet & Directory
+                    reefer_vehicles: 9
+                    reefer_volume_m3: 207.5
+                    chilled_trips_per_day: 1
+                    capacity_m3: 207.5
+                    demand_m3: 290.5
+                    utilisation_pct: 140
+                    exceeds_capacity: true
+        "400":
+          description: VALIDATION_ERROR
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                VALIDATION_ERROR:
+                  summary: VALIDATION_ERROR
+                  value:
+                    success: false
+                    error:
+                      code: VALIDATION_ERROR
+                      message: Invalid request query parameters
+                      details:
+                        - field: date
+                          message: Must be a valid date in YYYY-MM-DD format
+        "401": *a4
+        "403":
+          description: FORBIDDEN
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                FORBIDDEN:
+                  summary: FORBIDDEN
+                  value:
+                    success: false
+                    error:
+                      code: FORBIDDEN
+                      message: "Access denied. Requires one of roles: [store_manager, dispatcher]"
+        "503": *a5
+  /status-batch:
+    patch:
+      operationId: applyStatusBatch
+      tags:
+        - Planning
+      summary: Planning write-back (all-or-nothing, up to 500 updates)
+      description: "Role: dispatcher. `allocated` needs `vehicle_id` and `trip_id` (1 or 2). `deferred` needs a `reason_code`
+        and runs the full deferral sequence. Entries are applied in order. If any entry fails **nothing** is applied and
+        every failure is listed in `error.details.failures[]` (HTTP 422)."
+      security: *a1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                updates:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      order_ref:
+                        type: string
+                        minLength: 1
+                        maxLength: 32
+                      status:
+                        type: string
+                        enum:
+                          - draft
+                          - confirmed
+                          - allocated
+                          - loaded
+                          - out_for_delivery
+                          - delivered
+                          - received
+                          - disputed
+                          - deferred
+                          - not_run
+                          - cancelled
+                      vehicle_id:
+                        type: string
+                        maxLength: 20
+                      trip_id:
+                        type: integer
+                      reason_code:
+                        type: string
+                      reason_note:
+                        type: string
+                        maxLength: 1000
+                    required:
+                      - order_ref
+                      - status
+                    additionalProperties: false
+                  minItems: 1
+                  maxItems: 500
+              required:
+                - updates
+              additionalProperties: false
+            examples:
+              allocateAndDefer:
+                summary: Allocate one order, defer another
+                value:
+                  updates:
+                    - order_ref: ORD-20260929-00042
+                      status: allocated
+                      vehicle_id: VEH001
+                      trip_id: 1
+                    - order_ref: ORD-20260929-00043
+                      status: deferred
+                      reason_code: NO_REEFER_AVAILABLE
+                      reason_note: all 9 Peliyagoda reefers committed to trip 1
+              progressOneOrder:
+                summary: Move one order through several steps in order
+                value:
+                  updates:
+                    - order_ref: ORD-20260929-00042
+                      status: loaded
+                    - order_ref: ORD-20260929-00042
+                      status: out_for_delivery
+                    - order_ref: ORD-20260929-00042
+                      status: delivered
+      responses:
+        "200":
+          description: Batch applied
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      updated:
+                        type: integer
+                      orders:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/Order"
+              example:
+                success: true
+                data:
+                  updated: 1
+                  orders:
+                    - order_ref: ORD-20260929-00042
+                      outlet_id: OUT001
+                      brand: Fresh
+                      depot: Peliyagoda
+                      order_date: 2026-09-29
+                      original_order_date: 2026-09-29
+                      requested_order_date: null
+                      temp_requirement: chilled
+                      status: allocated
+                      order_units: 120
+                      order_weight_kg: 123.6
+                      order_volume_m3: 0.132
+                      window_open_time: 05:00
+                      window_close_time: 07:30
+                      placed_by: 9595b3cf-eec1-4559-9fcc-889ef5a9280c
+                      placed_by_username: manager_out001
+                      placed_at: 2026-09-28T04:30:00.000Z
+                      confirmed_at: 2026-09-28T04:35:00.000Z
+                      cutoff_applied_at: 2026-09-28T04:35:00.000Z
+                      deferral_count: 0
+                      vehicle_id: VEH001
+                      trip_id: 1
+                      idempotency_key: null
+                      created_at: 2026-09-28T04:30:00.412Z
+                      updated_at: 2026-09-28T04:35:00.108Z
+        "400":
+          description: VALIDATION_ERROR
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                VALIDATION_ERROR:
+                  summary: VALIDATION_ERROR
+                  value:
+                    success: false
+                    error:
+                      code: VALIDATION_ERROR
+                      message: Invalid request payload format
+                      details:
+                        - field: updates
+                          message: At most 500 updates per call
+        "401": *a4
+        "403":
+          description: FORBIDDEN
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                FORBIDDEN:
+                  summary: FORBIDDEN
+                  value:
+                    success: false
+                    error:
+                      code: FORBIDDEN
+                      message: "Access denied. Requires one of roles: [store_manager, dispatcher]"
+        "422":
+          description: ORDER_NOT_FOUND · INVALID_STATE_TRANSITION
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                ORDER_NOT_FOUND:
+                  summary: ORDER_NOT_FOUND
+                  value:
+                    success: false
+                    error:
+                      code: ORDER_NOT_FOUND
+                      message: 1 of 2 update(s) rejected; no changes were applied
+                      details:
+                        failures:
+                          - index: 1
+                            order_ref: ORD-00000000-99999
+                            code: ORDER_NOT_FOUND
+                            message: Order ORD-00000000-99999 does not exist
+                            details:
+                              order_ref: ORD-00000000-99999
+                INVALID_STATE_TRANSITION:
+                  summary: INVALID_STATE_TRANSITION
+                  value:
+                    success: false
+                    error:
+                      code: INVALID_STATE_TRANSITION
+                      message: 1 of 1 update(s) rejected; no changes were applied
+                      details:
+                        failures:
+                          - index: 0
+                            order_ref: ORD-20260929-00042
+                            code: INVALID_STATE_TRANSITION
+                            message: "Cannot move an order from 'delivered' to 'confirmed'. Allowed: received, disputed"
+                            details:
+                              from: delivered
+                              to: confirmed
+                              allowed:
+                                - received
+                                - disputed
+        "503": *a5
+  /close-window:
+    post:
+      operationId: closeWindow
+      tags:
+        - Dispatch
+      summary: Run the cutoff sweep for a date (idempotent)
+      description: "Role: dispatcher. The routine the timer runs after 16:00 Colombo: re-pools deferred orders, updates outlet
+        fairness counters. A repeat call for the same date changes nothing and returns the stored result."
+      security: *a1
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                date:
+                  type: string
+              additionalProperties: false
+            examples:
+              nextRun:
+                summary: Default — next operating day
+                value: {}
+              specificDate:
+                summary: A specific delivery date
+                value:
+                  date: 2026-09-29
+      responses:
+        "200":
+          description: Sweep result
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      job_name:
+                        type: string
+                      job_key:
+                        type: string
+                        format: date
+                      already_ran:
+                        type: boolean
+                      ran_at:
+                        type: string
+                        format: date-time
+                      result:
+                        type: object
+              example:
+                success: true
+                data:
+                  job_name: cutoff_sweep
+                  job_key: 2026-09-29
+                  already_ran: false
+                  ran_at: 2026-09-28T10:30:04.512Z
+                  result:
+                    trigger: manual
+                    service_day: 2026-09-28
+                    closing_date: 2026-09-29
+                    swept_order_refs: []
+                    deferred_swept_to_confirmed: 0
+                    outlets_deferred_flag_cleared: 2
+                    outlets_days_since_served_incremented: 41
+        "400":
+          description: VALIDATION_ERROR
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                VALIDATION_ERROR:
+                  summary: VALIDATION_ERROR
+                  value:
+                    success: false
+                    error:
+                      code: VALIDATION_ERROR
+                      message: Invalid request payload format
+                      details:
+                        - field: date
+                          message: Must be a valid date in YYYY-MM-DD format
+        "401": *a4
+        "403":
+          description: FORBIDDEN
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                FORBIDDEN:
+                  summary: FORBIDDEN
+                  value:
+                    success: false
+                    error:
+                      code: FORBIDDEN
+                      message: "Access denied. Requires one of roles: [store_manager, dispatcher]"
+        "503": *a5
+  /{order_ref}:
+    get:
+      operationId: getOrder
+      tags:
+        - Orders
+      summary: Get an order with items and its latest 20 events
+      description: "Roles: store_manager (own outlet), dispatcher, loader."
+      security: *a1
+      parameters:
+        - &a8
+          name: order_ref
+          in: path
+          required: true
+          description: Order reference returned by create.
+          schema:
+            type: string
+            pattern: ^ORD-\d{8}-\d{5,}$
+          example: ORD-20260929-00042
+      responses:
+        "200":
+          description: Order
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: "#/components/schemas/OrderDetail"
+              example:
+                success: true
+                data:
+                  order_ref: ORD-20260929-00042
+                  outlet_id: OUT001
+                  brand: Fresh
+                  depot: Peliyagoda
+                  order_date: 2026-09-29
+                  original_order_date: 2026-09-29
+                  requested_order_date: null
+                  temp_requirement: chilled
+                  status: confirmed
+                  order_units: 120
+                  order_weight_kg: 123.6
+                  order_volume_m3: 0.132
+                  window_open_time: 05:00
+                  window_close_time: 07:30
+                  placed_by: 9595b3cf-eec1-4559-9fcc-889ef5a9280c
+                  placed_by_username: manager_out001
+                  placed_at: 2026-09-28T04:30:00.000Z
+                  confirmed_at: 2026-09-28T04:35:00.000Z
+                  cutoff_applied_at: 2026-09-28T04:35:00.000Z
+                  deferral_count: 0
+                  vehicle_id: null
+                  trip_id: null
+                  idempotency_key: null
+                  created_at: 2026-09-28T04:30:00.412Z
+                  updated_at: 2026-09-28T04:35:00.108Z
+                  items: &a16
+                    - *a7
+                  events: &a17
+                    - id: b3620ebe-62a7-4578-99d8-233e335c5781
+                      order_ref: ORD-20260929-00042
+                      from_status: null
+                      to_status: draft
+                      reason_code: null
+                      reason_note: null
+                      actor_id: 9595b3cf-eec1-4559-9fcc-889ef5a9280c
+                      actor_role: store_manager
+                      occurred_at: 2026-09-28T04:30:00.412Z
+                    - id: b3620ebe-62a7-4578-99d8-233e335c5781
+                      order_ref: ORD-20260929-00042
+                      from_status: draft
+                      to_status: confirmed
+                      reason_code: null
+                      reason_note: null
+                      actor_id: 9595b3cf-eec1-4559-9fcc-889ef5a9280c
+                      actor_role: store_manager
+                      occurred_at: 2026-09-28T04:35:00.108Z
+        "401": *a4
+        "403":
+          description: FORBIDDEN · OUTLET_SCOPE_VIOLATION
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                FORBIDDEN:
+                  summary: FORBIDDEN
+                  value:
+                    success: false
+                    error:
+                      code: FORBIDDEN
+                      message: "Access denied. Requires one of roles: [store_manager, dispatcher]"
+                OUTLET_SCOPE_VIOLATION:
+                  summary: OUTLET_SCOPE_VIOLATION
+                  value:
+                    success: false
+                    error:
+                      code: OUTLET_SCOPE_VIOLATION
+                      message: Store manager for OUT001 may not access outlet OUT050
+                      details:
+                        token_outlet_id: OUT001
+                        requested_outlet_id: OUT050
+        "404": &a9
+          description: ORDER_NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                ORDER_NOT_FOUND:
+                  summary: ORDER_NOT_FOUND
+                  value:
+                    success: false
+                    error:
+                      code: ORDER_NOT_FOUND
+                      message: Order ORD-20260929-99999 does not exist
+                      details:
+                        order_ref: ORD-20260929-99999
+        "503": *a5
+    delete:
+      operationId: cancelOrder
+      tags:
+        - Orders
+      summary: Cancel (soft delete) a draft or confirmed order
+      description: "Roles: store_manager (own outlet), dispatcher. The row is kept with status `cancelled`; the slot can be
+        re-ordered."
+      security: *a1
+      parameters:
+        - *a8
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason_note:
+                  type: string
+                  maxLength: 1000
+              additionalProperties: false
+            examples:
+              withReason:
+                summary: With a reason
+                value:
+                  reason_note: Duplicate entry by store
+              noBody:
+                summary: No reason
+                value: {}
+      responses:
+        "200":
+          description: Order with status cancelled
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: "#/components/schemas/OrderDetail"
+              example:
+                success: true
+                data:
+                  order_ref: ORD-20260929-00042
+                  outlet_id: OUT001
+                  brand: Fresh
+                  depot: Peliyagoda
+                  order_date: 2026-09-29
+                  original_order_date: 2026-09-29
+                  requested_order_date: null
+                  temp_requirement: chilled
+                  status: cancelled
+                  order_units: 120
+                  order_weight_kg: 123.6
+                  order_volume_m3: 0.132
+                  window_open_time: 05:00
+                  window_close_time: 07:30
+                  placed_by: 9595b3cf-eec1-4559-9fcc-889ef5a9280c
+                  placed_by_username: manager_out001
+                  placed_at: 2026-09-28T04:30:00.000Z
+                  confirmed_at: 2026-09-28T04:35:00.000Z
+                  cutoff_applied_at: 2026-09-28T04:35:00.000Z
+                  deferral_count: 0
+                  vehicle_id: null
+                  trip_id: null
+                  idempotency_key: null
+                  created_at: 2026-09-28T04:30:00.412Z
+                  updated_at: 2026-09-28T04:35:00.108Z
+                  items:
+                    - *a7
+                  events:
+                    - id: b3620ebe-62a7-4578-99d8-233e335c5781
+                      order_ref: ORD-20260929-00042
+                      from_status: confirmed
+                      to_status: cancelled
+                      reason_code: null
+                      reason_note: Duplicate entry by store
+                      actor_id: 9595b3cf-eec1-4559-9fcc-889ef5a9280c
+                      actor_role: store_manager
+                      occurred_at: 2026-09-28T05:01:11.020Z
+        "401": *a4
+        "403":
+          description: FORBIDDEN · OUTLET_SCOPE_VIOLATION
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                FORBIDDEN:
+                  summary: FORBIDDEN
+                  value:
+                    success: false
+                    error:
+                      code: FORBIDDEN
+                      message: "Access denied. Requires one of roles: [store_manager, dispatcher]"
+                OUTLET_SCOPE_VIOLATION:
+                  summary: OUTLET_SCOPE_VIOLATION
+                  value:
+                    success: false
+                    error:
+                      code: OUTLET_SCOPE_VIOLATION
+                      message: Store manager for OUT001 may not access outlet OUT050
+                      details:
+                        token_outlet_id: OUT001
+                        requested_outlet_id: OUT050
+        "404": *a9
+        "409":
+          description: ORDER_NOT_CANCELLABLE
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                ORDER_NOT_CANCELLABLE:
+                  summary: ORDER_NOT_CANCELLABLE
+                  value:
+                    success: false
+                    error:
+                      code: ORDER_NOT_CANCELLABLE
+                      message: Order ORD-20260929-00042 is 'allocated' and can no longer be cancelled here; after allocation cancellation is a
+                        Planning decision
+                      details:
+                        order_ref: ORD-20260929-00042
+                        status: allocated
+                        cancellable_from:
+                          - draft
+                          - confirmed
+        "503": *a5
+  /{order_ref}/items:
+    put:
+      operationId: replaceOrderItems
+      tags:
+        - Orders
+      summary: Replace the whole basket
+      description: "Roles: store_manager (own outlet), dispatcher. Full replacement, not a patch. Editable while `draft`, or
+        while `confirmed` and before that delivery date's cutoff. Totals are recomputed from the items."
+      security: *a1
+      parameters:
+        - *a8
+        - *a10
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                items:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      sku:
+                        type: string
+                        minLength: 1
+                        maxLength: 40
+                        pattern: ^[A-Za-z0-9][A-Za-z0-9._\-/]*$
+                      description:
+                        type: string
+                        minLength: 1
+                        maxLength: 200
+                      quantity:
+                        type: integer
+                        exclusiveMinimum: true
+                        minimum: 0
+                        maximum: 1000000
+                      unit_weight_kg:
+                        type: number
+                        minimum: 0
+                        maximum: 99999.999
+                      unit_volume_m3:
+                        type: number
+                        minimum: 0
+                        maximum: 9999.9999
+                      is_chilled:
+                        type: boolean
+                        default: false
+                    required:
+                      - sku
+                      - description
+                      - quantity
+                      - unit_weight_kg
+                      - unit_volume_m3
+                    additionalProperties: false
+                  maxItems: 500
+              required:
+                - items
+              additionalProperties: false
+            examples:
+              ambientBasket:
+                summary: Two ambient lines
+                value:
+                  items:
+                    - *a11
+                    - *a12
+              chilledBasket:
+                summary: One chilled line
+                value:
+                  items:
+                    - *a13
+      responses:
+        "200":
+          description: Updated order
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: "#/components/schemas/OrderDetail"
+              example:
+                success: true
+                data: *a14
+        "400": *a15
+        "401": *a4
+        "403":
+          description: FORBIDDEN · OUTLET_SCOPE_VIOLATION
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                FORBIDDEN:
+                  summary: FORBIDDEN
+                  value:
+                    success: false
+                    error:
+                      code: FORBIDDEN
+                      message: "Access denied. Requires one of roles: [store_manager, dispatcher]"
+                OUTLET_SCOPE_VIOLATION:
+                  summary: OUTLET_SCOPE_VIOLATION
+                  value:
+                    success: false
+                    error:
+                      code: OUTLET_SCOPE_VIOLATION
+                      message: Store manager for OUT001 may not access outlet OUT050
+                      details:
+                        token_outlet_id: OUT001
+                        requested_outlet_id: OUT050
+        "404": *a9
+        "409":
+          description: ORDER_NOT_EDITABLE
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                ORDER_NOT_EDITABLE:
+                  summary: ORDER_NOT_EDITABLE
+                  value:
+                    success: false
+                    error:
+                      code: ORDER_NOT_EDITABLE
+                      message: Items cannot be changed once an order is 'allocated'
+                      details:
+                        order_ref: ORD-20260929-00042
+                        status: allocated
+                        order_date: 2026-09-29
+        "422":
+          description: EMPTY_ORDER · CHILLED_MISMATCH
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                EMPTY_ORDER:
+                  summary: EMPTY_ORDER
+                  value:
+                    success: false
+                    error:
+                      code: EMPTY_ORDER
+                      message: A confirmed order must keep at least one item; cancel it instead
+                      details:
+                        order_ref: ORD-20260929-00042
+                CHILLED_MISMATCH:
+                  summary: CHILLED_MISMATCH
+                  value:
+                    success: false
+                    error:
+                      code: CHILLED_MISMATCH
+                      message: Every item on an ambient order must have is_chilled=false. Place chilled and ambient goods on separate orders.
+                      details:
+                        temp_requirement: ambient
+                        mismatched_items:
+                          - index: 0
+                            sku: MLK-1L
+                            is_chilled: true
+        "503": *a5
+  /{order_ref}/confirm:
+    post:
+      operationId: confirmOrder
+      tags:
+        - Orders
+      summary: Confirm a draft under the 16:00 cutoff
+      description: "Roles: store_manager (own outlet), dispatcher. Before 16:00 Asia/Colombo the order is confirmed for the
+        next operating day. At or after 16:00 it returns 409 CUTOFF_PASSED unless `accept_next_run` is true, in which
+        case it rolls to the following run. Use `X-Test-Now` to try both sides of the cutoff."
+      security: *a1
+      parameters:
+        - *a8
+        - *a10
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                accept_next_run:
+                  type: boolean
+                  default: false
+              additionalProperties: false
+            examples:
+              beforeCutoff:
+                summary: Normal confirm (no body needed)
+                value: {}
+              acceptNextRun:
+                summary: After cutoff — accept the following run
+                value:
+                  accept_next_run: true
+      responses:
+        "200":
+          description: Confirmed
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    allOf:
+                      - $ref: "#/components/schemas/OrderDetail"
+                      - type: object
+                        properties:
+                          rolled_to_next_run:
+                            type: boolean
+              example:
+                success: true
+                data:
+                  order_ref: ORD-20260929-00042
+                  outlet_id: OUT001
+                  brand: Fresh
+                  depot: Peliyagoda
+                  order_date: 2026-09-29
+                  original_order_date: 2026-09-29
+                  requested_order_date: null
+                  temp_requirement: chilled
+                  status: confirmed
+                  order_units: 120
+                  order_weight_kg: 123.6
+                  order_volume_m3: 0.132
+                  window_open_time: 05:00
+                  window_close_time: 07:30
+                  placed_by: 9595b3cf-eec1-4559-9fcc-889ef5a9280c
+                  placed_by_username: manager_out001
+                  placed_at: 2026-09-28T04:30:00.000Z
+                  confirmed_at: 2026-09-28T04:35:00.000Z
+                  cutoff_applied_at: 2026-09-28T04:35:00.000Z
+                  deferral_count: 0
+                  vehicle_id: null
+                  trip_id: null
+                  idempotency_key: null
+                  created_at: 2026-09-28T04:30:00.412Z
+                  updated_at: 2026-09-28T04:35:00.108Z
+                  items: *a16
+                  events: *a17
+                  rolled_to_next_run: false
+        "401": *a4
+        "403":
+          description: FORBIDDEN · OUTLET_SCOPE_VIOLATION
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                FORBIDDEN:
+                  summary: FORBIDDEN
+                  value:
+                    success: false
+                    error:
+                      code: FORBIDDEN
+                      message: "Access denied. Requires one of roles: [store_manager, dispatcher]"
+                OUTLET_SCOPE_VIOLATION:
+                  summary: OUTLET_SCOPE_VIOLATION
+                  value:
+                    success: false
+                    error:
+                      code: OUTLET_SCOPE_VIOLATION
+                      message: Store manager for OUT001 may not access outlet OUT050
+                      details:
+                        token_outlet_id: OUT001
+                        requested_outlet_id: OUT050
+        "404": *a9
+        "409":
+          description: CUTOFF_PASSED · INVALID_STATE_TRANSITION · DUPLICATE_ORDER
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                CUTOFF_PASSED:
+                  summary: CUTOFF_PASSED
+                  value:
+                    success: false
+                    error:
+                      code: CUTOFF_PASSED
+                      message: 'The 16:00 Asia/Colombo cutoff for 2026-09-29 has passed. Resend with {"accept_next_run": true} to confirm for
+                        the next available run.'
+                      details:
+                        requested_date: 2026-09-29
+                        next_available_date: 2026-09-30
+                INVALID_STATE_TRANSITION:
+                  summary: INVALID_STATE_TRANSITION
+                  value:
+                    success: false
+                    error:
+                      code: INVALID_STATE_TRANSITION
+                      message: Only draft orders can be confirmed; ORD-20260929-00042 is 'confirmed'
+                      details:
+                        from: confirmed
+                        to: confirmed
+                        allowed:
+                          - allocated
+                          - deferred
+                          - cancelled
+                DUPLICATE_ORDER:
+                  summary: DUPLICATE_ORDER
+                  value:
+                    success: false
+                    error:
+                      code: DUPLICATE_ORDER
+                      message: Outlet OUT001 already has an active chilled order for 2026-09-29
+                      details:
+                        existing_order_ref: ORD-20260929-00040
+                        outlet_id: OUT001
+                        order_date: 2026-09-29
+                        temp_requirement: chilled
+        "422":
+          description: EMPTY_ORDER · NON_OPERATING_DATE
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                EMPTY_ORDER:
+                  summary: EMPTY_ORDER
+                  value:
+                    success: false
+                    error:
+                      code: EMPTY_ORDER
+                      message: Add at least one item before confirming
+                      details:
+                        order_ref: ORD-20260929-00042
+                NON_OPERATING_DATE:
+                  summary: NON_OPERATING_DATE
+                  value:
+                    success: false
+                    error:
+                      code: NON_OPERATING_DATE
+                      message: 2026-05-01 is no longer an operating day
+                      details:
+                        order_date: 2026-05-01
+                        next_operating_day: 2026-05-02
+        "503": *a5
+  /{order_ref}/history:
+    get:
+      operationId: getOrderHistory
+      tags:
+        - Orders
+      summary: Complete audit trail, oldest first
+      description: "Roles: store_manager (own outlet), dispatcher. Each coded reason carries a readable `reason_label`."
+      security: *a1
+      parameters:
+        - *a8
+      responses:
+        "200":
+          description: History
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      order_ref:
+                        type: string
+                      outlet_id:
+                        type: string
+                      status:
+                        $ref: "#/components/schemas/OrderStatus"
+                      order_date:
+                        type: string
+                        format: date
+                      original_order_date:
+                        type: string
+                        format: date
+                      deferral_count:
+                        type: integer
+                      events:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            from_status:
+                              type: string
+                              nullable: true
+                            to_status:
+                              $ref: "#/components/schemas/OrderStatus"
+                            reason_code:
+                              type: string
+                              nullable: true
+                            reason_label:
+                              type: string
+                              nullable: true
+                            reason_note:
+                              type: string
+                              nullable: true
+                            actor_id:
+                              type: string
+                              nullable: true
+                            actor_role:
+                              type: string
+                            occurred_at:
+                              type: string
+                              format: date-time
+              example:
+                success: true
+                data:
+                  order_ref: ORD-20260921-01373
+                  outlet_id: OUT045
+                  status: confirmed
+                  order_date: 2026-09-22
+                  original_order_date: 2026-09-21
+                  deferral_count: 1
+                  events:
+                    - from_status: null
+                      to_status: draft
+                      reason_code: null
+                      reason_label: null
+                      reason_note: null
+                      actor_id: null
+                      actor_role: store_manager
+                      occurred_at: 2026-09-19T05:10:00.000Z
+                    - from_status: draft
+                      to_status: confirmed
+                      reason_code: null
+                      reason_label: null
+                      reason_note: null
+                      actor_id: null
+                      actor_role: store_manager
+                      occurred_at: 2026-09-19T05:21:00.000Z
+                    - from_status: confirmed
+                      to_status: deferred
+                      reason_code: CAPACITY_WEIGHT
+                      reason_label: Vehicle weight limits exhausted
+                      reason_note: null
+                      actor_id: null
+                      actor_role: dispatcher
+                      occurred_at: 2026-09-19T12:50:00.000Z
+                    - from_status: deferred
+                      to_status: confirmed
+                      reason_code: null
+                      reason_label: null
+                      reason_note: Returned to the confirmed pool for 2026-09-22 (deferral 1 of 3)
+                      actor_id: null
+                      actor_role: system
+                      occurred_at: 2026-09-19T12:50:01.200Z
+        "401": *a4
+        "403":
+          description: FORBIDDEN · OUTLET_SCOPE_VIOLATION
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                FORBIDDEN:
+                  summary: FORBIDDEN
+                  value:
+                    success: false
+                    error:
+                      code: FORBIDDEN
+                      message: "Access denied. Requires one of roles: [store_manager, dispatcher]"
+                OUTLET_SCOPE_VIOLATION:
+                  summary: OUTLET_SCOPE_VIOLATION
+                  value:
+                    success: false
+                    error:
+                      code: OUTLET_SCOPE_VIOLATION
+                      message: Store manager for OUT001 may not access outlet OUT050
+                      details:
+                        token_outlet_id: OUT001
+                        requested_outlet_id: OUT050
+        "404": *a9
+        "503": *a5
+  /{order_ref}/status:
+    patch:
+      operationId: changeOrderStatus
+      tags:
+        - Execution
+      summary: Change one order's status (dock and road updates)
+      description: "Roles: **loader** may set `loaded`; **driver** may set `out_for_delivery` and `delivered`; **dispatcher**
+        may set anything the batch endpoint allows. Same rules as one `status-batch` entry. `received` / `disputed` are
+        set only by `POST /{order_ref}/receipt`."
+      security: *a1
+      parameters:
+        - *a8
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                  enum:
+                    - draft
+                    - confirmed
+                    - allocated
+                    - loaded
+                    - out_for_delivery
+                    - delivered
+                    - received
+                    - disputed
+                    - deferred
+                    - not_run
+                    - cancelled
+                vehicle_id:
+                  type: string
+                  maxLength: 20
+                trip_id:
+                  type: integer
+                reason_code:
+                  type: string
+                reason_note:
+                  type: string
+                  maxLength: 1000
+              required:
+                - status
+              additionalProperties: false
+            examples:
+              loaded:
+                summary: Loader — goods loaded
+                value:
+                  status: loaded
+              outForDelivery:
+                summary: Driver — left the depot
+                value:
+                  status: out_for_delivery
+              delivered:
+                summary: Driver — delivered at the outlet
+                value:
+                  status: delivered
+                  reason_note: POD signed 06:42
+              allocated:
+                summary: Dispatcher — allocate
+                value:
+                  status: allocated
+                  vehicle_id: VEH001
+                  trip_id: 1
+      responses:
+        "200":
+          description: Updated order
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: "#/components/schemas/OrderDetail"
+              example:
+                success: true
+                data:
+                  order_ref: ORD-20260929-00042
+                  outlet_id: OUT001
+                  brand: Fresh
+                  depot: Peliyagoda
+                  order_date: 2026-09-29
+                  original_order_date: 2026-09-29
+                  requested_order_date: null
+                  temp_requirement: chilled
+                  status: delivered
+                  order_units: 120
+                  order_weight_kg: 123.6
+                  order_volume_m3: 0.132
+                  window_open_time: 05:00
+                  window_close_time: 07:30
+                  placed_by: 9595b3cf-eec1-4559-9fcc-889ef5a9280c
+                  placed_by_username: manager_out001
+                  placed_at: 2026-09-28T04:30:00.000Z
+                  confirmed_at: 2026-09-28T04:35:00.000Z
+                  cutoff_applied_at: 2026-09-28T04:35:00.000Z
+                  deferral_count: 0
+                  vehicle_id: VEH001
+                  trip_id: 1
+                  idempotency_key: null
+                  created_at: 2026-09-28T04:30:00.412Z
+                  updated_at: 2026-09-28T04:35:00.108Z
+                  items:
+                    - *a7
+                  events:
+                    - id: b3620ebe-62a7-4578-99d8-233e335c5781
+                      order_ref: ORD-20260929-00042
+                      from_status: out_for_delivery
+                      to_status: delivered
+                      reason_code: null
+                      reason_note: POD signed 06:42
+                      actor_id: 9595b3cf-eec1-4559-9fcc-889ef5a9280c
+                      actor_role: driver
+                      occurred_at: 2026-09-29T01:12:40.300Z
+        "400":
+          description: VALIDATION_ERROR
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                VALIDATION_ERROR:
+                  summary: VALIDATION_ERROR
+                  value:
+                    success: false
+                    error:
+                      code: VALIDATION_ERROR
+                      message: Invalid request payload format
+                      details:
+                        - field: status
+                          message: Invalid enum value
+        "401": *a4
+        "403":
+          description: FORBIDDEN
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                FORBIDDEN:
+                  summary: FORBIDDEN
+                  value:
+                    success: false
+                    error:
+                      code: FORBIDDEN
+                      message: Role 'driver' may not set status 'allocated'
+                      details:
+                        role: driver
+                        status: allocated
+                        permitted:
+                          - out_for_delivery
+                          - delivered
+        "404": *a9
+        "409":
+          description: INVALID_STATE_TRANSITION
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                INVALID_STATE_TRANSITION:
+                  summary: INVALID_STATE_TRANSITION
+                  value:
+                    success: false
+                    error:
+                      code: INVALID_STATE_TRANSITION
+                      message: "Cannot move an order from 'confirmed' to 'delivered'. Allowed: allocated, deferred, cancelled"
+                      details:
+                        from: confirmed
+                        to: delivered
+                        allowed:
+                          - allocated
+                          - deferred
+                          - cancelled
+        "422":
+          description: DEFERRAL_REASON_REQUIRED
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                DEFERRAL_REASON_REQUIRED:
+                  summary: DEFERRAL_REASON_REQUIRED
+                  value:
+                    success: false
+                    error:
+                      code: DEFERRAL_REASON_REQUIRED
+                      message: A valid reason_code is required to defer an order
+                      details:
+                        reason_code: null
+        "503": *a5
+  /{order_ref}/defer:
+    post:
+      operationId: deferOrder
+      tags:
+        - Dispatch
+      summary: Defer a confirmed order to the next operating day
+      description: "Role: dispatcher. Requires a coded reason; `DISPATCHER_OVERRIDE` also needs `reason_note`. The order goes
+        straight back into the confirmed pool for the new date; after MAX_DEFERRALS (default 3) it becomes `not_run`
+        (AGED_OUT)."
+      security: *a1
+      parameters:
+        - *a8
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason_code:
+                  type: string
+                reason_note:
+                  type: string
+                  maxLength: 1000
+              additionalProperties: false
+            examples:
+              noReefer:
+                summary: No refrigerated vehicle free
+                value:
+                  reason_code: NO_REEFER_AVAILABLE
+                  reason_note: all reefers committed to trip 1
+              capacity:
+                summary: Weight capacity exhausted
+                value:
+                  reason_code: CAPACITY_WEIGHT
+              override:
+                summary: Manual override (note required)
+                value:
+                  reason_code: DISPATCHER_OVERRIDE
+                  reason_note: Outlet closed for stock-take
+      responses:
+        "200":
+          description: Order — confirmed for the new date, or not_run
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: "#/components/schemas/OrderDetail"
+              example:
+                success: true
+                data:
+                  order_ref: ORD-20260929-00042
+                  outlet_id: OUT001
+                  brand: Fresh
+                  depot: Peliyagoda
+                  order_date: 2026-09-30
+                  original_order_date: 2026-09-29
+                  requested_order_date: null
+                  temp_requirement: chilled
+                  status: confirmed
+                  order_units: 120
+                  order_weight_kg: 123.6
+                  order_volume_m3: 0.132
+                  window_open_time: 05:00
+                  window_close_time: 07:30
+                  placed_by: 9595b3cf-eec1-4559-9fcc-889ef5a9280c
+                  placed_by_username: manager_out001
+                  placed_at: 2026-09-28T04:30:00.000Z
+                  confirmed_at: 2026-09-28T04:35:00.000Z
+                  cutoff_applied_at: 2026-09-28T04:35:00.000Z
+                  deferral_count: 1
+                  vehicle_id: null
+                  trip_id: null
+                  idempotency_key: null
+                  created_at: 2026-09-28T04:30:00.412Z
+                  updated_at: 2026-09-28T04:35:00.108Z
+                  items:
+                    - *a7
+                  events:
+                    - id: b3620ebe-62a7-4578-99d8-233e335c5781
+                      order_ref: ORD-20260929-00042
+                      from_status: confirmed
+                      to_status: deferred
+                      reason_code: NO_REEFER_AVAILABLE
+                      reason_note: all reefers committed to trip 1
+                      actor_id: 9595b3cf-eec1-4559-9fcc-889ef5a9280c
+                      actor_role: dispatcher
+                      occurred_at: 2026-09-28T12:40:00.100Z
+                    - id: b3620ebe-62a7-4578-99d8-233e335c5781
+                      order_ref: ORD-20260929-00042
+                      from_status: deferred
+                      to_status: confirmed
+                      reason_code: null
+                      reason_note: Returned to the confirmed pool for 2026-09-30 (deferral 1 of 3)
+                      actor_id: null
+                      actor_role: system
+                      occurred_at: 2026-09-28T12:40:00.104Z
+        "401": *a4
+        "403":
+          description: FORBIDDEN
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                FORBIDDEN:
+                  summary: FORBIDDEN
+                  value:
+                    success: false
+                    error:
+                      code: FORBIDDEN
+                      message: "Access denied. Requires one of roles: [store_manager, dispatcher]"
+        "404": *a9
+        "409":
+          description: INVALID_STATE_TRANSITION
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                INVALID_STATE_TRANSITION:
+                  summary: INVALID_STATE_TRANSITION
+                  value:
+                    success: false
+                    error:
+                      code: INVALID_STATE_TRANSITION
+                      message: "Cannot move an order from 'allocated' to 'deferred'. Allowed: loaded"
+                      details:
+                        from: allocated
+                        to: deferred
+                        allowed:
+                          - loaded
+        "422":
+          description: DEFERRAL_REASON_REQUIRED
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                DEFERRAL_REASON_REQUIRED:
+                  summary: DEFERRAL_REASON_REQUIRED
+                  value:
+                    success: false
+                    error:
+                      code: DEFERRAL_REASON_REQUIRED
+                      message: A valid reason_code is required to defer an order
+                      details:
+                        reason_code: null
+                        allowed:
+                          - CAPACITY_WEIGHT
+                          - CAPACITY_VOLUME
+                          - NO_REEFER_AVAILABLE
+                          - NO_VAN_FOR_VAN_ONLY_OUTLET
+                          - WINDOW_INFEASIBLE
+                          - TIME_BUDGET_EXCEEDED
+                          - FUEL_QUOTA_EXCEEDED
+                          - VEHICLE_UNAVAILABLE
+                          - LOWER_PRIORITY
+                          - DISPATCHER_OVERRIDE
+        "503": *a5
+  /{order_ref}/receipt:
+    post:
+      operationId: recordReceipt
+      tags:
+        - Store
+      summary: Record goods receipt for a delivered order
+      description: "Role: store_manager (own outlet). `received + missing + rejected` must equal `order_units`. All received →
+        `received`, otherwise `disputed`. Either way the outlet counts as served."
+      security: *a1
+      parameters:
+        - *a8
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                received_units:
+                  type: integer
+                  minimum: 0
+                missing_units:
+                  type: integer
+                  minimum: 0
+                  default: 0
+                rejected_units:
+                  type: integer
+                  minimum: 0
+                  default: 0
+                note:
+                  type: string
+                  maxLength: 1000
+              required:
+                - received_units
+              additionalProperties: false
+            examples:
+              full:
+                summary: Everything received
+                value:
+                  received_units: 120
+                  missing_units: 0
+                  rejected_units: 0
+              short:
+                summary: Short delivery → disputed
+                value:
+                  received_units: 118
+                  missing_units: 2
+                  rejected_units: 0
+                  note: 2 crates short
+      responses:
+        "200":
+          description: Receipt recorded
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      order:
+                        $ref: "#/components/schemas/OrderDetail"
+                      receipt:
+                        type: object
+                        properties:
+                          id:
+                            type: string
+                          order_ref:
+                            type: string
+                          received_units:
+                            type: integer
+                          missing_units:
+                            type: integer
+                          rejected_units:
+                            type: integer
+                          note:
+                            type: string
+                            nullable: true
+                          received_by:
+                            type: string
+                            nullable: true
+                          received_at:
+                            type: string
+                            format: date-time
+              example:
+                success: true
+                data:
+                  order:
+                    order_ref: ORD-20260929-00042
+                    outlet_id: OUT001
+                    brand: Fresh
+                    depot: Peliyagoda
+                    order_date: 2026-09-29
+                    original_order_date: 2026-09-29
+                    requested_order_date: null
+                    temp_requirement: chilled
+                    status: disputed
+                    order_units: 120
+                    order_weight_kg: 123.6
+                    order_volume_m3: 0.132
+                    window_open_time: 05:00
+                    window_close_time: 07:30
+                    placed_by: 9595b3cf-eec1-4559-9fcc-889ef5a9280c
+                    placed_by_username: manager_out001
+                    placed_at: 2026-09-28T04:30:00.000Z
+                    confirmed_at: 2026-09-28T04:35:00.000Z
+                    cutoff_applied_at: 2026-09-28T04:35:00.000Z
+                    deferral_count: 0
+                    vehicle_id: VEH001
+                    trip_id: 1
+                    idempotency_key: null
+                    created_at: 2026-09-28T04:30:00.412Z
+                    updated_at: 2026-09-28T04:35:00.108Z
+                    items:
+                      - *a7
+                    events:
+                      - id: b3620ebe-62a7-4578-99d8-233e335c5781
+                        order_ref: ORD-20260929-00042
+                        from_status: delivered
+                        to_status: disputed
+                        reason_code: null
+                        reason_note: 2 crates short
+                        actor_id: 9595b3cf-eec1-4559-9fcc-889ef5a9280c
+                        actor_role: store_manager
+                        occurred_at: 2026-09-29T01:30:12.945Z
+                  receipt:
+                    id: 5d0c1f0e-7f0b-4f0a-9d53-0d1f6c1f2a11
+                    order_ref: ORD-20260929-00042
+                    received_units: 118
+                    missing_units: 2
+                    rejected_units: 0
+                    note: 2 crates short
+                    received_by: 9595b3cf-eec1-4559-9fcc-889ef5a9280c
+                    received_at: 2026-09-29T01:30:12.940Z
+        "400": *a15
+        "401": *a4
+        "403":
+          description: FORBIDDEN · OUTLET_SCOPE_VIOLATION
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                FORBIDDEN:
+                  summary: FORBIDDEN
+                  value:
+                    success: false
+                    error:
+                      code: FORBIDDEN
+                      message: "Access denied. Requires one of roles: [store_manager, dispatcher]"
+                OUTLET_SCOPE_VIOLATION:
+                  summary: OUTLET_SCOPE_VIOLATION
+                  value:
+                    success: false
+                    error:
+                      code: OUTLET_SCOPE_VIOLATION
+                      message: Store manager for OUT001 may not access outlet OUT050
+                      details:
+                        token_outlet_id: OUT001
+                        requested_outlet_id: OUT050
+        "404": *a9
+        "409":
+          description: RECEIPT_ALREADY_RECORDED · INVALID_STATE_TRANSITION
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                RECEIPT_ALREADY_RECORDED:
+                  summary: RECEIPT_ALREADY_RECORDED
+                  value:
+                    success: false
+                    error:
+                      code: RECEIPT_ALREADY_RECORDED
+                      message: A receipt has already been recorded for ORD-20260929-00042
+                      details:
+                        order_ref: ORD-20260929-00042
+                INVALID_STATE_TRANSITION:
+                  summary: INVALID_STATE_TRANSITION
+                  value:
+                    success: false
+                    error:
+                      code: INVALID_STATE_TRANSITION
+                      message: A receipt can only be recorded for a delivered order; ORD-20260929-00042 is 'out_for_delivery'
+                      details:
+                        from: out_for_delivery
+                        to: received
+                        allowed:
+                          - delivered
+        "422":
+          description: RECEIPT_UNITS_MISMATCH
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                RECEIPT_UNITS_MISMATCH:
+                  summary: RECEIPT_UNITS_MISMATCH
+                  value:
+                    success: false
+                    error:
+                      code: RECEIPT_UNITS_MISMATCH
+                      message: received + missing + rejected (1) must equal the ordered units (120)
+                      details:
+                        order_units: 120
+                        received_units: 1
+                        missing_units: 0
+                        rejected_units: 0
+        "503": *a5
