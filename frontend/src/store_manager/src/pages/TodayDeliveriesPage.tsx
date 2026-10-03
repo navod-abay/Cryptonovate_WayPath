@@ -12,6 +12,7 @@ import DeliveryProblemModal from '@/components/DeliveryProblemModal';
 import { useAppStore } from '@/state/store';
 import { useNow } from '@/hooks/useNow';
 import { startUnloading } from '@/api/storeManagerApi';
+import { showError } from '@/state/toasts';
 import type { DeliveryStatus } from '@/types';
 import { formatHHmm, ORDER_TYPE_LABEL, toISODate } from '@/utils/date';
 import truck from '@/assets/truck.webp';
@@ -50,7 +51,9 @@ export default function TodayDeliveriesPage() {
 
   const primary = () => {
     if (delivery.status === 'arrived') {
-      startUnloading(delivery.id).then(() => navigate(`/deliveries/${delivery.id}/receive`));
+      startUnloading(delivery.id)
+        .then(() => navigate(`/deliveries/${delivery.id}/receive`))
+        .catch((e) => showError(e, 'Could not start unloading.'));
     } else {
       navigate(`/deliveries/${delivery.id}/receive`);
     }

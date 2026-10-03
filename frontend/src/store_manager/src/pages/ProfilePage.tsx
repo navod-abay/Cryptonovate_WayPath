@@ -58,9 +58,9 @@ export default function ProfilePage() {
         <KeyValueList
           rows={[
             { key: 'u', label: 'Username', value: user.username },
-            { key: 'e', label: 'Email', value: user.email },
-            { key: 'p', label: 'Phone', value: user.phone },
-            { key: 'm', label: 'Member since', value: formatLongDate(fromISODate(user.memberSince)) },
+            { key: 'e', label: 'Email', value: user.email ?? '–' },
+            { key: 'p', label: 'Phone', value: user.phone ?? '–' },
+            { key: 'm', label: 'Member since', value: user.memberSince ? formatLongDate(fromISODate(user.memberSince.slice(0, 10))) : '–' },
           ]}
         />
         <div className="sm-profile__signout">

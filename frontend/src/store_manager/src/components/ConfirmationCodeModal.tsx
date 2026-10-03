@@ -4,7 +4,9 @@ import Modal from './Modal';
 import type { ConfirmationCode } from '@/types';
 import { useNow } from '@/hooks/useNow';
 import { splitDuration, pad2 } from '@/utils/date';
-import { requestConfirmationCode } from '@/api/storeManagerApi';
+import { checkHandover, requestConfirmationCode } from '@/api/storeManagerApi';
+import { HANDOVER_POLL_MS } from '@/api/config';
+import { showError } from '@/state/toasts';
 import './ConfirmationCodeModal.css';
 
 interface Props {
@@ -23,20 +25,32 @@ export default function ConfirmationCodeModal({ deliveryId, open, onClose, onVer
 
   const fetchCode = useCallback(async () => {
     setCode(null);
-    setCode(await requestConfirmationCode(deliveryId));
-  }, [deliveryId]);
+    try {
+      setCode(await requestConfirmationCode(deliveryId));
+    } catch (e) {
+      showError(e, 'Could not get a confirmation code.');
+      onClose();
+    }
+  }, [deliveryId, onClose]);
 
   useEffect(() => {
     if (open) { setVerified(false); fetchCode(); }
   }, [open, fetchCode]);
 
-  // Mock: pretend the driver enters the code ~8s after it is shown.
-  // With the backend this becomes a poll / push from execution-sync.
+  // Ask the server every few seconds whether the driver has entered the code.
   useEffect(() => {
-    if (!open || !code) return;
-    const t = setTimeout(() => setVerified(true), 8000);
-    return () => clearTimeout(t);
-  }, [open, code]);
+    if (!open || !code || verified) return;
+    let stop = false;
+    const tick = async () => {
+      try {
+        if (!stop && (await checkHandover(deliveryId))) setVerified(true);
+      } catch {
+        /* network blip: try again on the next tick */
+      }
+    };
+    const id = setInterval(tick, HANDOVER_POLL_MS);
+    return () => { stop = true; clearInterval(id); };
+  }, [open, code, verified, deliveryId]);
 
   useEffect(() => {
     if (!verified) return;

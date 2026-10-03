@@ -1,14 +1,26 @@
 import { useSyncExternalStore } from 'react';
-import { createSeed, type SeedState } from '@/mock/seed';
-import type { Outlet, Session } from '@/types';
+import type {
+  Delivery, Order, OrderLine, OrderType, Outlet, Product, Session, TruckCapacity, Update,
+} from '@/types';
 
 /**
- * Tiny global store for the store manager app.
- * Pages read with useAppStore(selector); only src/api writes to it.
- * When the backend is connected, the API functions fetch and then call setState.
+ * Global client-side cache of what the API returned.
+ * Pages read with useAppStore(selector); only files in src/api write to it.
  */
-export interface AppState extends SeedState {
+export type LoadStatus = 'idle' | 'loading' | 'ready' | 'error';
+
+export interface AppState {
   session: Session | null;
+  /** Same as session.outlet; kept at the top level for convenient selectors. */
+  outlet: Outlet;
+  load: { status: LoadStatus; error: string | null };
+  products: Product[];
+  capacity: Partial<Record<OrderType, TruckCapacity>>;
+  orders: Order[];
+  deliveries: Delivery[];
+  updates: Update[];
+  lastOrderQty: Record<string, number>;
+  missingFromLast: Record<OrderType, OrderLine[]>;
 }
 
 const SESSION_KEY = 'waypath.sm.session';
@@ -16,17 +28,22 @@ const SESSION_KEY = 'waypath.sm.session';
 /** Placeholder used before login (pages are behind the login guard, so it is never shown). */
 const NO_OUTLET: Outlet = { id: '', city: '', managerName: '', storeName: '', storeType: 'grocery', categories: [], address: '' };
 
+export const emptyData = () => ({
+  products: [] as Product[],
+  capacity: {},
+  orders: [] as Order[],
+  deliveries: [] as Delivery[],
+  updates: [] as Update[],
+  lastOrderQty: {},
+  missingFromLast: { chilled: [], dry: [], tech: [], style: [] } as Record<OrderType, OrderLine[]>,
+});
+
 export const emptyState = (): AppState => ({
   session: null,
   outlet: NO_OUTLET,
-  orders: [],
-  deliveries: [],
-  updates: [],
-  lastOrderQty: {},
-  missingFromLast: { chilled: [], dry: [], tech: [], style: [] },
+  load: { status: 'idle', error: null },
+  ...emptyData(),
 });
-
-export const stateForSession = (session: Session): AppState => ({ ...createSeed(session.outlet), session });
 
 export function saveSession(session: Session | null) {
   try {
@@ -37,17 +54,21 @@ export function saveSession(session: Session | null) {
   }
 }
 
-function restore(): AppState {
+export function loadSavedSession(): Session | null {
   try {
     const raw = sessionStorage.getItem(SESSION_KEY);
-    if (raw) return stateForSession(JSON.parse(raw) as Session);
+    return raw ? (JSON.parse(raw) as Session) : null;
   } catch {
-    /* ignore */
+    return null;
   }
-  return emptyState();
 }
 
-let state: AppState = restore();
+function initial(): AppState {
+  const session = loadSavedSession();
+  return session ? { ...emptyState(), session, outlet: session.outlet } : emptyState();
+}
+
+let state: AppState = initial();
 const listeners = new Set<() => void>();
 
 export const getState = () => state;

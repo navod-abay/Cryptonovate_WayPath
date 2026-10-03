@@ -16,19 +16,51 @@ export interface Outlet {
 }
 
 export interface User {
+  id: string;
   username: string;
   fullName: string;
   role: 'store_manager';
-  email: string;
-  phone: string;
+  outletId: string;
+  /** Optional profile fields (shown as "–" when the backend doesn't send them). */
+  email?: string;
+  phone?: string;
   /** ISO date the account was created. */
-  memberSince: string;
+  memberSince?: string;
 }
 
 export interface Session {
+  /** JWT access token, sent as "Authorization: Bearer <token>". */
   token: string;
+  refreshToken?: string;
   user: User;
   outlet: Outlet;
+}
+
+/** Shape of POST /auth/login today (auth-rbac). */
+export interface LoginResponse {
+  access_token: string;
+  refresh_token: string;
+  user: { id: string; username: string; role: string; fullName: string; outletId: string | null; depot?: string | null };
+}
+
+/** "Last order" quantities and units owed from the last delivery, used by the order page. */
+export interface OrderSuggestions {
+  lastOrderQty: Record<string, number>;
+  missingFromLast: Partial<Record<OrderType, OrderLine[]>>;
+}
+
+export interface NewOrderInput {
+  type: OrderType;
+  /** yyyy-mm-dd */
+  deliveryDate: string;
+  lines: OrderLine[];
+}
+
+export interface NewIssueInput {
+  productId: string;
+  kind: IssueKind;
+  reasons: string[];
+  quantity: number;
 }
 
 export interface Product {

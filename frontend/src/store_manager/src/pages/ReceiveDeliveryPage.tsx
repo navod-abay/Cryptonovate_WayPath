@@ -8,7 +8,8 @@ import ReportIssueModal from '@/components/ReportIssueModal';
 import ConfirmationCodeModal from '@/components/ConfirmationCodeModal';
 import CarouselNav from '@/components/Carousel';
 import { useAppStore } from '@/state/store';
-import { completeDelivery, removeReport } from '@/api/storeManagerApi';
+import { removeReport } from '@/api/storeManagerApi';
+import { showError } from '@/state/toasts';
 import type { DeliveryItem } from '@/types';
 import { formatHHmm, ORDER_TYPE_LABEL, pad2 } from '@/utils/date';
 import { describeReport, unitName } from '@/utils/text';
@@ -25,12 +26,13 @@ export default function ReceiveDeliveryPage() {
   const sameDay = delivery ? deliveries.filter((d) => d.date === delivery.date).sort((a, b) => a.eta.localeCompare(b.eta)) : [];
   const index = sameDay.findIndex((d) => d.id === deliveryId);
 
-  const onVerified = useCallback(async () => {
-    if (!deliveryId) return;
-    await completeDelivery(deliveryId);
+  const closeCode = useCallback(() => setCodeOpen(false), []);
+
+  // checkHandover already stored the delivered status; just close and go home.
+  const onVerified = useCallback(() => {
     setCodeOpen(false);
     navigate('/');
-  }, [deliveryId, navigate]);
+  }, [navigate]);
 
   if (!delivery) {
     return <main className="sm-page"><Card><p className="sm-section-title">Delivery not found.</p></Card></main>;
@@ -113,7 +115,7 @@ export default function ReceiveDeliveryPage() {
                 <li key={r.id} className="sm-note sm-note--pink">
                   {describeReport(r)}
                   {!done && (
-                    <button type="button" className="sm-note__remove" onClick={() => removeReport(delivery.id, r.id)} aria-label="Remove report">
+                    <button type="button" className="sm-note__remove" onClick={() => removeReport(delivery.id, r.id).catch((e) => showError(e, 'Could not remove the report.'))} aria-label="Remove report">
                       <X size={18} />
                     </button>
                   )}
@@ -161,7 +163,7 @@ export default function ReceiveDeliveryPage() {
       </div>
 
       <ReportIssueModal deliveryId={delivery.id} item={reporting} onClose={() => setReporting(null)} />
-      <ConfirmationCodeModal deliveryId={delivery.id} open={codeOpen} onClose={() => setCodeOpen(false)} onVerified={onVerified} />
+      <ConfirmationCodeModal deliveryId={delivery.id} open={codeOpen} onClose={closeCode} onVerified={onVerified} />
     </main>
   );
 }

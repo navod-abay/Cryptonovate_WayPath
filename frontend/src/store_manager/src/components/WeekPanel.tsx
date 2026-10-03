@@ -31,8 +31,6 @@ export default function WeekPanel({ today }: { today: Date }) {
       const marks: Mark[] = [...categories].reverse().flatMap<Mark>((type) => {
         const order = orders.find((o) => o.deliveryDate === iso && o.type === type);
         if (order) return [{ type, order, faded: order.status === 'confirmed' || order.status === 'deferred' }];
-        // Past days without seeded orders: main category daily, the second one Mon/Wed/Fri.
-        if (iso < todayISO && (type === categories[categories.length - 1] || [1, 3, 5].includes(date.getDay()))) return [{ type, faded: false }];
         return [];
       });
       out.push({ date, iso, marks });

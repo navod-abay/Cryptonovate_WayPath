@@ -11,8 +11,8 @@ import DatePopover from '@/components/DatePopover';
 import CapacityMeter from '@/components/CapacityMeter';
 import { useAppStore } from '@/state/store';
 import { useNow } from '@/hooks/useNow';
-import { PRODUCTS, TRUCK_CAPACITY, productById } from '@/mock/catalogue';
 import { dismissMissingItem, placeOrder } from '@/api/storeManagerApi';
+import { showError } from '@/state/toasts';
 import type { OrderLine, OrderType, Product } from '@/types';
 import { formatDayMonth, fromISODate, nextOpenDeliveryDate, orderCutoff, pad2, splitDuration, toISODate } from '@/utils/date';
 import { bindingLimit, formatKg, formatM3, loadOf, unitsThatFit } from '@/utils/load';
@@ -42,6 +42,9 @@ export default function PlaceOrderPage() {
   const lastQty = useAppStore((s) => s.lastOrderQty);
   const missingAll = useAppStore((s) => s.missingFromLast);
   const categories = useAppStore((s) => s.outlet.categories);
+  const products = useAppStore((s) => s.products);
+  const capacities = useAppStore((s) => s.capacity);
+  const productById = (id: string) => products.find((p) => p.id === id);
 
   const type: OrderType | null = categories.includes(typeParam as OrderType) ? (typeParam as OrderType) : null;
   const dateParam = params.get('date');
@@ -71,7 +74,8 @@ export default function PlaceOrderPage() {
 
   if (!type) return <Navigate to="/" replace />;
 
-  const cap = TRUCK_CAPACITY[type];
+  // Without a capacity from the backend there is no limit to enforce.
+  const cap = capacities[type] ?? { maxWeightKg: Infinity, maxVolumeM3: Infinity };
   const truck = TRUCK_NAME[type];
   const load = loadOf(
     rows.flatMap((r) => {
@@ -95,7 +99,7 @@ export default function PlaceOrderPage() {
     : `${left.h}hr : ${pad2(left.m)}mins : ${pad2(left.s)}secs`;
 
   const totalItems = rows.reduce((n, r) => n + (r.productId ? r.quantity + r.carriedOver : 0), 0);
-  const available = PRODUCTS.filter((p) => p.type === type && !rows.some((r) => r.productId === p.id));
+  const available = products.filter((p) => p.type === type && !rows.some((r) => r.productId === p.id));
   const hasSearchRow = rows.some((r) => !r.productId);
 
   const update = (key: string, patch: Partial<Row>) => setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...patch } : r)));
@@ -115,14 +119,19 @@ export default function PlaceOrderPage() {
 
   const submit = async () => {
     setSaving(true);
-    const order = await placeOrder({
-      type,
-      deliveryDate: iso,
-      lines: rows
-        .filter((r) => r.productId && r.quantity + r.carriedOver > 0)
-        .map((r) => ({ productId: r.productId!, name: r.name, quantity: r.quantity, ...(r.carriedOver ? { carriedOver: r.carriedOver } : {}) })),
-    });
-    navigate(`/orders/${order.id}`, { state: { justPlaced: true } });
+    try {
+      const order = await placeOrder({
+        type,
+        deliveryDate: iso,
+        lines: rows
+          .filter((r) => r.productId && r.quantity + r.carriedOver > 0)
+          .map((r) => ({ productId: r.productId!, name: r.name, quantity: r.quantity, ...(r.carriedOver ? { carriedOver: r.carriedOver } : {}) })),
+      });
+      navigate(`/orders/${order.id}`, { state: { justPlaced: true } });
+    } catch (e) {
+      showError(e, 'Could not place the order.');
+      setSaving(false);
+    }
   };
 
   return (
@@ -211,7 +220,7 @@ export default function PlaceOrderPage() {
                   </span>
                   <span className="sm-place__prompt-actions">
                     <button type="button" className="sm-link-button" disabled={!fits} onClick={() => addMissing(m)}>Yes, add</button>
-                    <button type="button" className="sm-link-button" onClick={() => dismissMissingItem(type, m.productId)}>No, don’t add</button>
+                    <button type="button" className="sm-link-button" onClick={() => dismissMissingItem(type, m.productId).catch((e) => showError(e))}>No, don’t add</button>
                   </span>
                 </div>
               );

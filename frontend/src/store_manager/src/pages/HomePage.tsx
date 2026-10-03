@@ -33,7 +33,7 @@ export default function HomePage() {
 
   const toggleFilter = (s: UpdateSource) => {
     setFilter((f) => (f === s ? null : s));
-    markUpdatesRead(updates.filter((u) => u.source === s && !u.read).map((u) => u.id));
+    markUpdatesRead(updates.filter((u) => u.source === s && !u.read).map((u) => u.id)).catch(() => undefined);
   };
 
   const dispatches = todays.length;
@@ -75,7 +75,7 @@ export default function HomePage() {
               key={u.id}
               update={u}
               time={relativeTime(u.at, now)}
-              onOpen={u.link ? () => { markUpdatesRead([u.id]); navigate(u.link!); } : undefined}
+              onOpen={u.link ? () => { markUpdatesRead([u.id]).catch(() => undefined); navigate(u.link!); } : undefined}
             />
           ))}
           {!shown.length && <p className="sm-muted">No updates.</p>}

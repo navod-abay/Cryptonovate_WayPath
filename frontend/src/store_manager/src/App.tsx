@@ -10,6 +10,8 @@ import OrderHistoryPage from './pages/OrderHistoryPage';
 import TodayDeliveriesPage from './pages/TodayDeliveriesPage';
 import ReceiveDeliveryPage from './pages/ReceiveDeliveryPage';
 import PastDeliveriesPage from './pages/PastDeliveriesPage';
+import StoreDataGate from './components/StoreDataGate';
+import Toasts from './components/Toasts';
 import { useAppStore } from './state/store';
 
 /** Everything except /login needs a signed-in store manager. */
@@ -20,7 +22,7 @@ function RequireAuth({ children }: { children: ReactNode }) {
   return (
     <>
       <Navbar />
-      {children}
+      <StoreDataGate>{children}</StoreDataGate>
     </>
   );
 }
@@ -30,6 +32,8 @@ const guard = (page: ReactNode) => <RequireAuth>{page}</RequireAuth>;
 export default function App() {
   const signedIn = useAppStore((s) => !!s.session);
   return (
+    <>
+    <Toasts />
     <Routes>
       <Route path="/login" element={signedIn ? <Navigate to="/" replace /> : <LoginPage />} />
       <Route path="/" element={guard(<HomePage />)} />
@@ -42,5 +46,6 @@ export default function App() {
       <Route path="/deliveries/:deliveryId/receive" element={guard(<ReceiveDeliveryPage />)} />
       <Route path="*" element={<Navigate to={signedIn ? '/' : '/login'} replace />} />
     </Routes>
+    </>
   );
 }

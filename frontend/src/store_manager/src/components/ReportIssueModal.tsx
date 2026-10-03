@@ -4,6 +4,7 @@ import Modal from './Modal';
 import QuantityStepper from './QuantityStepper';
 import type { DeliveryItem, IssueKind } from '@/types';
 import { reportIssue } from '@/api/storeManagerApi';
+import { showError } from '@/state/toasts';
 import './ReportIssueModal.css';
 
 const DAMAGE_REASONS = ['Crushed', 'Leaking', 'Crate Opened'];
@@ -35,9 +36,14 @@ export default function ReportIssueModal({ deliveryId, item, onClose }: Props) {
   const submit = async () => {
     if (!kind) return;
     setSaving(true);
-    await reportIssue({ deliveryId, productId: item.productId, kind, reasons: kind === 'damaged' ? reasons : [], quantity: qty });
-    setSaving(false);
-    onClose();
+    try {
+      await reportIssue(deliveryId, { productId: item.productId, kind, reasons: kind === 'damaged' ? reasons : [], quantity: qty });
+      onClose();
+    } catch (e) {
+      showError(e, 'Could not send the report.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const qtyLabel = kind === 'damaged' ? 'Damaged Quantity' : kind === 'missing' ? 'Missing Quantity' : 'Quantity';

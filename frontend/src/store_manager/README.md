@@ -34,7 +34,11 @@ Add `?time=HH:mm` to any URL to fake the time (it keeps ticking), e.g.
 - `http://localhost:5173/?time=14:10` – order window open, countdowns running
 - `http://localhost:5173/?time=17:30` – window closed
 
-Mock data resets on page reload.
+Mock data resets on page reload (the demo clock only affects the mock data and countdowns).
+
+## Backend
+
+The app runs on dummy APIs by default. **See [BACKEND_INTEGRATION.md](./BACKEND_INTEGRATION.md)** for every endpoint, its request/response JSON and how to switch to the real backend (`VITE_USE_MOCK_API=false` in `.env.local`, see `.env.example`).
 
 ## Screens
 
@@ -56,10 +60,10 @@ Navbar shortcuts: each category tile (snowflake, carrot, game controller, t-shir
 
 ```
 src/
-  api/storeManagerApi.ts   # the only place that changes data; each function notes the backend endpoint it will call
-  state/store.ts           # tiny global store (useSyncExternalStore); pages read with useAppStore(selector)
+  api/                     # config, http client, authApi, storeManagerApi: the only code that talks to the backend
+  state/                   # client cache of API results (store.ts) and error toasts (toasts.ts)
   config/categories.ts     # label, icon, colours and vehicle for each order category
-  mock/                    # seed data per store, product catalogue, demo accounts, demo clock
+  mock/                    # fake backend (server.ts), seed data per store, catalogue, demo accounts, demo clock
   components/              # store-manager components (Navbar, Modal, QuantityStepper, Timeline, ...)
   pages/                   # one file per route
   styles/tokens.css        # store-manager tokens (cyan / amber / maroon scales, font) on top of --wp-* vars
@@ -76,6 +80,3 @@ Each product has a weight and volume per unit, and each order type has a truck l
 
 Components built here that could move into the shared library later: `Modal`, `QuantityStepper`, `Card`, `Banner`, `KeyValueList`, `Timeline`, `CarouselNav`, `RouteProgress`.
 
-## Connecting the backend later
-
-Replace the mock bodies in `src/api/storeManagerApi.ts` with `fetch` calls through the gateway (`/api/<service>/...`), then `setState` with the response. Pages don't need to change.

@@ -36,7 +36,36 @@ const noMissing = (): Record<OrderType, OrderLine[]> => ({ chilled: [], dry: [],
 
 /** Mock data for the logged-in store. Grocery stores get the Figma scenario; tech/style get a generated one. */
 export function createSeed(outlet: Outlet): SeedState {
-  return outlet.storeType === 'grocery' ? createGrocerySeed(outlet) : createSingleCategorySeed(outlet, outlet.categories[0]);
+  const seed = outlet.storeType === 'grocery' ? createGrocerySeed(outlet) : createSingleCategorySeed(outlet, outlet.categories[0]);
+  addOrderHistory(seed);
+  return seed;
+}
+
+/**
+ * Delivered orders for past delivery days (last 14 days) that have none yet, so the
+ * "This Week" panel has history: main category daily, the second one Mon/Wed/Fri.
+ */
+function addOrderHistory(seed: SeedState) {
+  const today = startOfDay(now());
+  const cats = seed.outlet.categories;
+  for (let n = 1; n <= 14; n++) {
+    const d = addDays(today, -n);
+    if (d.getDay() === 0) continue;
+    const iso = toISODate(d);
+    cats.forEach((type, i) => {
+      const daily = i === cats.length - 1;
+      if (!daily && ![1, 3, 5].includes(d.getDay())) return;
+      if (seed.orders.some((o) => o.type === type && o.deliveryDate === iso)) return;
+      const products = PRODUCTS.filter((p) => p.type === type).slice(0, 3);
+      seed.orders.push({
+        id: `ORD-${seed.outlet.id}-${CATEGORY[type].code}-H${n}`, type, deliveryDate: iso, status: 'delivered',
+        lines: products.map((p) => line(p.id, 2 + ((n + p.id.length) % 4))),
+        placedAt: at(addDays(d, -1), 12, 0), scheduledAt: at(addDays(d, -1), 17, 0),
+        loadedAt: at(d, 6, 0), dispatchedAt: at(d, 6, 45), receivedAt: at(d, 9, 0),
+        eta: '08:45', vehicle: type === 'chilled' ? 'VEH056' : type === 'dry' ? 'VEH003' : type === 'tech' ? 'VEH071' : 'VEH088',
+      });
+    });
+  }
 }
 
 function createGrocerySeed(outlet: Outlet): SeedState {

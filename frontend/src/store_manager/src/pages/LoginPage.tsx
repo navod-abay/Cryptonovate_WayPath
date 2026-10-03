@@ -2,8 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Eye, EyeSlash, WarningCircle } from '@phosphor-icons/react';
 import { PrimaryButton } from '@waypoint/ui';
-import { login, AuthError } from '@/api/authApi';
-import { MOCK_ACCOUNTS } from '@/mock/users';
+import { login, AuthError, demoAccounts } from '@/api/authApi';
 import { STORE_TYPE_LABEL } from '@/config/categories';
 import { useNow } from '@/hooks/useNow';
 import { formatClock, formatDayMonth } from '@/utils/date';
@@ -20,6 +19,7 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  const demo = demoAccounts();
   const from = (location.state as { from?: string } | null)?.from ?? '/';
 
   const submit = async (e?: FormEvent) => {
@@ -34,7 +34,7 @@ export default function LoginPage() {
       await login(username, password);
       navigate(from, { replace: true });
     } catch (err) {
-      setError(err instanceof AuthError ? err.message : 'Could not sign in. Check your connection and try again.');
+      setError(err instanceof AuthError ? err.message : (err as Error)?.message || 'Could not sign in. Check your connection and try again.');
       setBusy(false);
     }
   };
@@ -95,19 +95,21 @@ export default function LoginPage() {
             style={{ borderRadius: 16, minHeight: 85, fontSize: 24, fontWeight: 500 }}
           />
 
+          {demo.length > 0 && (
           <div className="sm-login__demo">
             <p>Demo accounts (password <code>Password123!</code>)</p>
             <ul>
-              {MOCK_ACCOUNTS.map((a) => (
-                <li key={a.user.username}>
-                  <button type="button" onClick={() => { setUsername(a.user.username); setPassword(a.password); setError(null); }}>
-                    {a.user.username}
+              {demo.map((a) => (
+                <li key={a.username}>
+                  <button type="button" onClick={() => { setUsername(a.username); setPassword(a.password); setError(null); }}>
+                    {a.username}
                   </button>
-                  <span>{STORE_TYPE_LABEL[a.outlet.storeType]} · {a.outlet.id}</span>
+                  <span>{STORE_TYPE_LABEL[a.storeType]} · {a.outletId}</span>
                 </li>
               ))}
             </ul>
           </div>
+          )}
         </form>
       </section>
     </main>

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { PrimaryButton, SelectableChip } from '@waypoint/ui';
 import Modal from './Modal';
 import { reportDeliveryProblem } from '@/api/storeManagerApi';
+import { showError } from '@/state/toasts';
 
 const PROBLEMS = ['Vehicle is late', 'Outside my delivery window', 'Can’t reach the driver', 'Wrong vehicle'];
 
@@ -14,9 +15,14 @@ export default function DeliveryProblemModal({ deliveryId, open, onClose }: { de
   const close = () => { setPicked([]); setSent(false); onClose(); };
   const submit = async () => {
     setSaving(true);
-    await reportDeliveryProblem(deliveryId, picked);
-    setSaving(false);
-    setSent(true);
+    try {
+      await reportDeliveryProblem(deliveryId, picked);
+      setSent(true);
+    } catch (e) {
+      showError(e, 'Could not send the report.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
