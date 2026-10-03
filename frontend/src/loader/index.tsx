@@ -1,8 +1,14 @@
-export function LoaderPortal() {
-  return (
-    <div className="p-4 border border-indigo-500/20 rounded-lg">
-      <h2 className="text-xl font-bold text-indigo-400">Warehouse Loader Station</h2>
-      <p className="text-sm text-slate-400">Scan items into vehicle bays prior to driver dispatch.</p>
-    </div>
-  );
-}
+export { default as LoaderApp } from './LoaderApp';
+export { LoaderPinEntry } from './components/LoaderPinEntry';
+export { LoaderInfoPanel } from './components/LoaderInfoPanel';
+export { PinDisplay } from './components/PinDisplay';
+export { NumericKeypad } from './components/NumericKeypad';
+export { ReadyToLoadScreen } from './components/ReadyToLoadScreen';
+export { CommonHeader } from './components/CommonHeader';
+export { BackButton } from './components/BackButton';
+export { VehicleQueueControls } from './components/VehicleQueueControls';
+export { VehicleCard } from './components/VehicleCard';
+export { LoadingScreen } from './components/LoadingScreen';
+export { CompletedScreen } from './components/CompletedScreen';
+export { LoadingDetailScreen } from './components/LoadingDetailScreen';
+export type { Vehicle } from './components/VehicleCard';
