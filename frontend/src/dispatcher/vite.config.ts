@@ -2,7 +2,9 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { fileURLToPath } from 'node:url';
 
-const ui = fileURLToPath(new URL('./packages/ui/src', import.meta.url));
+// Resolve the shared @waypoint/ui package — go up: dispatcher → src → frontend → packages/ui
+const ui = fileURLToPath(new URL('../../packages/ui/src', import.meta.url));
+
 export default defineConfig({
   plugins: [react()],
   resolve: {
@@ -12,6 +14,17 @@ export default defineConfig({
     ],
     dedupe: ['react', 'react-dom'],
   },
-  server: { host: '127.0.0.1', port: 5173 },
-  preview: { host: '127.0.0.1', port: 4173 },
+  server: {
+    host: '127.0.0.1',
+    port: 5173,
+  },
+  preview: {
+    host: '127.0.0.1',
+    port: 4173,
+  },
+  build: {
+    outDir: 'dist',
+    emptyOutDir: true,
+  },
 });
+
