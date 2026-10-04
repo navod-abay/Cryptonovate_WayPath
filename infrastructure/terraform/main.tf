@@ -282,6 +282,18 @@ resource "aws_instance" "app_server" {
 }
 
 # ------------------------------------------------------------------------------
+# Elastic IP (Fixed Public IP)
+# ------------------------------------------------------------------------------
+resource "aws_eip" "app_eip" {
+  instance = aws_instance.app_server.id
+  domain   = "vpc"
+
+  tags = {
+    Name = "cryptonovate-fixed-ip"
+  }
+}
+
+# ------------------------------------------------------------------------------
 # Outputs
 # ------------------------------------------------------------------------------
 output "instance_id" {
@@ -299,6 +311,11 @@ output "application_url" {
   value       = "http://${aws_instance.app_server.public_ip}"
 }
 
+output "fixed_application_url" {
+  description = "Permanent Public HTTP URL"
+  value       = "http://${aws_eip.app_eip.public_ip}"
+}
+
 output "ssh_connection_command" {
   description = "Command to SSH into the instance (requires matching private key and admin_ssh_cidr)"
   value       = var.key_pair_name != "" ? "ssh -i <path-to-${var.key_pair_name}.pem> ubuntu@${aws_instance.app_server.public_ip}" : "SSH Key not configured in variables"
@@ -308,3 +325,4 @@ output "bootstrap_log_command" {
   description = "Command to inspect user_data bootstrap execution logs"
   value       = "ssh ubuntu@${aws_instance.app_server.public_ip} 'sudo tail -f /var/log/user-data.log'"
 }
+
