@@ -55,7 +55,6 @@ services:
       test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:5001/health"]
     volumes:
       - ./services/auth-rbac/src:/app/src
-      - /app/node_modules
     command: npx tsx watch src/index.ts
     depends_on:
       postgres:
@@ -82,7 +81,6 @@ services:
       start_period: 60s   # seeds demo orders on first boot
     volumes:
       - ./services/order-management/src:/app/src
-      - /app/node_modules
     command: npx tsx watch src/index.ts
     depends_on:
       postgres:
@@ -126,7 +124,6 @@ services:
       test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:5004/health"]
     volumes:
       - ./services/fleet-directory/src:/app/src
-      - /app/node_modules
     command: npx tsx watch src/index.ts
     depends_on:
       postgres:
@@ -150,7 +147,6 @@ services:
       test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:5005/health"]
     volumes:
       - ./services/execution-sync/src:/app/src
-      - /app/node_modules
     command: npx tsx watch src/index.ts
     depends_on:
       postgres:
@@ -174,7 +170,6 @@ services:
       test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:5006/health"]
     volumes:
       - ./services/analytics-prediction/src:/app/src
-      - /app/node_modules
     depends_on:
       postgres:
         condition: service_healthy
