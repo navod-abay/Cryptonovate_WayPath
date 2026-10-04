@@ -49,7 +49,7 @@ variable "key_pair_name" {
 variable "github_repo_url" {
   description = "Public Git repository URL containing the docker-compose.yml and microservices"
   type        = string
-  default     = "https://github.com/your-org/TeamName_SolutionName.git"
+  default     = "https://github.com/navod-abay/Cryptonovate_WayPath.git"
 }
 
 # ------------------------------------------------------------------------------
