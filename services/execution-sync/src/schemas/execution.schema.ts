@@ -95,6 +95,21 @@ export const DriverIncidentsSchema = z.union([
   z.object({ incidents: z.array(DriverIncidentSchema).min(1).max(100) }).transform((body) => body.incidents),
 ]);
 
+export const StopEventSchema = z.object({
+  // Generated on the device; the same event sent twice changes nothing.
+  clientEventId: z.string().uuid('clientEventId must be a UUID'),
+  tripId: z.string().min(1).max(50),
+  // An outlet stop of the trip (the depot has its own arrival and departure routes).
+  stopId: z.string().min(1).max(60),
+  type: z.enum(['arrival', 'departure']),
+  // A departure after a delivery made without signal (photos instead of the store's code).
+  offline: z.boolean().optional(),
+  capturedAt: z.string().datetime({ offset: true, message: 'capturedAt ISO timestamp is required' }),
+});
+
+/** Arrivals and departures, one at a time or a backlog flushed after the driver regains signal. */
+export const StopEventsSchema = z.object({ events: z.array(StopEventSchema).min(1).max(100) });
+
 export const DeliveryProblemSchema = z.object({
   problems: z.array(z.string().min(1).max(100)).min(1).max(10),
   orderRef: z.string().max(50).optional(),
@@ -107,4 +122,5 @@ export type PodInput = z.infer<typeof PodSchema>;
 export type BulkSyncInput = z.infer<typeof BulkSyncSchema>;
 export type ConfirmOrderInput = z.infer<typeof ConfirmOrderSchema>;
 export type DriverIncidentInput = z.infer<typeof DriverIncidentSchema>;
+export type StopEventInput = z.infer<typeof StopEventSchema>;
 export type DeliveryProblemInput = z.infer<typeof DeliveryProblemSchema>;

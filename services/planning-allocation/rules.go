@@ -29,6 +29,9 @@ func CheckRules(a *ALNS, trips []PlannedTrip) []string {
 			if o.Chilled && car.Temp != "reefer" {
 				v = append(v, fmt.Sprintf("rule 2: %s carries chilled order %s on an ambient vehicle", tag, o.ID))
 			}
+			if o.Chilled != first.Chilled {
+				v = append(v, fmt.Sprintf("rule 2: %s mixes chilled and ambient orders", tag))
+			}
 			if o.VanOnly && car.Type != "van" {
 				v = append(v, fmt.Sprintf("rule 3: %s serves van-only outlet %s with a %s", tag, o.Outlet, car.Type))
 			}

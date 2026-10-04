@@ -262,11 +262,12 @@ func (a *ALNS) evalBase(k int, trips [][]int, onArrive func(i int, t float64)) (
 	clock, haveClock := 0.0, false
 	for _, trip := range a.schedule(trips) {
 		first := a.O[trip[0]]
-		brand, dist := first.Brand, first.District
+		brand, dist, chilled := first.Brand, first.District, first.Chilled
 		var w, v, handling float64
 		for _, i := range trip {
 			o := a.O[i]
-			if o.Brand != brand || o.District != dist {
+			// a chilled trip runs the reefer cold, so ambient orders cannot ride along
+			if o.Brand != brand || o.District != dist || o.Chilled != chilled {
 				return 0, 0, false
 			}
 			w += o.W
@@ -431,7 +432,7 @@ func (a *ALNS) bestInVehicle(s *Solution, i, k int) *insertion {
 	}
 	for ti, trip := range trips {
 		f := a.O[trip[0]]
-		if f.Brand != o.Brand || f.District != o.District {
+		if f.Brand != o.Brand || f.District != o.District || f.Chilled != o.Chilled {
 			continue
 		}
 		for pos := 0; pos <= len(trip); pos++ {
@@ -742,7 +743,7 @@ func (a *ALNS) relatedness(i, j int, where map[int]loc) float64 {
 	if x.District != y.District {
 		r += p.ShawDistrict
 	}
-	if x.Brand != y.Brand {
+	if x.Brand != y.Brand || x.Chilled != y.Chilled {
 		r += p.ShawBrand
 	}
 	if where[i] != where[j] {
@@ -829,7 +830,7 @@ func (a *ALNS) destroyDistrict(s *Solution) []int {
 	var chosen []int
 	for _, i := range order {
 		x := a.O[i]
-		if x.Depot == o.Depot && x.District == o.District && x.Brand == o.Brand {
+		if x.Depot == o.Depot && x.District == o.District && x.Brand == o.Brand && x.Chilled == o.Chilled {
 			chosen = append(chosen, i)
 		}
 	}

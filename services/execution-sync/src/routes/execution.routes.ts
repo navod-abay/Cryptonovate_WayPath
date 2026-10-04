@@ -59,6 +59,34 @@ router.get(
   ExecutionController.getActiveRoute
 );
 
+router.post(
+  '/driver/trips/:tripId/start',
+  authenticateJwt,
+  requireRole('driver', 'dispatcher'),
+  ExecutionController.startDriverTrip
+);
+
+router.post(
+  '/driver/trips/:tripId/depot-arrival',
+  authenticateJwt,
+  requireRole('driver', 'dispatcher'),
+  ExecutionController.arriveAtDepot
+);
+
+router.post(
+  '/driver/trips/:tripId/depot-departure',
+  authenticateJwt,
+  requireRole('driver', 'dispatcher'),
+  ExecutionController.departFromDepot
+);
+
+router.post(
+  '/driver/stop-events',
+  authenticateJwt,
+  requireRole('driver', 'dispatcher'),
+  ExecutionController.recordStopEvents
+);
+
 // Note: /telemetry allows unauthenticated or authenticated driver updates
 router.post(
   '/telemetry',

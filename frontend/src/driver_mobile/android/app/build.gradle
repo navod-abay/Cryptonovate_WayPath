@@ -80,6 +80,9 @@ android {
     namespace "com.driver_mobile"
     defaultConfig {
         applicationId "com.driver_mobile"
+        // scripts/build-apks.sh builds one APK per server; a suffix and label let them sit side by side.
+        applicationIdSuffix project.findProperty("appIdSuffix") ?: ""
+        manifestPlaceholders = [appLabel: project.findProperty("appLabel") ?: "WayPath"]
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
@@ -108,6 +111,8 @@ android {
             // Caution! In production, you need to generate your own keystore file.
             // see https://reactnative.dev/docs/signed-apk-android.
             signingConfig signingConfigs.debug
+            // The gateway is plain HTTP (an IP address, or localhost through adb reverse).
+            manifestPlaceholders += [usesCleartextTraffic: "true"]
             minifyEnabled enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
         }

@@ -18,10 +18,12 @@ const driverOrDispatcher = requireRole('driver', 'dispatcher', 'system');
 // Vehicles – static routes MUST come before parameterised ones
 fleetRoutes.get('/vehicles/fuel-usage', managerAndDispatcher, VehicleController.getFuelUsage);
 fleetRoutes.get('/vehicles', operationalRoles, VehicleController.getVehicles);
+fleetRoutes.get('/fuel-usage/weekly', managerAndDispatcher, VehicleController.getWeeklyFuel);
 
 // Per-vehicle actions
 fleetRoutes.post('/vehicles/:vehicle_id/log-distance', driverOrDispatcher, VehicleController.logDistance);
 fleetRoutes.patch('/vehicles/:vehicle_id/status', dispatcherOnly, VehicleController.updateVehicleStatus);
+fleetRoutes.put('/vehicles/:vehicle_id/availability', dispatcherOnly, VehicleController.updateAvailability);
 
 // Downtime CRUD
 fleetRoutes.post('/vehicles/:vehicle_id/downtime', dispatcherOnly, VehicleController.createDowntime);

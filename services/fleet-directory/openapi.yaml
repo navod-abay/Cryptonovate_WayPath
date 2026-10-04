@@ -36,7 +36,8 @@ paths:
       description: |
         Returns all vehicles, optionally filtered by depot, status, or availability on a future date.
         When `available_on` is provided, vehicles that are currently `in_workshop` OR have a
-        `vehicle_downtime` booking overlapping that date are excluded.
+        `vehicle_downtime` booking overlapping that date are excluded. Each vehicle carries
+        `unavailable_periods`: its downtime from today (Colombo) onwards, as [{ from, to }].
       parameters:
         - in: query
           name: depot
@@ -178,6 +179,78 @@ paths:
           $ref: '#/components/responses/ValidationError'
         '404':
           $ref: '#/components/responses/NotFound'
+
+  /vehicles/{vehicle_id}/availability:
+    put:
+      tags: [Downtime]
+      summary: Set a vehicle's availability (dispatcher)
+      description: >-
+        Sets the status and replaces every current and future downtime booking with the given
+        periods (dates inclusive); bookings that ended before today stay as history. One transaction.
+      parameters:
+        - in: path
+          name: vehicle_id
+          required: true
+          schema:
+            type: string
+            example: VEH040
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status, unavailable_periods]
+              properties:
+                status:
+                  type: string
+                  enum: [available, in_workshop]
+                unavailable_periods:
+                  type: array
+                  maxItems: 50
+                  items:
+                    type: object
+                    required: [from, to]
+                    properties:
+                      from:
+                        type: string
+                        format: date
+                      to:
+                        type: string
+                        format: date
+      responses:
+        '200':
+          description: '{ status, unavailable_periods } as stored'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '404':
+          description: No such vehicle
+
+  /fuel-usage/weekly:
+    get:
+      tags: [Vehicles]
+      summary: Weekly fuel quota and use
+      description: >-
+        For the ISO week containing `date`: each vehicle's weekly quota and litres used, and
+        `utilization` = used / quota over those vehicles (null when the quota is 0).
+      parameters:
+        - in: query
+          name: date
+          required: true
+          schema:
+            type: string
+            format: date
+            example: '2026-10-05'
+        - in: query
+          name: depot
+          schema:
+            type: string
+            enum: [Peliyagoda, Kandy]
+      responses:
+        '200':
+          description: '{ iso_year, iso_week, utilization, vehicles: [{ vehicle_id, quota_litres, consumed_litres }] }'
+        '400':
+          $ref: '#/components/responses/ValidationError'
 
   /vehicles/{vehicle_id}/downtime:
     post:

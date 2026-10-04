@@ -131,6 +131,27 @@ export const VehicleDowntimeRequestSchema = z
   });
 export type VehicleDowntimeRequest = z.infer<typeof VehicleDowntimeRequestSchema>;
 
+const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'dates must be in YYYY-MM-DD format');
+
+/** PUT /vehicles/:vehicle_id/availability: the status plus every current and future unavailable period. */
+export const AvailabilityUpdateSchema = z.object({
+  status: z.enum(['available', 'in_workshop']),
+  unavailable_periods: z
+    .array(
+      z.object({ from: isoDate, to: isoDate }).refine((p) => p.to >= p.from, {
+        message: 'each period must end on or after it starts',
+      })
+    )
+    .max(50),
+});
+export type AvailabilityUpdate = z.infer<typeof AvailabilityUpdateSchema>;
+
+/** GET /fuel-usage/weekly: the ISO week containing date, optionally for one depot. */
+export const WeeklyFuelQuerySchema = z.object({
+  date: isoDate,
+  depot: z.string().optional(),
+});
+
 /**
  * ============================================================================
  * GENERIC API RESPONSE CONTRACTS

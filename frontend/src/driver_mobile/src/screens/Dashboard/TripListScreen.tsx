@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import {View, StyleSheet, FlatList, ScrollView, StatusBar, TouchableOpacity, ActivityIndicator, DeviceEventEmitter} from 'react-native';
+import {View, StyleSheet, FlatList, ScrollView, StatusBar, TouchableOpacity, ActivityIndicator, DeviceEventEmitter, Alert} from 'react-native';
 import CustomText from '../../components/CustomText';
 import { useSafeAreaInsets, SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -10,7 +10,8 @@ import WarehouseCard from '../../components/WarehouseCard';
 import OutletRow from '../../components/OutletRow';
 import { TripPayload } from '../../types/trip';
 import { AuthError, Driver, getDriver } from '../../api/auth';
-import { fetchTodayTrips } from '../../api/trips';
+import { fetchTodayTrips, startTrip } from '../../api/trips';
+import { flushStopEvents } from '../../services/StopEvents';
 import Fontisto from 'react-native-vector-icons/Fontisto';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 
@@ -26,10 +27,21 @@ export default function TripListScreen({ navigation }: Props) {
   const [driver, setDriver] = useState<Driver | null>(null);
   const [vehicleId, setVehicleId] = useState('');
   const [error, setError] = useState('');
+  const [starting, setStarting] = useState(false);
 
   useEffect(() => {
     fetchCurrentTrip();
   }, []);
+
+  // Back from a trip: send what is queued, then show what the server now has, without a spinner.
+  useEffect(() => {
+    return navigation.addListener('focus', () => {
+      flushStopEvents()
+        .then(fetchTodayTrips)
+        .then((day) => setTrips(day.trips))
+        .catch(() => {});
+    });
+  }, [navigation]);
 
   const fetchCurrentTrip = async () => {
     setLoading(true);
@@ -85,9 +97,24 @@ export default function TripListScreen({ navigation }: Props) {
     navigation.navigate('ActiveTrip', { tripData, initialIndex: index });
   };
 
-  const handleStartTrip = () => {
-    // Flip isStarted to true when they click the main Start button
+  const handleStartTrip = async () => {
+    if (tripData.isStarted) {
+      // Already started: carry on from the first stop not yet done.
+      const next = tripData.nodes.findIndex((n) => n.status !== 'completed');
+      navigation.navigate('ActiveTrip', { tripData, initialIndex: next === -1 ? tripData.nodes.length - 1 : next });
+      return;
+    }
+    setStarting(true);
+    try {
+      await startTrip(tripData.tripId);
+    } catch (err) {
+      Alert.alert('Could not start the trip', err instanceof Error ? err.message : 'Check your connection and try again.');
+      return;
+    } finally {
+      setStarting(false);
+    }
     const startedTrip = { ...tripData, isStarted: true };
+    setTrips((prev) => prev.map((t, i) => (i === activeTripIndex ? startedTrip : t)));
     navigation.navigate('ActiveTrip', { tripData: startedTrip, initialIndex: 0 });
   };
 
@@ -145,8 +172,9 @@ export default function TripListScreen({ navigation }: Props) {
         </View>
 
         <PrimaryButton 
-          title={`Start ${tripData.activeTripId}`} 
+          title={`${tripData.isStarted ? 'Continue' : 'Start'} ${tripData.activeTripId}`} 
           onPress={handleStartTrip} 
+          isLoading={starting}
           style={{ marginTop: SPACING.lg, marginBottom: SPACING.xl }}
         />
       </ScrollView>

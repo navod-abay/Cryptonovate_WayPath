@@ -87,6 +87,34 @@ export async function initDb() {
       );
     `);
 
+    // The driver's side of the depot visit: when they started the trip in the app and when they
+    // marked "I've Arrived" at the depot. Loaders only see a trip as ready to load once it arrived.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS driver_trip_progress (
+        trip_id VARCHAR(50) PRIMARY KEY,
+        vehicle_id VARCHAR(50) NOT NULL,
+        driver_id UUID,
+        started_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        depot_arrived_at TIMESTAMP WITH TIME ZONE
+      );
+      -- Rows made by the demo seed (db/demoArrivals.ts), not by a driver.
+      ALTER TABLE driver_trip_progress ADD COLUMN IF NOT EXISTS demo BOOLEAN NOT NULL DEFAULT false;
+      ALTER TABLE driver_trip_progress ADD COLUMN IF NOT EXISTS depot_departed_at TIMESTAMP WITH TIME ZONE;
+
+      -- The driver's arrival at and departure from each outlet stop. Events are queued on the phone
+      -- while offline and may arrive late or twice, so each time keeps the earliest one captured.
+      CREATE TABLE IF NOT EXISTS stop_progress (
+        stop_id VARCHAR(60) PRIMARY KEY,
+        trip_id VARCHAR(50) NOT NULL,
+        driver_id UUID,
+        arrived_at TIMESTAMP WITH TIME ZONE,
+        departed_at TIMESTAMP WITH TIME ZONE,
+        offline_delivery BOOLEAN NOT NULL DEFAULT false, -- delivered without the store's code
+        updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS ix_stop_progress_trip ON stop_progress (trip_id);
+    `);
+
     // Delivery Events (bulk sync target)
     await client.query(`
       CREATE TABLE IF NOT EXISTS delivery_events (

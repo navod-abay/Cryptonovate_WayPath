@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import {View, StyleSheet, TouchableOpacity, SafeAreaView, StatusBar, ScrollView, DeviceEventEmitter} from 'react-native';
+import React, { useEffect, useState } from 'react';
+import {View, StyleSheet, TouchableOpacity, SafeAreaView, StatusBar, ScrollView, DeviceEventEmitter, Alert} from 'react-native';
 import CustomText from '../../components/CustomText';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RouteProp } from '@react-navigation/native';
@@ -16,12 +16,17 @@ import DeliveryConfirmationModal from '../../components/DeliveryConfirmationModa
 import NetInfo from '@react-native-community/netinfo';
 import { launchCamera, CameraOptions } from 'react-native-image-picker';
 import { saveOfflineDelivery } from '../../services/SyncService';
+import { arriveAtDepot, departFromDepot, fetchLoadingStatus } from '../../api/trips';
+import { recordStopEvent } from '../../services/StopEvents';
 import { TripNode, TripLog } from '../../types/trip';
 import Feather from 'react-native-vector-icons/Feather';
 import TypeBadge from '../../components/TypeBadge';
 import FontAwesome from 'react-native-vector-icons/FontAwesome';
 import AntDesign from 'react-native-vector-icons/AntDesign';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+
+/** How often a checked-in truck asks whether the loaders have released it. */
+const LOADING_POLL_MS = 10_000;
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'ActiveTrip'>;
@@ -82,29 +87,64 @@ export default function ActiveTripScreen({ navigation, route }: Props) {
   const totalOutlets = nodes.filter(n => n.type === 'outlet').length;
   const currentOutletIndex = nodes.slice(0, currentIndex + 1).filter(n => n.type === 'outlet').length;
 
-  // --- API Simulation Functions --- //
-  
-  const updateNodeState = (status: TripNode['status'], newLog?: TripLog) => {
-    const updatedNodes = [...nodes];
-    updatedNodes[currentIndex].status = status;
-    if (newLog) updatedNodes[currentIndex].logs.push(newLog);
-    setNodes(updatedNodes);
+  const now = () => new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+
+  /** Sets one stop's status (and adds a log line). By index, so a late timer updates the right stop. */
+  const setNodeState = (index: number, status: TripNode['status'], newLog?: TripLog) => {
+    setNodes(prev => prev.map((n, i) => (i === index ? { ...n, status, logs: newLog ? [...n.logs, newLog] : n.logs } : n)));
+  };
+  const updateNodeState = (status: TripNode['status'], newLog?: TripLog) => setNodeState(currentIndex, status, newLog);
+
+  /** Outlet arrivals and departures go to the server, or wait on the phone until there is signal. */
+  const recordOutlet = (type: 'arrival' | 'departure', offline?: boolean) => {
+    if (!currentNode.stopId) return;
+    void recordStopEvent({ tripId: tripData.tripId, stopId: currentNode.stopId, type, offline });
+  };
+
+  // Checked in at the depot: the truck may leave once the loaders release it, so watch for that.
+  const depotWaiting = nodes[0]?.type === 'warehouse' && nodes[0].status === 'arrived';
+  useEffect(() => {
+    if (!depotWaiting) return;
+    const check = () =>
+      fetchLoadingStatus(tripData.tripId)
+        .then(status => { if (status === 'completed') setNodeState(0, 'ready_to_depart'); })
+        .catch(() => {});
+    check();
+    const timer = setInterval(check, LOADING_POLL_MS);
+    return () => clearInterval(timer);
+  }, [depotWaiting, tripData.tripId]);
+
+  /** At the depot the loaders wait for this, so it is sent to the server (no offline fallback). */
+  const handleDepotArrival = async () => {
+    setIsLoadingNetwork(true);
+    try {
+      await arriveAtDepot(tripData.tripId);
+    } catch (err) {
+      Alert.alert('Could not check in at the depot', err instanceof Error ? err.message : 'Check your connection and try again.');
+      return;
+    } finally {
+      setIsLoadingNetwork(false);
+    }
+    updateNodeState('arrived', { action: 'Arrival', time: now() });
   };
 
   const handleArrival = async () => {
+    if (isWarehouse) return handleDepotArrival();
     setIsLoadingNetwork(true);
     
     // Check actual network status
     const networkState = await NetInfo.fetch();
+    const index = currentIndex;
     
     setTimeout(() => {
       setIsLoadingNetwork(false);
       
       if (networkState.isConnected && networkState.isInternetReachable !== false) {
         // Online: proceed as normal
-        updateNodeState('arrived', { action: 'Arrival', time: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) });
+        recordOutlet('arrival');
+        setNodeState(index, 'arrived', { action: 'Arrival', time: now() });
         // Simulating the 3 second confirmation wait from backend
-        setTimeout(() => updateNodeState('ready_to_depart'), 3000);
+        setTimeout(() => setNodeState(index, 'ready_to_depart'), 3000);
       } else {
         // Offline: prompt user
         setNoNetworkModalVisible(true);
@@ -112,11 +152,29 @@ export default function ActiveTripScreen({ navigation, route }: Props) {
     }, 1000); // brief loader for UX
   };
 
+  /** Leaving the depot needs the loaders' release, which the server checks (no offline fallback). */
+  const handleDepotDeparture = async () => {
+    setIsLoadingNetwork(true);
+    try {
+      await departFromDepot(tripData.tripId);
+    } catch (err) {
+      Alert.alert('Cannot leave the depot yet', err instanceof Error ? err.message : 'Check your connection and try again.');
+      return;
+    } finally {
+      setIsLoadingNetwork(false);
+    }
+    updateNodeState('completed', { action: 'Departure', time: now() });
+  };
+
   const handleOTPConfirm = (code: string) => {
     console.log(`Verifying OTP ${code} with Port 5001 Auth Service...`);
     setOtpVisible(false);
-    updateNodeState('completed', { action: 'Departure', time: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) });
+    recordOutlet('departure');
+    updateNodeState('completed', { action: 'Departure', time: now() });
   };
+
+  // The delivery code confirms a hand-over at an outlet; leaving the depot needs none.
+  const handleDepart = () => (isWarehouse ? handleDepotDeparture() : setOtpVisible(true));
 
   const handleFlagPress = () => {
     navigation.navigate('ReportIssue', {
@@ -151,7 +209,7 @@ export default function ActiveTripScreen({ navigation, route }: Props) {
       {isStarted && currentNode.status === 'arrived' && (
         <View style={[styles.banner, { backgroundColor: COLORS.success }]}>
           <CustomText style={styles.bannerText}>
-            {isWarehouse ? '1 hr 04 mins in Warehouse' : 'Arrived at Outlet'}
+            {isWarehouse ? 'Loading · you can leave once the loader releases the truck' : 'Arrived at Outlet'}
           </CustomText>
         </View>
       )}
@@ -315,7 +373,8 @@ export default function ActiveTripScreen({ navigation, route }: Props) {
           <PrimaryButton 
             title="Depart Now" 
             disabled={currentNode.status === 'arrived'}
-            onPress={() => setOtpVisible(true)} 
+            onPress={handleDepart} 
+            isLoading={isLoadingNetwork}
           />
         )}
       </View>
@@ -329,6 +388,7 @@ export default function ActiveTripScreen({ navigation, route }: Props) {
         onClose={() => setNoNetworkModalVisible(false)} 
         onProceed={() => {
           setNoNetworkModalVisible(false);
+          recordOutlet('arrival'); // queued until there is signal
           setIsManualVerification(true);
         }} 
       />
@@ -346,6 +406,7 @@ export default function ActiveTripScreen({ navigation, route }: Props) {
             timestamp: new Date().toISOString()
           });
           
+          recordOutlet('departure', true);
           updateNodeState('completed', { action: 'Offline Delivery (Queued)', time: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) });
         }} 
       />

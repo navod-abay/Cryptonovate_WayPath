@@ -141,3 +141,43 @@ func TestALNS3IsDeterministicPerSeed(t *testing.T) {
 		t.Errorf("same seed gave different costs: %v vs %v", c1, c2)
 	}
 }
+
+// A chilled trip runs the reefer cold, so it cannot also carry ambient orders; a reefer may still run
+// an all-ambient trip.
+func TestTripsDoNotMixChilledAndAmbient(t *testing.T) {
+	order := func(id string, chilled bool) ALNSOrder {
+		return ALNSOrder{ID: id, Outlet: id, Brand: "Fresh", District: "D1", Depot: "DEP1", Chilled: chilled,
+			W: 10, V: 0.1, S: 5, E: 0, L: 1440}
+	}
+	orders := []ALNSOrder{order("C1", true), order("C2", true), order("A1", false), order("A2", false)}
+	vehicles := []ALNSVehicle{{ID: "R1", Type: "truck", Temp: "reefer", Depot: "DEP1", W: 1000, V: 10, KmPerL: 8, KmLeft: 1000}}
+	travel := map[string]DistrictTravel{"D1": {Depot: "DEP1", DepotKm: 5, DepotMin: 10, InterKm: 1, InterMin: 3}}
+	a := NewALNS(orders, vehicles, travel, DefaultALNSParams())
+
+	for _, c := range []struct {
+		name  string
+		trips [][]int
+		ok    bool
+	}{
+		{"all chilled", [][]int{{0, 1}}, true},
+		{"all ambient on a reefer", [][]int{{2, 3}}, true},
+		{"chilled trip then ambient trip", [][]int{{0, 1}, {2, 3}}, true},
+		{"mixed trip", [][]int{{0, 2}}, false},
+	} {
+		if _, _, ok := a.evalBase(0, c.trips, nil); ok != c.ok {
+			t.Errorf("%s: feasible = %v, want %v", c.name, ok, c.ok)
+		}
+	}
+
+	trips := a.Trips(a.Run())
+	if v := CheckRules(a, trips); len(v) > 0 {
+		t.Fatalf("rule violations:\n%s", strings.Join(v, "\n"))
+	}
+	if len(trips) != 2 {
+		t.Errorf("got %d trips, want one chilled and one ambient", len(trips))
+	}
+	mixed := []PlannedTrip{{Vehicle: 0, TripNumber: 1, Orders: []int{0, 2}}}
+	if v := CheckRules(a, mixed); len(v) == 0 {
+		t.Error("CheckRules accepted a trip mixing chilled and ambient orders")
+	}
+}

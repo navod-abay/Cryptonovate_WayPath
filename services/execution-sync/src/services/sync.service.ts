@@ -1,7 +1,7 @@
 import jwt from 'jsonwebtoken';
 import { createHmac, randomUUID, timingSafeEqual } from 'crypto';
 import { pool } from '../db/pool';
-import { BulkSyncInput, DeliveryProblemInput, DriverIncidentInput, PodInput } from '../schemas/execution.schema';
+import { BulkSyncInput, DeliveryProblemInput, DriverIncidentInput, PodInput, StopEventInput } from '../schemas/execution.schema';
 import { AccessTokenPayload } from '../middleware/auth';
 import { enqueueAlert, relayPendingAlerts } from './alertOutbox';
 import { LoadingService } from './loading.service';
@@ -156,11 +156,11 @@ export interface PlannedTrip {
   departureTime: string;
   loaderId?: string;
   loaderName?: string;
-  stops: Array<{ orderRef: string; outletId: string; items: Array<{ sku: string; description: string; qty: number }> }>;
+  stops: Array<{ stopId: string; orderRef: string; outletId: string; items: Array<{ sku: string; description: string; qty: number }> }>;
 }
 
 /** Calls Planning with a service token; its 404/403 pass through, anything else is a 502. */
-async function planningJson<T>(path: string): Promise<T> {
+export async function planningJson<T>(path: string): Promise<T> {
   const res = await safeFetch(`${PLANNING_SERVICE_URL}${path}`);
   if (!res) throw new HttpError(502, 'Planning & Allocation is unreachable');
   const body = await res.json().catch(() => null);
@@ -170,15 +170,52 @@ async function planningJson<T>(path: string): Promise<T> {
 }
 
 /** Today in Colombo (YYYY-MM-DD): the plan date loaders work on. */
-function colomboToday(now = new Date()) {
+export function colomboToday(now = new Date()) {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Colombo' }).format(now);
 }
 
-/** loading_manifests.status -> the loader app's queue: no row yet is ready to load. */
-function loadingStatus(manifest?: string) {
+/**
+ * loading_manifests.status -> the loader app's queue. A trip with no manifest yet is ready to load
+ * only once its driver has started it in the app and marked "I've Arrived" at the depot.
+ */
+function loadingStatus(manifest: string | undefined, driverArrived: boolean) {
   if (manifest === 'completed') return 'completed';
   if (manifest === 'in_progress') return 'loading';
-  return 'ready_to_load';
+  return driverArrived ? 'ready_to_load' : 'awaiting_driver';
+}
+
+interface TripState {
+  manifest?: string;
+  driverStartedAt: string | null;
+  depotArrivedAt: string | null;
+  depotDepartedAt: string | null;
+}
+
+const iso = (d: Date | null) => d?.toISOString() ?? null;
+
+/** Loading and driver progress for each trip, by trip id. */
+async function tripStates(tripIds: string[]): Promise<Map<string, TripState>> {
+  const states = new Map<string, TripState>(tripIds.map((id) => [id, { driverStartedAt: null, depotArrivedAt: null, depotDepartedAt: null }]));
+  if (tripIds.length === 0) return states;
+  const [manifests, progress] = await Promise.all([
+    pool.query<{ trip_id: string; status: string }>('SELECT trip_id, status FROM loading_manifests WHERE trip_id = ANY($1)', [tripIds]),
+    pool.query<{ trip_id: string; started_at: Date; depot_arrived_at: Date | null; depot_departed_at: Date | null }>(
+      'SELECT trip_id, started_at, depot_arrived_at, depot_departed_at FROM driver_trip_progress WHERE trip_id = ANY($1)',
+      [tripIds],
+    ),
+  ]);
+  for (const r of manifests.rows) states.get(r.trip_id)!.manifest = r.status;
+  for (const r of progress.rows) {
+    const st = states.get(r.trip_id)!;
+    st.driverStartedAt = iso(r.started_at);
+    st.depotArrivedAt = iso(r.depot_arrived_at);
+    st.depotDepartedAt = iso(r.depot_departed_at);
+  }
+  return states;
+}
+
+function statusOf(st: TripState | undefined) {
+  return loadingStatus(st?.manifest, !!st?.depotArrivedAt);
 }
 
 export class ExecutionSyncService {
@@ -228,14 +265,7 @@ export class ExecutionSyncService {
     if (user?.role === 'loader') params.set('loaderId', user.userId || '');
     const trips: PlannedTrip[] = await planningJson(`/api/planning/trips?${params}`);
 
-    const states = new Map<string, string>();
-    if (trips.length > 0) {
-      const { rows } = await pool.query<{ trip_id: string; status: string }>(
-        'SELECT trip_id, status FROM loading_manifests WHERE trip_id = ANY($1)',
-        [trips.map((t) => t.tripId)]
-      );
-      for (const r of rows) states.set(r.trip_id, r.status);
-    }
+    const states = await tripStates(trips.map((t) => t.tripId));
     const queue = trips
       .map((t) => ({
         tripId: t.tripId,
@@ -245,7 +275,8 @@ export class ExecutionSyncService {
         temperature: t.vehicleTemperature === 'reefer' ? 'frozen' : 'ambient',
         departureTime: t.departureTime,
         stops: t.stops.length,
-        status: loadingStatus(states.get(t.tripId)),
+        status: statusOf(states.get(t.tripId)),
+        depotArrivedAt: states.get(t.tripId)?.depotArrivedAt ?? null,
         dock: t.depot,
         loaderId: t.loaderId ?? null,
         loaderName: t.loaderName ?? null,
@@ -268,19 +299,116 @@ export class ExecutionSyncService {
     const day = date || colomboToday();
     const params = new URLSearchParams({ date: day, vehicleId: vehicle });
     const trips: PlannedTrip[] = await planningJson(`/api/planning/trips?${params}`);
-    const { rows } = trips.length
-      ? await pool.query<{ trip_id: string; status: string }>('SELECT trip_id, status FROM loading_manifests WHERE trip_id = ANY($1)', [
-          trips.map((t) => t.tripId),
-        ])
-      : { rows: [] };
-    const states = new Map(rows.map((r) => [r.trip_id, r.status]));
+    const states = await tripStates(trips.map((t) => t.tripId));
+    const { rows: stops } = await pool.query<{ stop_id: string; arrived_at: Date | null; departed_at: Date | null; offline_delivery: boolean }>(
+      'SELECT stop_id, arrived_at, departed_at, offline_delivery FROM stop_progress WHERE trip_id = ANY($1)',
+      [trips.map((t) => t.tripId)],
+    );
+    const stopProgress = new Map(stops.map((r) => [r.stop_id, r]));
     return {
       date: day,
       vehicleId: vehicle,
       trips: trips
         .sort((a, b) => a.tripNumber - b.tripNumber)
-        .map((t) => ({ ...t, loadingStatus: loadingStatus(states.get(t.tripId)) })),
+        .map((t) => {
+          const st = states.get(t.tripId);
+          return {
+            ...t,
+            loadingStatus: statusOf(st),
+            driverStartedAt: st?.driverStartedAt ?? null,
+            depotArrivedAt: st?.depotArrivedAt ?? null,
+            depotDepartedAt: st?.depotDepartedAt ?? null,
+            stops: t.stops.map((s) => {
+              const p = stopProgress.get(s.stopId);
+              return { ...s, arrivedAt: iso(p?.arrived_at ?? null), departedAt: iso(p?.departed_at ?? null), offlineDelivery: p?.offline_delivery ?? false };
+            }),
+          };
+        }),
     };
+  }
+
+  /** The planned trip, if the caller drives it (a dispatcher may act for any driver). */
+  static async drivenTrip(tripId: string, user: AccessTokenPayload | undefined): Promise<PlannedTrip> {
+    const trip: PlannedTrip = await planningJson(`/api/planning/trips/${encodeURIComponent(tripId)}`);
+    if (user?.role === 'driver' && trip.vehicleId !== user.vehicle_id) {
+      throw new HttpError(403, `Trip ${tripId} is not on your vehicle`);
+    }
+    return trip;
+  }
+
+  /** The driver pressed "Start Trip". Idempotent: a second press keeps the first time. */
+  static async startDriverTrip(tripId: string, user: AccessTokenPayload | undefined) {
+    const trip = await ExecutionSyncService.drivenTrip(tripId, user);
+    const { rows } = await pool.query<{ started_at: Date; depot_arrived_at: Date | null }>(
+      `INSERT INTO driver_trip_progress (trip_id, vehicle_id, driver_id) VALUES ($1, $2, $3)
+       ON CONFLICT (trip_id) DO UPDATE SET trip_id = EXCLUDED.trip_id
+       RETURNING started_at, depot_arrived_at`,
+      [tripId, trip.vehicleId, user?.role === 'driver' ? user.userId ?? null : null],
+    );
+    return { tripId, driverStartedAt: rows[0].started_at.toISOString(), depotArrivedAt: rows[0].depot_arrived_at?.toISOString() ?? null };
+  }
+
+  /**
+   * Arrivals at and departures from the trip's stops, sent as they happen or queued on the phone
+   * while it had no signal. Every time keeps the earliest one captured, so a late or repeated event
+   * changes nothing. A stop that is not on the trip is a 400 (the phone drops that event). The depot
+   * is not a stop here: arriving and leaving there go through the loaders, so they need signal.
+   */
+  static async recordStopEvents(events: StopEventInput[], user: AccessTokenPayload | undefined) {
+    const trips = new Map<string, PlannedTrip>();
+    for (const e of events) {
+      if (!trips.has(e.tripId)) trips.set(e.tripId, await ExecutionSyncService.drivenTrip(e.tripId, user));
+      if (!trips.get(e.tripId)!.stops.some((s) => s.stopId === e.stopId)) {
+        throw new HttpError(400, `${e.stopId} is not a stop of ${e.tripId}`);
+      }
+    }
+    const driverId = user?.role === 'driver' ? user.userId ?? null : null;
+    for (const e of events) {
+      const at = occurredAt(e.capturedAt);
+      const column = e.type === 'arrival' ? 'arrived_at' : 'departed_at';
+      await pool.query(
+        `INSERT INTO stop_progress (stop_id, trip_id, driver_id, ${column}, offline_delivery) VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (stop_id) DO UPDATE SET ${column} = LEAST(stop_progress.${column}, EXCLUDED.${column}),
+           offline_delivery = stop_progress.offline_delivery OR EXCLUDED.offline_delivery, updated_at = CURRENT_TIMESTAMP`,
+        [e.stopId, e.tripId, driverId, at, e.type === 'departure' && !!e.offline],
+      );
+    }
+    return { accepted: events.map((e) => e.clientEventId) };
+  }
+
+  /**
+   * The driver leaves the depot. Only once the loaders have released the truck (every unit of every
+   * order scanned or reported, then dispatched); before that it is a 409.
+   */
+  static async departFromDepot(tripId: string, user: AccessTokenPayload | undefined) {
+    const trip = await ExecutionSyncService.drivenTrip(tripId, user);
+    const state = (await tripStates([tripId])).get(tripId)!;
+    if (!state.depotArrivedAt) throw new HttpError(409, `Check in at the depot before leaving on trip ${tripId}`);
+    if (state.manifest !== 'completed') {
+      throw new HttpError(409, `${trip.vehicleId} is not loaded yet; wait for the loader to release the truck`);
+    }
+    const { rows } = await pool.query<{ depot_departed_at: Date }>(
+      `UPDATE driver_trip_progress SET depot_departed_at = COALESCE(depot_departed_at, CURRENT_TIMESTAMP)
+       WHERE trip_id = $1 RETURNING depot_departed_at`,
+      [tripId],
+    );
+    return { tripId, depotDepartedAt: rows[0].depot_departed_at.toISOString() };
+  }
+
+  /**
+   * The driver marked "I've Arrived" at the depot: the trip joins the loaders' Ready to Load queue.
+   * The trip must have been started first. Idempotent: a second press keeps the first time.
+   */
+  static async arriveAtDepot(tripId: string, user: AccessTokenPayload | undefined) {
+    await ExecutionSyncService.drivenTrip(tripId, user);
+    const { rows } = await pool.query<{ started_at: Date; depot_arrived_at: Date }>(
+      `UPDATE driver_trip_progress SET depot_arrived_at = COALESCE(depot_arrived_at, CURRENT_TIMESTAMP)
+       WHERE trip_id = $1 RETURNING started_at, depot_arrived_at`,
+      [tripId],
+    );
+    if (rows.length === 0) throw new HttpError(409, `Start trip ${tripId} before marking arrival at the depot`);
+    const state = statusOf((await tripStates([tripId])).get(tripId));
+    return { tripId, driverStartedAt: rows[0].started_at.toISOString(), depotArrivedAt: rows[0].depot_arrived_at.toISOString(), loadingStatus: state };
   }
 
   /**
@@ -314,13 +442,13 @@ export class ExecutionSyncService {
       };
     });
 
-    const { rows } = await pool.query<{ status: string }>('SELECT status FROM loading_manifests WHERE trip_id = $1', [trip.tripId]);
+    const state = (await tripStates([trip.tripId])).get(trip.tripId);
     return {
       tripId: trip.tripId,
       vehicleId: trip.vehicleId,
       depot: trip.depot,
       departureTime: trip.departureTime,
-      status: loadingStatus(rows[0]?.status),
+      status: statusOf(state),
       loaderId: trip.loaderId ?? null,
       loaderName: trip.loaderName ?? null,
       loadingStrategy: 'LIFO',

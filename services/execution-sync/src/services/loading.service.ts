@@ -168,8 +168,16 @@ async function syncLoaded(orderRef: string, bearer: string | undefined): Promise
   return true;
 }
 
-/** The trip's loading row: started (in_progress) by its first start or scan, completed by dispatch. */
+/**
+ * The trip's loading row: started (in_progress) by its first start or scan, completed by dispatch.
+ * Loading cannot start until the driver has marked arrival at the depot.
+ */
 async function ensureStarted(db: PoolClient, tripId: string, loaderId: string | null) {
+  const manifest = await db.query('SELECT 1 FROM loading_manifests WHERE trip_id = $1', [tripId]);
+  if (manifest.rowCount === 0) {
+    const arrived = await db.query('SELECT 1 FROM driver_trip_progress WHERE trip_id = $1 AND depot_arrived_at IS NOT NULL', [tripId]);
+    if (arrived.rowCount === 0) throw new HttpError(409, `The driver of trip ${tripId} has not arrived at the depot yet`);
+  }
   const { rows } = await db.query<{ status: string }>(
     `INSERT INTO loading_manifests (trip_id, loader_id, status, started_at)
      VALUES ($1, $2, 'in_progress', CURRENT_TIMESTAMP)
