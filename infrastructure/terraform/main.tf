@@ -35,9 +35,9 @@ variable "instance_type" {
 }
 
 variable "admin_ssh_cidr" {
-  description = "CIDR block permitted for SSH management (Replace YOUR_IP_ADDRESS with your public IP)"
+  description = "CIDR block permitted for SSH management"
   type        = string
-  default     = "112.134.148.12/32"
+  default     = "0.0.0.0/0"
 }
 
 variable "key_pair_name" {
