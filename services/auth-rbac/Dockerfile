@@ -7,7 +7,7 @@ RUN rm -f package-lock.json && npm install --no-audit --no-fund
 
 COPY tsconfig.json ./
 COPY src ./src
-# One driver per vehicle, read by src/db/seed.ts at boot
+# Seed accounts (a driver per vehicle, a store manager per outlet), read by src/db/seed.ts at boot
 COPY seed-data ./seed-data
 RUN npm run build
 

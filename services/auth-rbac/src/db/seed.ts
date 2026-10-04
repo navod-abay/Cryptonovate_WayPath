@@ -4,13 +4,18 @@ import path from 'path';
 import { pool } from './pool';
 import { pinLookup } from '../services/pin.service';
 
-/** One driver per vehicle (scripts/build-driver-seed.mjs writes it from the challenge dataset). */
-function readDrivers() {
-  const file = path.resolve(__dirname, '../../seed-data/drivers.csv');
+function readSeedCsv(name: string) {
+  const file = path.resolve(__dirname, '../../seed-data', name);
   const [head, ...lines] = readFileSync(file, 'utf8').trim().split(/\r?\n/);
   const cols = head.split(',');
   return lines.map((l) => Object.fromEntries(l.split(',').map((v, i) => [cols[i], v.trim()])));
 }
+
+/** One driver per vehicle (scripts/build-driver-seed.mjs writes it from the challenge dataset). */
+const readDrivers = () => readSeedCsv('drivers.csv');
+
+/** One store manager per outlet (scripts/build-store-manager-seed.mjs writes it from the challenge dataset). */
+const readStoreManagers = () => readSeedCsv('store-managers.csv');
 
 export async function initDatabaseAndSeed(): Promise<void> {
   const client = await pool.connect();
@@ -106,16 +111,17 @@ export async function initDatabaseAndSeed(): Promise<void> {
         vehicle_id: d.vehicle_id,
         pin: d.pin,
       })),
-      {
-        username: 'manager_out001',
+      // Store managers: one per outlet, signing in as manager_<outlet id> (manager_out001, ...).
+      ...readStoreManagers().map((m) => ({
+        username: m.username,
         password_hash: passwordHash,
-        full_name: 'Nimal Fernando',
-        email: 'manager.out001@waypath.example',
-        phone: '+94 70 000 0004',
+        full_name: m.full_name,
+        email: m.email,
+        phone: m.phone,
         role: 'store_manager',
-        outlet_id: 'OUT001',
+        outlet_id: m.outlet_id,
         depot: null,
-      },
+      })),
     ];
 
     const pinsSeen = new Set<string>();
