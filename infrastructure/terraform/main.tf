@@ -41,9 +41,9 @@ variable "admin_ssh_cidr" {
 }
 
 variable "key_pair_name" {
-  description = "Name of existing EC2 Key Pair for SSH access (optional, leave empty if not using SSH key)"
+  description = "Name of existing EC2 Key Pair for SSH access"
   type        = string
-  default     = ""
+  default     = "Tech3"
 }
 
 variable "github_repo_url" {
@@ -114,6 +114,16 @@ resource "aws_security_group" "app_sg" {
     description      = "HTTP public gateway entrypoint"
     from_port        = 80
     to_port          = 80
+    protocol         = "tcp"
+    cidr_blocks      = ["0.0.0.0/0"]
+    ipv6_cidr_blocks = ["::/0"]
+  }
+
+  # Ingress: Secure HTTPS to NGINX Reverse Proxy
+  ingress {
+    description      = "HTTPS public gateway entrypoint"
+    from_port        = 443
+    to_port          = 443
     protocol         = "tcp"
     cidr_blocks      = ["0.0.0.0/0"]
     ipv6_cidr_blocks = ["::/0"]
