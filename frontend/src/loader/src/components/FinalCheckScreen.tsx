@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { TickIcon, ContainerIcon } from './icons';
 import { Vehicle } from './VehicleCard';
 import { CommonHeader } from './CommonHeader';
+import { getManifest, dispatchTrip } from '../api/executionApi';
 import truckIllustration from './icons/TruckIllustration.png';
 
 interface FinalCheckScreenProps {
@@ -26,6 +27,8 @@ export function FinalCheckScreen({
   const [activeOutlet, setActiveOutlet] = useState(outlets.length); // Container icon selected by default
   const [departMinutes, setDepartMinutes] = useState(5);
   const [checkedItems, setCheckedItems] = useState<boolean[]>([true, true, true]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
 
   const now = new Date();
   const timeString = now.toLocaleTimeString('en-US', {
@@ -35,6 +38,21 @@ export function FinalCheckScreen({
   });
 
   const allChecked = checkedItems.every(Boolean);
+
+  const handleRelease = async () => {
+    if (!allChecked) return;
+    setIsLoading(true);
+    setError('');
+    try {
+      const tripId = `TRIP-${vehicle.id}`;
+      await dispatchTrip(tripId);
+      onRelease(vehicle.id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to release vehicle');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const toggleItem = (index: number) => {
     setCheckedItems((prev) =>
@@ -154,15 +172,18 @@ export function FinalCheckScreen({
           {/* Release Button */}
           <div className="mt-8 pt-6 border-t border-slate-200">
             <button
-              onClick={() => onRelease(vehicle.id)}
-              disabled={!allChecked}
+              onClick={handleRelease}
+              disabled={!allChecked || isLoading}
               className="w-full py-4 bg-[#1a3a5c] text-white text-base font-semibold rounded-xl
                          hover:bg-[#0f2a44] active:bg-[#0a1f33]
                          disabled:opacity-50 disabled:cursor-not-allowed
                          transition-colors cursor-pointer"
             >
-              Release Vehicle
+              {isLoading ? 'Releasing...' : 'Release Vehicle'}
             </button>
+            {error && (
+              <p className="text-red-500 text-sm text-center mt-3">{error}</p>
+            )}
           </div>
         </div>
       </div>

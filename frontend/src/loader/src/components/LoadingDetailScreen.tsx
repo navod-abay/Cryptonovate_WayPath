@@ -43,16 +43,19 @@ export function LoadingDetailScreen({
   const sortedStops = [...manifestStops].sort((a, b) => a.loadingSequence - b.loadingSequence);
   const outletTabs = sortedStops.map((stop) => stop.outletId);
 
-  // Get items for the currently selected outlet
+  // Get items for the currently selected outlet, merging with local state for damage updates
   const activeStop = sortedStops[activeOutlet];
   const outletItems = activeStop
-    ? activeStop.items.map((item) => ({
-        id: item.sku,
-        name: item.sku,
-        loaded: 0,
-        total: item.qty,
-        damaged: 0,
-      }))
+    ? activeStop.items.map((item) => {
+        const localItem = items.find((i) => i.id === item.sku);
+        return {
+          id: item.sku,
+          name: item.sku,
+          loaded: localItem?.loaded ?? 0,
+          total: item.qty,
+          damaged: localItem?.damaged ?? 0,
+        };
+      })
     : items;
 
   // Fetch manifest when vehicle changes
@@ -104,10 +107,10 @@ export function LoadingDetailScreen({
     try {
       const tripId = `TRIP-${vehicle.id}`;
       await reportShortfall(tripId, {
-        order_ref: 'ORD-1001',
+        orderRef: 'ORD-1001',
         sku: selectedItem.id,
-        missing_qty: damageCount,
-        damage_flag: true,
+        missingQty: damageCount,
+        damageFlag: true,
         notes: 'Damaged during loading',
       });
       setItems((prev) =>
@@ -249,11 +252,11 @@ export function LoadingDetailScreen({
                   className="flex items-center justify-between py-3 md:py-4 border-b-2 border-slate-300 last:border-0 cursor-pointer hover:bg-slate-50 transition-colors"
                 >
                   <div className="flex items-center gap-2">
-                    {hasDamage && <AlertIcon size={20} />}
                     <span className={`text-sm md:text-base ${isComplete ? 'text-[#1a3a5c]' : 'text-slate-500'}`}>{item.name}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     {isComplete && <DoubleTickIcon size={20} />}
+                    {hasDamage && <AlertIcon size={20} />}
                     <span className={`text-sm md:text-base font-medium ${isComplete ? 'text-[#1a3a5c]' : 'text-slate-500'}`}>
                       {item.loaded}/{item.total}
                     </span>
