@@ -4,7 +4,7 @@ WORKDIR /app/src/store_manager
 # Build context is frontend, including the shared UI package (aliased in vite.config.ts).
 COPY packages/ui /app/packages/ui
 COPY src/store_manager/package.json src/store_manager/package-lock.json ./
-RUN npm ci
+RUN rm -f package-lock.json && npm install --no-audit --no-fund
 # Shared source files resolve React/types through their frontend ancestor.
 RUN ln -s /app/src/store_manager/node_modules /app/node_modules
 COPY src/store_manager .

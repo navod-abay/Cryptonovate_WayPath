@@ -37,3 +37,11 @@ Thumbs.db
 
 
 .vscode
+# Terraform
+infrastructure/terraform/.terraform/
+infrastructure/terraform/.terraform.lock.hcl
+infrastructure/terraform/terraform.tfstate
+infrastructure/terraform/terraform.tfstate.backup
+infrastructure/terraform/*.tfplan
+infrastructure/terraform/crash.log
+infrastructure/terraform/.terraform.tfstate.lock.info

@@ -3,7 +3,7 @@ WORKDIR /app
 
 # Build context is this service's folder only (fully isolated)
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN rm -f package-lock.json && npm install --no-audit --no-fund
 
 COPY tsconfig.json ./
 COPY src ./src
