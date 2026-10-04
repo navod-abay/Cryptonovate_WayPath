@@ -45,6 +45,9 @@ type ALNSPlanner struct {
 	// catchupSeeds replaces seeds for catch-up runs (past days and today at startup), which only
 	// need a good plan quickly; the nightly and manual runs keep the full seed count.
 	catchupSeeds int
+	// seeded holds the stored catch-up plans of the demo orders (seedplans.go); a catch-up run
+	// replays the matching one instead of solving. nil = always solve.
+	seeded []seededDay
 }
 
 const (
@@ -84,8 +87,19 @@ func (p *ALNSPlanner) Plan(ctx context.Context, runID, trigger string, planDate 
 		seeds = p.catchupSeeds
 	}
 	start := time.Now()
-	a, sol, seed := p.solve(orders, vehs, travel, planDate, seeds)
-	stats := &RunStats{Orders: len(orders), Iterations: p.params.Iterations, Seeds: seeds, BestSeed: seed}
+	var a *ALNS
+	var sol *Solution
+	var seed uint64
+	replayed := ""
+	if trigger == "catchup" && len(p.seeded) > 0 && len(orders) > 0 {
+		a = NewALNS(orders, vehs, travel, p.params)
+		sol, replayed = replaySeededPlan(p.seeded, a)
+	}
+	stats := &RunStats{Orders: len(orders)}
+	if sol == nil {
+		a, sol, seed = p.solve(orders, vehs, travel, planDate, seeds)
+		stats.Iterations, stats.Seeds, stats.BestSeed = p.params.Iterations, seeds, seed
+	}
 	plan := &Plan{FleetAvailable: map[string]int{}}
 	for _, v := range vehs {
 		plan.FleetAvailable[v.Depot]++
@@ -128,8 +142,12 @@ func (p *ALNSPlanner) Plan(ctx context.Context, runID, trigger string, planDate 
 	if err := p.publish(ctx, plan); err != nil {
 		return nil, fmt.Errorf("write allocations to order-management: %w", err)
 	}
-	log.Printf("[%s] planned %s: %d orders, %d served on %d trips, %d deferred (seed %d, %d ms)", serviceName, day,
-		stats.Orders, stats.Served, stats.Trips, stats.Deferred, stats.BestSeed, stats.SolveMs)
+	how := fmt.Sprintf("seed %d", stats.BestSeed)
+	if replayed != "" {
+		how = "seeded plan, day " + replayed
+	}
+	log.Printf("[%s] planned %s: %d orders, %d served on %d trips, %d deferred (%s, %d ms)", serviceName, day,
+		stats.Orders, stats.Served, stats.Trips, stats.Deferred, how, stats.SolveMs)
 	return stats, nil
 }
 

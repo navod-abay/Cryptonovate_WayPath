@@ -27,6 +27,14 @@ which takes that day's orders through loaded → out for delivery → delivered 
 times, records full receipts and marks the outlets served, so the next day's cutoff sweep sees who was
 delivered. Today's orders stay `allocated`.
 
+Catch-up does not search for these plans: they were solved once and are stored in
+`services/planning-allocation/seed-data/plans.csv`, and a catch-up run whose orders match a stored day
+(by outlet, temperature, weight and volume, so the dates and order refs do not matter) replays it. The
+replayed plan is re-timed and checked against the day's fleet like a solved one; if it does not match
+or no longer fits, that day is solved as before. After changing `orders.csv`, regenerate the stored
+plans: start a stack on an empty volume with `PLANNING_SEEDED_PLANS=off`, let catch-up finish, run
+`services/planning-allocation/scripts/export-seed-plans.sh` and rebuild the planning image.
+
 The orders are in `seed-data/orders.csv` (one row per order, with a day `offset` instead of a date)
 and the starting fairness counters in `seed-data/outlet_state.csv`. Both are copied into the image, so
 `docker compose up` seeds without the dataset. To pick different days, regenerate them from the

@@ -632,10 +632,10 @@ components:
           type: integer
         iterations:
           type: integer
-          description: ALNS iterations per seed
+          description: ALNS iterations per seed (0 when a catch-up run replayed a seeded plan)
         seeds:
           type: integer
-          description: ALNS runs with different seeds, best kept (PLANNING_SEEDS, default 5; PLANNING_CATCHUP_SEEDS, default 1, for catch-up runs)
+          description: ALNS runs with different seeds, best kept (PLANNING_SEEDS, default 5; PLANNING_CATCHUP_SEEDS, default 1, for catch-up runs; 0 when a catch-up run replayed a seeded plan)
         bestSeed:
           type: integer
         objective:

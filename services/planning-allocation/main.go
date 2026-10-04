@@ -104,6 +104,14 @@ func main() {
 	params.Iterations = envInt("PLANNING_ITERATIONS", 2000)
 	planner := &ALNSPlanner{orders: orders, fleet: fleet, store: store, params: params, seeds: envInt("PLANNING_SEEDS", 5),
 		catchupSeeds: envInt("PLANNING_CATCHUP_SEEDS", 1)}
+	if env("PLANNING_SEEDED_PLANS", "on") != "off" {
+		days, err := parseSeededPlans(seedPlansCSV)
+		if err != nil {
+			log.Fatalf("[%s] seeded plans: %v", serviceName, err)
+		}
+		planner.seeded = days
+		log.Printf("[%s] %d seeded catch-up plan(s) loaded; catch-up runs whose orders match one replay it", serviceName, len(days))
+	}
 	runs := NewRunManager(store, store, planner, 30*time.Minute)
 
 	mux := http.NewServeMux()
