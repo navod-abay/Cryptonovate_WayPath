@@ -23,6 +23,50 @@ async function safeFetch(url: string, options: RequestInit = {}, timeoutMs = 500
 
 export class ExecutionSyncService {
   /**
+   * Get active trips for a depot — filtered by loading status
+   */
+  static async getActiveTrips(depot: string, status?: string) {
+    // Fetch vehicles from fleet-directory for this depot
+    const fleetUrl = `${FLEET_SERVICE_URL}/api/fleet/vehicles?depot=${encodeURIComponent(depot)}`;
+    const fleetResponse = await safeFetch(fleetUrl);
+
+    let vehicles: any[] = [];
+    if (fleetResponse && fleetResponse.ok) {
+      const fleetData = await fleetResponse.json();
+      vehicles = fleetData.data || [];
+    }
+
+    // Determine how many vehicles to allocate per status
+    const totalAvailable = vehicles.filter((v: any) => v.status === 'available').length;
+    const perStatus = Math.max(1, Math.floor(totalAvailable / 3));
+
+    // Map to active trips format for the loader app
+    const allTrips = vehicles
+      .filter((v: any) => v.status === 'available')
+      .map((v: any) => ({
+        tripId: `TRIP-${v.vehicle_id}`,
+        vehicleId: v.vehicle_id,
+        vehicleType: v.type,
+        temperature: v.temp === 'reefer' ? 'frozen' : 'ambient',
+        arrivalTime: '04:00 AM',
+        stops: 0,
+        status: 'ready_to_load',
+        dock: v.depot,
+      }));
+
+    // Filter by status
+    if (status === 'ready_to_load') {
+      return allTrips.slice(0, perStatus);
+    } else if (status === 'loading') {
+      return allTrips.slice(perStatus, perStatus * 2).map((t) => ({ ...t, status: 'loading' }));
+    } else if (status === 'completed') {
+      return allTrips.slice(perStatus * 2, perStatus * 3).map((t) => ({ ...t, status: 'completed' }));
+    }
+
+    return allTrips.slice(0, 10);
+  }
+
+  /**
    * Fetches assigned trip from planning-allocation microservice and reverses stop order for LIFO loading
    */
   static async getLIFOManifest(tripId: string) {

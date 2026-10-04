@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { RedFlagIcon, DoubleTickIcon, AlertIcon } from './icons';
 import { Vehicle } from './VehicleCard';
 import { CommonHeader } from './CommonHeader';
+import { getManifest, transformManifestToItems, reportShortfall, dispatchTrip, TripManifest } from '../api/executionApi';
 
 interface LoadingItem {
   id: string;
@@ -28,11 +29,54 @@ export function LoadingDetailScreen({
 }: LoadingDetailScreenProps) {
   const [activeOutlet, setActiveOutlet] = useState(0);
   const [departMinutes, setDepartMinutes] = useState(39);
-  const [items, setItems] = useState<LoadingItem[]>(initialItems);
+  const [items, setItems] = useState<LoadingItem[]>(initialItems || []);
+  const [manifest, setManifest] = useState<TripManifest | null>(null);
   const [showDamageModal, setShowDamageModal] = useState(false);
   const [showMissingModal, setShowMissingModal] = useState(false);
   const [selectedItem, setSelectedItem] = useState<LoadingItem | null>(null);
   const [damageCount, setDamageCount] = useState(1);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  // Get outlets in loading sequence order from manifest stops
+  const manifestStops = manifest?.stops || [];
+  const sortedStops = [...manifestStops].sort((a, b) => a.loadingSequence - b.loadingSequence);
+  const outletTabs = sortedStops.map((stop) => stop.outletId);
+
+  // Get items for the currently selected outlet
+  const activeStop = sortedStops[activeOutlet];
+  const outletItems = activeStop
+    ? activeStop.items.map((item) => ({
+        id: item.sku,
+        name: item.sku,
+        loaded: 0,
+        total: item.qty,
+        damaged: 0,
+      }))
+    : items;
+
+  // Fetch manifest when vehicle changes
+  useEffect(() => {
+    if (vehicle) {
+      setIsLoading(true);
+      setError('');
+      const tripId = `TRIP-${vehicle.id}`;
+      console.log('[LoadingDetailScreen] Fetching manifest for tripId:', tripId);
+      getManifest(tripId)
+        .then((manifest) => {
+          console.log('[LoadingDetailScreen] Manifest received:', manifest);
+          setManifest(manifest);
+          const items = transformManifestToItems(manifest);
+          console.log('[LoadingDetailScreen] Transformed items:', items);
+          setItems(items);
+        })
+        .catch((err) => {
+          console.error('[LoadingDetailScreen] Failed to load manifest:', err);
+          setError(err instanceof Error ? err.message : 'Failed to load manifest');
+        })
+        .finally(() => setIsLoading(false));
+    }
+  }, [vehicle]);
 
   const now = new Date();
   const timeString = now.toLocaleTimeString('en-US', {
@@ -42,7 +86,8 @@ export function LoadingDetailScreen({
   });
 
   const handleFlagClick = () => {
-    setSelectedItem(items[0]);
+    const allItems = outletItems.length > 0 ? outletItems : items;
+    setSelectedItem(allItems[0] || null);
     setDamageCount(1);
     setShowDamageModal(true);
   };
@@ -53,21 +98,36 @@ export function LoadingDetailScreen({
     setShowDamageModal(true);
   };
 
-  const handleConfirmDamage = () => {
+  const handleConfirmDamage = async () => {
     if (!selectedItem) return;
-    setItems((prev) =>
-      prev.map((item) =>
-        item.id === selectedItem.id
-          ? { ...item, damaged: item.damaged + damageCount }
-          : item
-      )
-    );
-    setShowDamageModal(false);
-    setSelectedItem(null);
-    setDamageCount(1);
+    setIsLoading(true);
+    try {
+      const tripId = `TRIP-${vehicle.id}`;
+      await reportShortfall(tripId, {
+        order_ref: 'ORD-1001',
+        sku: selectedItem.id,
+        missing_qty: damageCount,
+        damage_flag: true,
+        notes: 'Damaged during loading',
+      });
+      setItems((prev) =>
+        prev.map((item) =>
+          item.id === selectedItem.id
+            ? { ...item, damaged: item.damaged + damageCount }
+            : item
+        )
+      );
+      setShowDamageModal(false);
+      setSelectedItem(null);
+      setDamageCount(1);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to report damage');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const incompleteItems = items.filter((item) => item.loaded < item.total);
+  const incompleteItems = (outletItems.length > 0 ? outletItems : items).filter((item) => item.loaded < item.total);
 
   const handleFinishClick = () => {
     if (incompleteItems.length > 0) {
@@ -77,9 +137,19 @@ export function LoadingDetailScreen({
     }
   };
 
-  const handleConfirmFinish = () => {
-    setShowMissingModal(false);
-    onFinish(vehicle.id);
+  const handleConfirmFinish = async () => {
+    setIsLoading(true);
+    try {
+      const tripId = `TRIP-${vehicle.id}`;
+      await dispatchTrip(tripId);
+      setShowMissingModal(false);
+      onFinish(vehicle.id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to dispatch');
+      setShowMissingModal(false);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -112,7 +182,7 @@ export function LoadingDetailScreen({
         </button>
 
         <div className="flex-1 flex items-center justify-between px-4 md:px-6">
-          {outlets.map((outlet, i) => (
+          {outletTabs.map((outlet, i) => (
             <button
               key={outlet}
               onClick={() => setActiveOutlet(i)}
@@ -129,7 +199,7 @@ export function LoadingDetailScreen({
 
         <button
           onClick={() => setActiveOutlet(Math.min(outlets.length - 1, activeOutlet + 1))}
-          disabled={activeOutlet === outlets.length - 1}
+          disabled={activeOutlet === outletTabs.length - 1}
           className="w-16 md:w-24 h-12 md:h-14 rounded-xl bg-slate-200 flex items-center justify-center
                      hover:bg-slate-300 active:bg-slate-400
                      disabled:opacity-30 disabled:cursor-not-allowed
@@ -169,7 +239,7 @@ export function LoadingDetailScreen({
         {/* Right: Items List */}
         <div className="w-full md:w-80 flex flex-col bg-white rounded-xl border-2 border-slate-300 overflow-hidden">
           <div className="flex-1 overflow-y-auto p-4 md:p-5">
-            {items.map((item) => {
+            {(outletItems.length > 0 ? outletItems : items).map((item) => {
               const isComplete = item.loaded === item.total;
               const hasDamage = item.damaged > 0;
               return (

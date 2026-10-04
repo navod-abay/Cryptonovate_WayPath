@@ -1,10 +1,12 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { LoaderInfoPanel } from './LoaderInfoPanel';
 import { PinDisplay } from './PinDisplay';
 import { NumericKeypad } from './NumericKeypad';
 
 interface LoaderPinEntryProps {
   onSuccess?: (pin: string) => void;
+  isLoading?: boolean;
+  apiError?: string;
   depot?: string;
   dock?: string;
   vehiclesBefore?: number;
@@ -14,6 +16,8 @@ interface LoaderPinEntryProps {
 
 export function LoaderPinEntry({
   onSuccess,
+  isLoading,
+  apiError,
   depot,
   dock,
   vehiclesBefore,
@@ -23,6 +27,7 @@ export function LoaderPinEntry({
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
+  const isSubmitting = useRef(false);
 
   const handleKeyPress = useCallback(
     (key: string) => {
@@ -44,10 +49,17 @@ export function LoaderPinEntry({
   }, []);
 
   React.useEffect(() => {
-    if (pin.length === maxPinLength) {
-      const timer = setTimeout(() => {
-        setSuccess(true);
-        onSuccess?.(pin);
+    if (pin.length === maxPinLength && !isSubmitting.current) {
+      isSubmitting.current = true;
+      const timer = setTimeout(async () => {
+        try {
+          await onSuccess?.(pin);
+          setSuccess(true);
+        } catch {
+          // Error handled by parent
+        } finally {
+          isSubmitting.current = false;
+        }
       }, 300);
       return () => clearTimeout(timer);
     }
@@ -72,8 +84,8 @@ export function LoaderPinEntry({
 
           <PinDisplay pin={pin} maxLength={maxPinLength} />
 
-          {error && (
-            <p className="text-red-500 text-sm text-center mb-4">{error}</p>
+          {apiError && (
+            <p className="text-red-500 text-sm text-center mb-4">{apiError}</p>
           )}
 
           {success && (

@@ -11,6 +11,18 @@ import {
 } from '../schemas/execution.schema';
 
 export class ExecutionController {
+  // A0. Get Active Trips for Dock
+  static async getActiveTrips(req: Request, res: Response) {
+    try {
+      const { depot } = req.params;
+      const { status } = req.query;
+      const trips = await ExecutionSyncService.getActiveTrips(depot, status as string);
+      return res.json({ success: true, data: trips });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
   // A1. Get LIFO Manifest
   static async getManifest(req: Request, res: Response) {
     try {

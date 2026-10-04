@@ -5,6 +5,7 @@ import { MoveUpDown } from './MoveUpDown';
 
 interface CompletedScreenProps {
   vehicles: Vehicle[];
+  isLoading?: boolean;
   depot: string;
   dock: string;
   workerName: string;
@@ -17,6 +18,7 @@ interface CompletedScreenProps {
 
 export function CompletedScreen({
   vehicles,
+  isLoading,
   depot,
   dock,
   workerName,
@@ -104,17 +106,28 @@ export function CompletedScreen({
 
       {/* Vehicle List + MoveUpDown */}
       <div className="flex-1 flex gap-2 px-4 md:px-6 py-4 overflow-hidden">
-        <div ref={scrollRef} className="flex-1 overflow-y-auto space-y-3">
-          {vehicles.map((vehicle) => (
-            <VehicleCard
-              key={vehicle.id}
-              vehicle={vehicle}
-              onStartLoading={onView}
-              actionLabel="View"
-            />
-          ))}
-        </div>
-        <MoveUpDown onMoveUp={handleScrollUp} onMoveDown={handleScrollDown} />
+        {isLoading ? (
+          <div className="flex-1 flex items-center justify-center">
+            <div className="text-center">
+              <div className="w-8 h-8 border-4 border-slate-300 border-t-[#1a3a5c] rounded-full animate-spin mx-auto mb-3" />
+              <p className="text-sm text-slate-500">Loading vehicles...</p>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div ref={scrollRef} className="flex-1 overflow-y-auto space-y-3">
+              {vehicles.map((vehicle) => (
+                <VehicleCard
+                  key={vehicle.vehicle_id}
+                  vehicle={vehicle}
+                  onStartLoading={onView}
+                  actionLabel="View"
+                />
+              ))}
+            </div>
+            <MoveUpDown onMoveUp={handleScrollUp} onMoveDown={handleScrollDown} />
+          </>
+        )}
       </div>
     </div>
   );
