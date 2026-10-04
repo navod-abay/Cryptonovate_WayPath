@@ -8,6 +8,15 @@ info:
     fleet, plans it with ALNS3 (algorithm 3), stores the trips and deferrals, and writes allocations and
     deferrals back to Order Management. Every path is also served under /api/planning for services that
     call Planning directly.
+
+
+    Authentication: every endpoint except /health needs an auth-rbac access token
+    (`Authorization: Bearer <JWT>`, HS256, signed with JWT_ACCESS_SECRET and verified locally) or a
+    service token with role `system`. Roles: dispatchers read schedules, deferrals, trips and planning
+    runs; loaders read trips of their own depot; drivers read any trip; store managers have no access.
+    Starting a planning run by hand needs a service token: the 16:00 run starts itself.
+security:
+  - BearerAuth: []
 servers:
   - url: http://localhost/api/planning
     description: Via API gateway
@@ -24,6 +33,7 @@ paths:
     get:
       tags: [System]
       summary: Health check
+      security: []
       responses:
         '200':
           description: Service is healthy
@@ -43,11 +53,13 @@ paths:
       tags: [Schedule]
       summary: Schedule summary for both depots
       description: Vehicles used, trips, fleet / weight / volume utilisation, total weight and volume, orders served and deferred, distance and fuel, per depot and in total.
-      security:
-        - BearerAuth: []
       parameters:
         - $ref: '#/components/parameters/Date'
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '200':
           description: Summary for the day
           content:
@@ -62,12 +74,14 @@ paths:
       tags: [Schedule]
       summary: Schedule of one depot
       description: Every vehicle with its trips (at most two) and the stops of each trip in visiting order, from the date's completed planning run. Before that run exists, `vehicles` is empty and `planRunId` is absent.
-      security:
-        - BearerAuth: []
       parameters:
         - $ref: '#/components/parameters/Depot'
         - $ref: '#/components/parameters/Date'
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '200':
           description: The depot's schedule
           content:
@@ -87,8 +101,6 @@ paths:
     get:
       tags: [Schedule]
       summary: Orders deferred for the day, with the reason
-      security:
-        - BearerAuth: []
       parameters:
         - $ref: '#/components/parameters/Date'
         - name: depot
@@ -99,6 +111,10 @@ paths:
             type: string
             enum: [Peliyagoda, Kandy]
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '200':
           description: Deferred orders
           content:
@@ -112,7 +128,9 @@ paths:
     get:
       tags: [Trips]
       summary: Planned trips with stops and items to load
-      description: Trips of the date's completed plan, ordered by vehicle and trip number. Used by Execution & Sync.
+      description: >-
+        Trips of the date's completed plan, ordered by vehicle and trip number. Used by Execution & Sync.
+        A loader only gets their own depot's trips (another depot is 403).
       parameters:
         - $ref: '#/components/parameters/Date'
         - name: depot
@@ -128,6 +146,10 @@ paths:
             type: string
             example: VEH003
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '200':
           description: Trips (empty before the date is planned)
           content:
@@ -152,6 +174,10 @@ paths:
             type: string
             example: 20261005-VEH003-T1
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '200':
           description: The trip
           content:
@@ -170,8 +196,9 @@ paths:
       tags: [Planning]
       summary: Plan a date now
       description: >-
-        The daily run starts by itself at 16:00 (Asia/Colombo). Use this to plan without waiting or to
-        re-run a date whose run failed. Queues a run and returns immediately; poll GET /planning-runs/{runId}.
+        Service token (role `system`) only; no user role may start a run. The daily run starts by itself at
+        16:00 (Asia/Colombo); this is for an operator re-running a date the scheduler gave up on after
+        PLANNING_MAX_ATTEMPTS failures. Queues a run and returns immediately; poll GET /planning-runs/{runId}.
         Without planDate, plans Order Management's next run date. A date with a queued, running or
         completed run cannot be planned again (409).
       requestBody:
@@ -181,6 +208,10 @@ paths:
             schema:
               $ref: '#/components/schemas/StartPlanningRequest'
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '202':
           description: Planning run queued
           content:
@@ -207,6 +238,10 @@ paths:
       parameters:
         - $ref: '#/components/parameters/Date'
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '200':
           description: Runs, including failed attempts
           content:
@@ -230,6 +265,10 @@ paths:
             type: string
             example: run_402aec0787d4b1f8
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '200':
           description: The run
           content:
@@ -276,6 +315,22 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: Missing, invalid or expired access token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: access token has expired
+    Forbidden:
+      description: The token's role may not use this endpoint, or a loader asked for another depot
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: 'role "dispatcher" may not do this; requires one of: system'
 
   schemas:
     Error:

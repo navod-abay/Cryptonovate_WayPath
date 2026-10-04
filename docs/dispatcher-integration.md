@@ -25,8 +25,9 @@ Paths include the gateway `/api` prefix.
 | Deferred orders | GET `/api/planning/schedule/deferrals?date=…&depot=…` |
 | Category totals (delivered / total per chilled, dry, tech, style) | GET `/api/orders/dispatcher/overview?date=…` |
 | Ordering cutoff per delivery date | GET `/api/orders/dispatcher/windows?from=…&to=…` |
+| Past-week stats (deferred orders, damaged and missing items from store receipts) | GET `/api/analytics/dispatcher/statistics?date=…` |
+| Demand chart (fixed sample data, `method: sample_data`; not a trained model) | GET `/api/analytics/forecast/demand?date=…` |
 
-Planning currently returns stub schedules; the UI labels those responses.
 
 ## Optional mappings for future services
 
@@ -34,8 +35,6 @@ The repository keeps these mappings isolated so service developers can replace t
 
 | Data | Current placeholder mapping |
 | --- | --- |
-| Weekly statistics | GET `/api/analytics/dispatcher/statistics?date=…` |
-| Demand chart | GET `/api/analytics/forecast/demand?date=…` |
 | Weekly fuel usage | GET `/api/fleet/fuel-usage/weekly?date=…&depot=…` |
 
 ## Alerts (implemented)

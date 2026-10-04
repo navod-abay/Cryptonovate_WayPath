@@ -46,7 +46,70 @@ paths:
                     type: integer
                     example: 2
 
+  /dispatcher/statistics:
+    get:
+      tags: [Analytics]
+      summary: Dispatcher dashboard stats for the past week
+      description: >
+        Role: dispatcher. Covers the seven days before `date` (Asia/Colombo) and compares them with the seven
+        days before that. `deferred` counts order deferrals (status changes to deferred); `damaged` and
+        `missing` sum the rejected and missing units on store receipts. `changePercent` is null when the
+        previous value is 0 and the current one is not.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: date, in: query, required: true, schema: { type: string, format: date }, example: '2026-10-05' }
+      responses:
+        '200':
+          description: Weekly statistics
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  period: { from: '2026-09-28', to: '2026-10-04' }
+                  previousPeriod: { from: '2026-09-21', to: '2026-09-27' }
+                  metrics:
+                    - { key: deferred, current: 12, previous: 11, changePercent: 9 }
+                    - { key: damaged, current: 28, previous: 29, changePercent: -3 }
+                    - { key: missing, current: 4, previous: 5, changePercent: -20 }
+        '400': { description: Missing or invalid date }
+        '401': { description: Missing or invalid access token }
+        '403': { description: Not a dispatcher }
+  /forecast/demand:
+    get:
+      tags: [Analytics]
+      summary: Demand forecast for next week (sample data)
+      description: >
+        Role: dispatcher. Ordered units per category (chilled, dry, tech, style) for Monday to Friday of the
+        week after `date`. Currently fixed sample values (`method: sample_data`), not a trained model.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: date, in: query, required: true, schema: { type: string, format: date }, example: '2026-10-05' }
+      responses:
+        '200':
+          description: Demand forecast
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  method: sample_data
+                  unit: ordered_units
+                  note: Sample demand values for demonstration; not produced by a trained model.
+                  days:
+                    - date: '2026-10-12'
+                      categories:
+                        - { category: chilled, predictedUnits: 100 }
+                        - { category: dry, predictedUnits: 132 }
+                        - { category: tech, predictedUnits: 11 }
+                        - { category: style, predictedUnits: 50 }
+        '400': { description: Missing or invalid date }
+        '401': { description: Missing or invalid access token }
+        '403': { description: Not a dispatcher }
+
 components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
   schemas:
     Health:
       type: object
