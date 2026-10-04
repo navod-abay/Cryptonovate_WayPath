@@ -11,5 +11,7 @@ This repository scaffolding and architecture configuration were created with the
 - Next.js SaaS frontend configuration (`package.json`, `tailwind.config.js`, TypeScript layout)
 - Microservices boilerplate code for 6 Node.js (TypeScript) domain services
 
+Claude Code (Anthropic) also assisted end to end during development, across the services, the frontends and the demo data.
+
 ## Human Oversight & Code Integrity
 All generated files comply strictly with non-blocking Node.js patterns, lightweight Alpine container requirements, and secure RBAC password hashing standards.
