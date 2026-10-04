@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import { CommonHeader } from './CommonHeader';
 import { VehicleCard, Vehicle } from './VehicleCard';
+import { MoveUpDown } from './MoveUpDown';
 
 interface LoadingScreenProps {
   vehicles: Vehicle[];
@@ -28,6 +29,15 @@ export function LoadingScreen({
   const [currentTime, setCurrentTime] = useState(
     new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })
   );
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  const handleScrollUp = useCallback(() => {
+    scrollRef.current?.scrollBy({ top: -200, behavior: 'smooth' });
+  }, []);
+
+  const handleScrollDown = useCallback(() => {
+    scrollRef.current?.scrollBy({ top: 200, behavior: 'smooth' });
+  }, []);
 
   React.useEffect(() => {
     const interval = setInterval(() => {
@@ -76,55 +86,35 @@ export function LoadingScreen({
           </button>
         </div>
 
-        <button
-          onClick={onNext}
-          className="w-16 md:w-24 h-12 md:h-14 rounded-xl bg-slate-200 flex items-center justify-center
-                     hover:bg-slate-300 active:bg-slate-400
-                     transition-colors cursor-pointer shrink-0"
-          aria-label="Next"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-slate-600">
-            <polyline points="13 17 18 12 13 7" />
-            <polyline points="6 17 11 12 6 7" />
-          </svg>
-        </button>
+        <div className="flex flex-col gap-2">
+          <button
+            onClick={onNext}
+            className="w-16 md:w-24 h-12 md:h-14 rounded-xl bg-slate-200 flex items-center justify-center
+                       hover:bg-slate-300 active:bg-slate-400
+                       transition-colors cursor-pointer shrink-0"
+            aria-label="Next"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-slate-600">
+              <polyline points="13 17 18 12 13 7" />
+              <polyline points="6 17 11 12 6 7" />
+            </svg>
+          </button>
+        </div>
       </div>
 
-      {/* Vehicle List */}
-      <div className="flex-1 overflow-y-auto px-4 md:px-6 py-4 space-y-3">
-        {vehicles.map((vehicle) => (
-          <div key={vehicle.id} className="flex items-center gap-2">
-            <div className="flex-1">
-              <VehicleCard
-                vehicle={vehicle}
-                onStartLoading={onView}
-                actionLabel="View"
-              />
-            </div>
-            <div className="flex flex-col gap-1">
-              <button
-                className="w-8 h-8 rounded-lg bg-slate-200 flex items-center justify-center
-                           hover:bg-slate-300 active:bg-slate-400
-                           transition-colors cursor-pointer"
-                aria-label={`Move ${vehicle.id} up`}
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-slate-600">
-                  <polyline points="18 15 12 9 6 15" />
-                </svg>
-              </button>
-              <button
-                className="w-8 h-8 rounded-lg bg-slate-200 flex items-center justify-center
-                           hover:bg-slate-300 active:bg-slate-400
-                           transition-colors cursor-pointer"
-                aria-label={`Move ${vehicle.id} down`}
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-slate-600">
-                  <polyline points="6 9 12 15 18 9" />
-                </svg>
-              </button>
-            </div>
-          </div>
-        ))}
+      {/* Vehicle List + MoveUpDown */}
+      <div className="flex-1 flex gap-2 px-4 md:px-6 py-4 overflow-hidden">
+        <div ref={scrollRef} className="flex-1 overflow-y-auto space-y-3">
+          {vehicles.map((vehicle) => (
+            <VehicleCard
+              key={vehicle.id}
+              vehicle={vehicle}
+              onStartLoading={onView}
+              actionLabel="View"
+            />
+          ))}
+        </div>
+        <MoveUpDown onMoveUp={handleScrollUp} onMoveDown={handleScrollDown} />
       </div>
     </div>
   );

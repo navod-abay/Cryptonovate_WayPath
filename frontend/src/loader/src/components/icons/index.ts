@@ -5,5 +5,8 @@ export { StyleIcon } from './StyleIcon';
 export { RedFlagIcon } from './RedFlagIcon';
 export { DoubleTickIcon } from './DoubleTickIcon';
 export { AlertIcon } from './AlertIcon';
+export { CheckIcon } from './CheckIcon';
+export { TickIcon } from './TickIcon';
+export { ContainerIcon } from './ContainerIcon';
 export { TruckIcon } from './TruckIcon';
 export { VanIcon } from './VanIcon';

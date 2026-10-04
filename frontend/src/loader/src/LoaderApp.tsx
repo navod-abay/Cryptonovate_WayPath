@@ -4,9 +4,10 @@ import { ReadyToLoadScreen } from './components/ReadyToLoadScreen';
 import { LoadingScreen } from './components/LoadingScreen';
 import { CompletedScreen } from './components/CompletedScreen';
 import { LoadingDetailScreen } from './components/LoadingDetailScreen';
+import { FinalCheckScreen } from './components/FinalCheckScreen';
 import { demoVehicles, loadingVehicles, completedVehicles, loadingItems, outlets } from './data/mockData';
 
-type Screen = 'pin' | 'queue' | 'loading' | 'completed' | 'detail';
+type Screen = 'pin' | 'queue' | 'loading' | 'completed' | 'detail' | 'finalCheck';
 
 export default function LoaderApp() {
   const [screen, setScreen] = useState<Screen>('pin');
@@ -45,7 +46,18 @@ export default function LoaderApp() {
         outlets={outlets}
         items={loadingItems}
         onBack={() => setScreen('queue')}
-        onFinish={() => setScreen('queue')}
+        onFinish={() => setScreen('finalCheck')}
+      />
+    );
+  }
+
+  if (screen === 'finalCheck') {
+    return (
+      <FinalCheckScreen
+        vehicle={demoVehicles[0]}
+        outlets={outlets}
+        onBack={() => setScreen('detail')}
+        onRelease={() => setScreen('queue')}
       />
     );
   }
@@ -77,6 +89,7 @@ export default function LoaderApp() {
         cutoffTime="04:00 AM"
         onView={handleView}
         onBack={() => setScreen('loading')}
+        onNext={() => setScreen('queue')}
       />
     );
   }
@@ -90,7 +103,7 @@ export default function LoaderApp() {
       vehiclesBefore={4}
       cutoffTime="04:00 AM"
       onStartLoading={handleStartLoading}
-      onBack={() => setScreen('pin')}
+      onBack={() => setScreen('completed')}
       onNext={() => setScreen('loading')}
     />
   );
