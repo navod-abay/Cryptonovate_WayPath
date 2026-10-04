@@ -1,3 +1,11 @@
+# Shared healthcheck timing. Each service adds its own `test`; every image has
+# busybox wget. 127.0.0.1 (not localhost) because alpine may resolve localhost to ::1.
+x-healthcheck: &healthcheck
+  interval: 15s
+  timeout: 5s
+  retries: 3
+  start_period: 30s
+
 services:
   # ============================================================================
   # DATABASE LAYER (PostgreSQL 15)
@@ -12,12 +20,16 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres_password}
       POSTGRES_DB: ${POSTGRES_DB:-delivery_db}
+    ports:
+      - "5432:5432"
     volumes:
       - ./infrastructure/postgres-init:/docker-entrypoint-initdb.d
       - postgres_data:/var/lib/postgresql/data
       - ./data:/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-delivery_db}"]
+      # Over TCP on purpose: during first-boot init scripts Postgres only listens on
+      # its unix socket, so this stays unhealthy until the schema has been applied.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-delivery_db}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -34,10 +46,13 @@ services:
     env_file:
       - .env
     environment:
-      PORT: 3001
+      PORT: 5001
       DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres_password}@postgres:5432/${POSTGRES_DB:-delivery_db}
     ports:
-      - "3001:3001"
+      - "5001:5001"
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:5001/health"]
     volumes:
       - ./services/auth-rbac/src:/app/src
       - /app/node_modules
@@ -54,12 +69,16 @@ services:
     env_file:
       - .env
     environment:
-      PORT: 3002
+      PORT: 5002
       DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres_password}@postgres:5432/${POSTGRES_DB:-delivery_db}
       # Where Order Management reaches Fleet & Directory. Override per environment.
-      FLEET_SERVICE_URL: ${FLEET_SERVICE_URL:-http://fleet-directory:3004}
+      FLEET_SERVICE_URL: ${FLEET_SERVICE_URL:-http://fleet-directory:5004}
     ports:
-      - "3002:3002"
+      - "5002:5002"
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:5002/health"]
+      start_period: 60s   # seeds demo orders on first boot
     volumes:
       - ./services/order-management/src:/app/src
       - /app/node_modules
@@ -76,10 +95,13 @@ services:
     env_file:
       - .env
     environment:
-      PORT: 3003
+      PORT: 5003
       DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres_password}@postgres:5432/${POSTGRES_DB:-delivery_db}
     ports:
-      - "3003:3003"
+      - "5003:5003"
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:5003/health"]
     depends_on:
       postgres:
         condition: service_healthy
@@ -93,10 +115,13 @@ services:
     env_file:
       - .env
     environment:
-      PORT: 3004
+      PORT: 5004
       DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres_password}@postgres:5432/${POSTGRES_DB:-delivery_db}
     ports:
-      - "3004:3004"
+      - "5004:5004"
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:5004/health"]
     volumes:
       - ./services/fleet-directory/src:/app/src
       - /app/node_modules
@@ -113,10 +138,13 @@ services:
     env_file:
       - .env
     environment:
-      PORT: 3005
+      PORT: 5005
       DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres_password}@postgres:5432/${POSTGRES_DB:-delivery_db}
     ports:
-      - "3005:3005"
+      - "5005:5005"
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:5005/health"]
     volumes:
       - ./services/execution-sync/src:/app/src
       - /app/node_modules
@@ -133,10 +161,13 @@ services:
     env_file:
       - .env
     environment:
-      PORT: 3006
+      PORT: 5006
       DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres_password}@postgres:5432/${POSTGRES_DB:-delivery_db}
     ports:
-      - "3006:3006"
+      - "5006:5006"
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:5006/health"]
     volumes:
       - ./services/analytics-prediction/src:/app/src
       - /app/node_modules
@@ -145,28 +176,48 @@ services:
         condition: service_healthy
 
   # ============================================================================
-  # FRONTEND (Next.js SaaS Web App)
+  # FRONTEND WEB APPS (Vite + React, one container per app)
+  #   Build context is ./frontend so each app can reach packages/ui.
+  #   VITE_* values are baked in at build time; the browser calls the gateway.
   # ============================================================================
-  frontend:
+  dispatcher:
     build:
       context: ./frontend
-      dockerfile: Dockerfile
-    container_name: app_frontend
+      dockerfile: src/dispatcher/Dockerfile
+      args:
+        # Dispatcher appends /api/<service> itself, so this is the gateway origin.
+        VITE_API_BASE_URL: ${DISPATCHER_API_BASE_URL:-http://localhost}
+    container_name: app_dispatcher
     restart: unless-stopped
-    env_file:
-      - .env
-    environment:
-      PORT: 3000
-      NEXT_PUBLIC_API_GATEWAY_URL: http://localhost:80
     ports:
-      - "3000:3000"
-    volumes:
-      - ./frontend/src:/app/src
-      - /app/node_modules
-      - /app/.next
+      - "4173:4173"
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:4173/"]
     depends_on:
-      - auth-rbac
-      - order-management
+      gateway:
+        condition: service_healthy
+
+  store-manager:
+    build:
+      context: ./frontend
+      dockerfile: src/store_manager/Dockerfile
+      args:
+        VITE_API_BASE_URL: ${STORE_MANAGER_API_BASE_URL:-http://localhost/api}
+        VITE_USE_MOCK_API: ${STORE_MANAGER_USE_MOCK_API:-true}
+    container_name: app_store_manager
+    restart: unless-stopped
+    ports:
+      - "4174:4173"
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:4173/"]
+    depends_on:
+      gateway:
+        condition: service_healthy
+
+  # loader: add once the loader web app is merged — same shape as store-manager,
+  # dockerfile src/loader/Dockerfile, host port 4175.
 
   # ============================================================================
   # API GATEWAY (NGINX Reverse Proxy)
@@ -181,8 +232,10 @@ services:
       - .env
     ports:
       - "80:80"
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/health"]
     depends_on:
-      - frontend
       - auth-rbac
       - order-management
       - planning-allocation

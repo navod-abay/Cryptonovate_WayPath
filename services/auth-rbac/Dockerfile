@@ -10,5 +10,5 @@ COPY src ./src
 RUN npm run build
 
 # Starts in dev mode (ts-node-dev watches /app/src, mounted by docker-compose)
-EXPOSE 3001
+EXPOSE 5001
 CMD ["npm", "run", "dev"]

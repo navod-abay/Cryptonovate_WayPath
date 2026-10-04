@@ -1,0 +1,4 @@
+.sm-card { border-radius: var(--sm-radius); min-width: 0; }
+.sm-card--padded { padding: 24px; }
+.sm-card--white { background: var(--sm-white); }
+.sm-card--soft { background: var(--sm-gray-50); }

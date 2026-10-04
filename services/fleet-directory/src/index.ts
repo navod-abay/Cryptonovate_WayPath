@@ -4,7 +4,7 @@ import { fleetRoutes } from './routes/fleet.routes';
 import { pool } from './db/pool';
 
 const app = express();
-const port = process.env.PORT || 3004;
+const port = process.env.PORT || 5004;
 
 // Middleware
 app.use(cors());

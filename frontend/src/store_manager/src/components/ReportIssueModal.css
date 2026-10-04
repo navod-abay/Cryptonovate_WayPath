@@ -1,0 +1,9 @@
+.sm-report { display: flex; flex-direction: column; gap: 24px; padding-top: 24px; }
+.sm-report__item { font-size: 28px; color: var(--sm-gray-500); }
+.sm-report__kinds { display: flex; justify-content: space-between; padding-bottom: 12px; border-bottom: 1px solid var(--sm-gray-200); }
+.sm-report__kinds .wp-selectable-card { min-height: 80px; margin-bottom: 0 !important; }
+.sm-report__kinds .wp-selectable-card span:last-child { font-size: 22px !important; }
+.sm-report__reasons { display: flex; flex-direction: column; gap: 16px; padding-bottom: 16px; border-bottom: 1px solid var(--sm-gray-200); }
+.sm-report__reasons .wp-selectable-chip span { font-size: 20px !important; }
+.sm-report__label { font-size: 22px; color: var(--sm-gray-500); }
+.sm-report__qty { display: flex; align-items: center; justify-content: space-between; }
