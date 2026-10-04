@@ -1,6 +1,26 @@
 import { z } from 'zod';
+import jwt from 'jsonwebtoken';
 import { env } from '../config/env.js';
 import { DepotEnum, type Depot } from '../schemas/orders.schema.js';
+
+/**
+ * Mint a short-lived access token with role "system", signed with shared JWT_ACCESS_SECRET
+ * for service-to-service communication with Fleet & Directory.
+ */
+function mintSystemToken(): string {
+  return jwt.sign(
+    {
+      sub: '00000000-0000-0000-0000-000000000000',
+      username: 'order-management',
+      role: 'system',
+      outlet_id: null,
+      depot: null,
+      type: 'access',
+    },
+    env.JWT_ACCESS_SECRET,
+    { expiresIn: '15m' }
+  );
+}
 
 /**
  * HTTP client for Fleet & Directory, the owner of vehicle data.
@@ -56,9 +76,16 @@ export function mapFleetVehicle(raw: unknown): FleetVehicle | null {
 
 async function request(path: string): Promise<unknown[]> {
   const url = `${env.FLEET_SERVICE_URL.replace(/\/$/, '')}/api/fleet${path}`;
+  const token = mintSystemToken();
   let res: Response;
   try {
-    res = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(env.FLEET_TIMEOUT_MS) });
+    res = await fetch(url, {
+      headers: {
+        Accept: 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      signal: AbortSignal.timeout(env.FLEET_TIMEOUT_MS),
+    });
   } catch (err) {
     throw new FleetUnavailableError(`Fleet & Directory unreachable at ${url}`, err);
   }
