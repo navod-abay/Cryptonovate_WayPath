@@ -127,7 +127,7 @@ export class ExecutionController {
   // B1d. The driver leaves the depot (only once the truck is released)
   static async departFromDepot(req: Request, res: Response) {
     try {
-      return res.json({ success: true, data: await ExecutionSyncService.departFromDepot(req.params.tripId, req.user) });
+      return res.json({ success: true, data: await ExecutionSyncService.departFromDepot(req.params.tripId, req.user, req.headers.authorization) });
     } catch (err: any) {
       return sendError(res, err);
     }
@@ -210,6 +210,14 @@ export class ExecutionController {
   }
 
   // D0b. Orders of an outlet whose unloading has started
+  static async listArrivals(req: Request, res: Response) {
+    try {
+      return res.json({ success: true, data: await ExecutionSyncService.listArrivals(req.params.outletId) });
+    } catch (err: any) {
+      return sendError(res, err);
+    }
+  }
+
   static async listUnloadings(req: Request, res: Response) {
     try {
       const rows = await ExecutionSyncService.listUnloadings(req.params.outletId);

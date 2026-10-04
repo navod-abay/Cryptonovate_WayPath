@@ -39,6 +39,9 @@ var (
 	// A driver sees only the trips of the vehicle in their token; a loader sees only the vehicles
 	// assigned to them (assignLoaders), which are all in their own depot.
 	tripReaders = []string{"dispatcher", "loader", "driver", "system"}
+	// The trip list also serves store managers, cut down to their own outlet's stops (outletStops);
+	// a single trip (every outlet on it) does not.
+	tripListReaders = []string{"dispatcher", "loader", "driver", "store_manager", "system"}
 	// Planning runs start themselves at 16:00 (scheduler.go). Only a service token can start one by
 	// hand, to recover a date the scheduler gave up on; no user role can.
 	servicesOnly = []string{"system"}
@@ -53,7 +56,7 @@ func (a *API) routes(mux *http.ServeMux) {
 	handle("GET", "/schedule/summary", dispatchers, a.getSummary)
 	handle("GET", "/depots/{depot}/schedule", dispatchers, a.getDepotSchedule)
 	handle("GET", "/schedule/deferrals", dispatchers, a.getDeferrals)
-	handle("GET", "/trips", tripReaders, a.listTrips)
+	handle("GET", "/trips", tripListReaders, a.listTrips)
 	handle("GET", "/trips/{tripId}", tripReaders, a.getTrip)
 	handle("POST", "/planning-runs", servicesOnly, a.startPlanning)
 	handle("GET", "/planning-runs", dispatchers, a.listRuns)
@@ -190,7 +193,32 @@ func (a *API) listTrips(w http.ResponseWriter, r *http.Request) {
 		serverError(w, "could not load trips", err)
 		return
 	}
+	if c := claimsFrom(r); c != nil && c.Role == "store_manager" {
+		trips = outletStops(trips, c.OutletID)
+	}
 	writeJSON(w, http.StatusOK, trips)
+}
+
+// outletStops keeps a store manager to their own deliveries: only the trips that stop at the
+// outlet, each with only that outlet's stops and without the loader. No outlet in the token: none.
+func outletStops(trips []TripDetail, outletID *string) []TripDetail {
+	out := []TripDetail{}
+	if outletID == nil || *outletID == "" {
+		return out
+	}
+	for _, t := range trips {
+		var stops []Stop
+		for _, st := range t.Stops {
+			if st.OutletID == *outletID {
+				stops = append(stops, st)
+			}
+		}
+		if len(stops) > 0 {
+			t.Stops, t.LoaderID, t.LoaderName = stops, "", ""
+			out = append(out, t)
+		}
+	}
+	return out
 }
 
 // GET /trips/{tripId} — one trip of a completed plan, stops in delivery order, with items.

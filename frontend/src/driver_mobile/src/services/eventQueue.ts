@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { API_ROUTES, fetchWithTimeout } from '../api/config';
-import { getAccessToken } from '../api/auth';
+import { API_ROUTES } from '../api/config';
+import { authFetch, getAccessToken } from '../api/auth';
 
 /**
  * A queue of driver events for one execution-sync route, kept on the phone so nothing is lost
@@ -52,18 +52,20 @@ export function createEventQueue<T extends QueuedEvent>(storageKey: string, path
   };
   const remove = (ids: string[]) => update(queue => queue.filter(e => !ids.includes(e.clientEventId)));
 
-  const post = async (token: string, events: T[]) =>
-    fetchWithTimeout(`${API_ROUTES.EXECUTION}${path}`, {
+  // authFetch renews an expired access token (they last 15 minutes) and throws when the session has
+  // ended; either way a failure keeps the events for the next flush.
+  const post = async (events: T[]) =>
+    authFetch(`${API_ROUTES.EXECUTION}${path}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ [bodyKey]: events }),
     });
 
   /** A malformed event would block the queue forever: find it by sending one at a time, and drop it. */
-  async function dropRejected(token: string, batch: T[]) {
+  async function dropRejected(batch: T[]) {
     for (const event of batch) {
       try {
-        const res = await post(token, [event]);
+        const res = await post([event]);
         if (res.ok) await remove([event.clientEventId]);
         else if (res.status === 400) {
           console.warn(`[eventQueue ${path}] Server rejected event, dropping it:`, event.clientEventId, await res.text());
@@ -76,24 +78,23 @@ export function createEventQueue<T extends QueuedEvent>(storageKey: string, path
   }
 
   async function sendQueued() {
-    const token = await getAccessToken();
-    if (!token) return;
+    if (!(await getAccessToken())) return; // signed out
     for (;;) {
       const batch = (await read()).slice(0, BATCH_SIZE);
       if (batch.length === 0) return;
       let res: Response;
       try {
-        res = await post(token, batch);
+        res = await post(batch);
       } catch {
-        return; // no signal: keep everything for the next flush
+        return; // no signal or session ended: keep everything for the next flush
       }
       if (res.ok) {
         await remove(batch.map(e => e.clientEventId));
         if (batch.length < BATCH_SIZE) return;
         continue;
       }
-      if (res.status === 400) await dropRejected(token, batch);
-      return; // 401/403/5xx: keep and retry later
+      if (res.status === 400) await dropRejected(batch);
+      return; // 403/5xx: keep and retry later
     }
   }
 

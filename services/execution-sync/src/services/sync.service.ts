@@ -1,5 +1,5 @@
 import jwt from 'jsonwebtoken';
-import { createHmac, randomUUID, timingSafeEqual } from 'crypto';
+import { createHash, createHmac, randomUUID, timingSafeEqual } from 'crypto';
 import { pool } from '../db/pool';
 import { BulkSyncInput, DeliveryProblemInput, DriverIncidentInput, PodInput, StopEventInput } from '../schemas/execution.schema';
 import { AccessTokenPayload } from '../middleware/auth';
@@ -112,6 +112,25 @@ function notifyOrderStatus(orderRef: string, executionStatus: string, authorizat
   });
 }
 
+/**
+ * Order Management: loaded -> out_for_delivery when the truck leaves the depot. With the driver's
+ * token when there is one (the order history shows the driver), else a system token. An order that
+ * is already out for delivery counts as done. Returns whether Order Management has it.
+ */
+async function markOutForDelivery(orderRef: string, depot: string, bearer?: string): Promise<boolean> {
+  const res = await safeFetch(`${ORDER_SERVICE_URL}/api/orders/${encodeURIComponent(orderRef)}/status`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...(bearer ? { Authorization: bearer } : {}) },
+    body: JSON.stringify({ status: 'out_for_delivery', reason_note: `Left the ${depot} depot` }),
+  });
+  if (!res) return false;
+  if (res.ok) return true;
+  const body: any = await res.json().catch(() => null);
+  if (res.status === 409 && body?.error?.details?.from === 'out_for_delivery') return true;
+  console.warn(`[sync.service] Order Management refused ${orderRef} -> out_for_delivery (${res.status}): ${body?.error?.message ?? ''}`);
+  return false;
+}
+
 const ISSUE_LABEL: Record<string, string> = {
   no_receive: 'No one to receive',
   closed: 'Outlet closed',
@@ -138,6 +157,12 @@ const MAX_CLOCK_SKEW_MS = 5 * 60_000;
 function occurredAt(captured: string, received = Date.now()) {
   const at = Date.parse(captured);
   return new Date(at - received > MAX_CLOCK_SKEW_MS ? received : at).toISOString();
+}
+
+/** A UUID that is always the same for the same key, so an event sent twice raises one alert. */
+function stableUuid(key: string): string {
+  const h = createHash('sha256').update(key).digest('hex');
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-8${h.slice(17, 20)}-${h.slice(20, 32)}`;
 }
 
 function actorOf(user?: AccessTokenPayload) {
@@ -244,6 +269,17 @@ export class ExecutionSyncService {
   }
 
   /** Orders of an outlet whose unloading has started. */
+  /** Orders whose truck the driver has marked as arrived at the outlet (store manager's view). */
+  static async listArrivals(outletId: string) {
+    const result = await pool.query(
+      `SELECT order_ref, arrived_at FROM stop_progress
+        WHERE outlet_id = $1 AND arrived_at IS NOT NULL AND arrived_at > now() - interval '2 days'
+        ORDER BY arrived_at DESC`,
+      [outletId],
+    );
+    return result.rows;
+  }
+
   static async listUnloadings(outletId: string) {
     const result = await pool.query(
       'SELECT order_ref, started_at FROM store_unloadings WHERE outlet_id = $1 ORDER BY started_at DESC',
@@ -339,6 +375,8 @@ export class ExecutionSyncService {
   /** The driver pressed "Start Trip". Idempotent: a second press keeps the first time. */
   static async startDriverTrip(tripId: string, user: AccessTokenPayload | undefined) {
     const trip = await ExecutionSyncService.drivenTrip(tripId, user);
+    const started = await pool.query('SELECT 1 FROM driver_trip_progress WHERE trip_id = $1', [tripId]);
+    if (started.rowCount === 0 && trip.tripNumber > 1) await ExecutionSyncService.requireEarlierTripsDone(trip);
     const { rows } = await pool.query<{ started_at: Date; depot_arrived_at: Date | null }>(
       `INSERT INTO driver_trip_progress (trip_id, vehicle_id, driver_id) VALUES ($1, $2, $3)
        ON CONFLICT (trip_id) DO UPDATE SET trip_id = EXCLUDED.trip_id
@@ -349,9 +387,33 @@ export class ExecutionSyncService {
   }
 
   /**
+   * A vehicle runs its trips in order: trip 2 starts only once the driver has left every outlet
+   * of trip 1 (the last step recorded for a trip). Otherwise a 409 that says how many are left.
+   */
+  static async requireEarlierTripsDone(trip: PlannedTrip) {
+    const params = new URLSearchParams({ date: trip.planDate, vehicleId: trip.vehicleId });
+    const day: PlannedTrip[] = await planningJson(`/api/planning/trips?${params}`);
+    for (const earlier of day.filter((t) => t.tripNumber < trip.tripNumber).sort((a, b) => a.tripNumber - b.tripNumber)) {
+      const { rows } = await pool.query<{ stop_id: string }>(
+        'SELECT stop_id FROM stop_progress WHERE trip_id = $1 AND departed_at IS NOT NULL',
+        [earlier.tripId],
+      );
+      const done = new Set(rows.map((r) => r.stop_id));
+      const left = earlier.stops.filter((s) => !done.has(s.stopId)).length;
+      if (left > 0) {
+        throw new HttpError(409, `Finish trip ${earlier.tripNumber} first: ${left} of its ${earlier.stops.length} outlets are not done yet`, {
+          tripId: earlier.tripId,
+          outletsLeft: left,
+        });
+      }
+    }
+  }
+
+  /**
    * Arrivals at and departures from the trip's stops, sent as they happen or queued on the phone
    * while it had no signal. Every time keeps the earliest one captured, so a late or repeated event
-   * changes nothing. A stop that is not on the trip is a 400 (the phone drops that event). The depot
+   * changes nothing. An arrival tells the outlet's store manager the truck is there (once per stop:
+   * the alert id comes from the stop and the trip's departure from the depot). A stop that is not on the trip is a 400 (the phone drops that event). The depot
    * is not a stop here: arriving and leaving there go through the loaders, so they need signal.
    */
   static async recordStopEvents(events: StopEventInput[], user: AccessTokenPayload | undefined) {
@@ -366,21 +428,59 @@ export class ExecutionSyncService {
     for (const e of events) {
       const at = occurredAt(e.capturedAt);
       const column = e.type === 'arrival' ? 'arrived_at' : 'departed_at';
-      await pool.query(
-        `INSERT INTO stop_progress (stop_id, trip_id, driver_id, ${column}, offline_delivery) VALUES ($1, $2, $3, $4, $5)
-         ON CONFLICT (stop_id) DO UPDATE SET ${column} = LEAST(stop_progress.${column}, EXCLUDED.${column}),
-           offline_delivery = stop_progress.offline_delivery OR EXCLUDED.offline_delivery, updated_at = CURRENT_TIMESTAMP`,
-        [e.stopId, e.tripId, driverId, at, e.type === 'departure' && !!e.offline],
-      );
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        const trip = trips.get(e.tripId)!;
+        const stop = trip.stops.find((s) => s.stopId === e.stopId)!;
+        await client.query(
+          `INSERT INTO stop_progress (stop_id, trip_id, driver_id, ${column}, offline_delivery, order_ref, outlet_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)
+           ON CONFLICT (stop_id) DO UPDATE SET ${column} = LEAST(stop_progress.${column}, EXCLUDED.${column}),
+             offline_delivery = stop_progress.offline_delivery OR EXCLUDED.offline_delivery,
+             order_ref = EXCLUDED.order_ref, outlet_id = EXCLUDED.outlet_id, updated_at = CURRENT_TIMESTAMP`,
+          [e.stopId, e.tripId, driverId, at, e.type === 'departure' && !!e.offline, stop.orderRef, stop.outletId],
+        );
+        if (e.type === 'arrival') {
+          // One alert per stop and departure from the depot (a trip leaves once, unless it is reset).
+          const left = await client.query<{ depot_departed_at: Date | null }>(
+            'SELECT depot_departed_at FROM driver_trip_progress WHERE trip_id = $1',
+            [e.tripId],
+          );
+          await enqueueAlert(client, {
+            id: stableUuid(`arrival:${e.stopId}:${left.rows[0]?.depot_departed_at?.toISOString() ?? ''}`),
+            type: 'driver.arrived',
+            sourceRole: 'driver',
+            ...actorOf(user),
+            depot: trip.depot,
+            outletId: stop.outletId,
+            vehicleId: trip.vehicleId,
+            tripId: e.tripId,
+            orderRef: stop.orderRef,
+            summary: `${trip.vehicleId} has arrived`,
+            detail: `${trip.vehicleId} has arrived with order ${stop.orderRef}. Start unloading, then give the driver the handover code.`,
+            payload: { stopId: e.stopId },
+            occurredAt: at,
+          });
+        }
+        await client.query('COMMIT');
+      } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+      } finally {
+        client.release();
+      }
     }
     return { accepted: events.map((e) => e.clientEventId) };
   }
 
   /**
    * The driver leaves the depot. Only once the loaders have released the truck (every unit of every
-   * order scanned or reported, then dispatched); before that it is a 409.
+   * order scanned or reported, then dispatched); before that it is a 409. Every order that went on
+   * the truck becomes out_for_delivery in Order Management (as the driver, so its history says who);
+   * calling again re-sends any that Order Management did not accept.
    */
-  static async departFromDepot(tripId: string, user: AccessTokenPayload | undefined) {
+  static async departFromDepot(tripId: string, user: AccessTokenPayload | undefined, bearer?: string) {
     const trip = await ExecutionSyncService.drivenTrip(tripId, user);
     const state = (await tripStates([tripId])).get(tripId)!;
     if (!state.depotArrivedAt) throw new HttpError(409, `Check in at the depot before leaving on trip ${tripId}`);
@@ -392,7 +492,15 @@ export class ExecutionSyncService {
        WHERE trip_id = $1 RETURNING depot_departed_at`,
       [tripId],
     );
-    return { tripId, depotDepartedAt: rows[0].depot_departed_at.toISOString() };
+    const loaded = await pool.query<{ order_ref: string }>(
+      'SELECT order_ref FROM loaded_orders WHERE trip_id = $1 AND synced_at IS NOT NULL ORDER BY order_ref',
+      [tripId],
+    );
+    const pending: string[] = [];
+    for (const { order_ref } of loaded.rows) {
+      if (!(await markOutForDelivery(order_ref, trip.depot, user?.role === 'driver' ? bearer : undefined))) pending.push(order_ref);
+    }
+    return { tripId, depotDepartedAt: rows[0].depot_departed_at.toISOString(), ordersNotUpdated: pending };
   }
 
   /**

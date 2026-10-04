@@ -16,7 +16,7 @@ import DeliveryConfirmationModal from '../../components/DeliveryConfirmationModa
 import NetInfo from '@react-native-community/netinfo';
 import { launchCamera, CameraOptions } from 'react-native-image-picker';
 import { saveOfflineDelivery } from '../../services/SyncService';
-import { arriveAtDepot, departFromDepot, fetchLoadingStatus } from '../../api/trips';
+import { arriveAtDepot, completeHandover, departFromDepot, fetchLoadingStatus } from '../../api/trips';
 import { recordStopEvent } from '../../services/StopEvents';
 import { TripNode, TripLog } from '../../types/trip';
 import Feather from 'react-native-vector-icons/Feather';
@@ -166,8 +166,15 @@ export default function ActiveTripScreen({ navigation, route }: Props) {
     updateNodeState('completed', { action: 'Departure', time: now() });
   };
 
-  const handleOTPConfirm = (code: string) => {
-    console.log(`Verifying OTP ${code} with Port 5001 Auth Service...`);
+  /** The store's handover code: the server checks it and marks the order delivered. */
+  const handleOTPConfirm = async (code: string) => {
+    if (!currentNode.orderRef) return;
+    try {
+      await completeHandover(currentNode.orderRef, code);
+    } catch (err) {
+      Alert.alert('Delivery not confirmed', err instanceof Error ? err.message : 'Check your connection and try again.');
+      return; // the code box stays open for another try
+    }
     setOtpVisible(false);
     recordOutlet('departure');
     updateNodeState('completed', { action: 'Departure', time: now() });

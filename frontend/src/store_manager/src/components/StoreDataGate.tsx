@@ -22,7 +22,8 @@ export default function StoreDataGate({ children }: { children: ReactNode }) {
     if (status !== 'ready') return;
     const id = setInterval(() => { refreshLiveData().catch(() => undefined); }, POLL_INTERVAL_MS);
     const unsubscribe = subscribeUpdates({
-      onUpdates: mergeUpdates,
+      // An alert can change a delivery (e.g. the driver has arrived): show it now, not at the next poll.
+      onUpdates: (updates) => { mergeUpdates(updates); refreshLiveData().catch(() => undefined); },
       onReady: () => { refreshLiveData().catch(() => undefined); },
     });
     return () => { clearInterval(id); unsubscribe(); };

@@ -452,3 +452,24 @@ func TestOnlyCompletedRunsWakeTheScheduler(t *testing.T) {
 		t.Fatal("a completed run must wake the scheduler")
 	}
 }
+
+func TestOutletStopsShowsAStoreManagerOnlyTheirOwnStops(t *testing.T) {
+	out := "OUT005"
+	trips := []TripDetail{
+		{Trip: Trip{Stops: []Stop{{OutletID: "OUT005"}, {OutletID: "OUT003"}}}, VehicleID: "VEH035", LoaderID: "l1", LoaderName: "Thilak"},
+		{Trip: Trip{Stops: []Stop{{OutletID: "OUT001"}}}, VehicleID: "VEH001"},
+	}
+	got := outletStops(trips, &out)
+	if len(got) != 1 || got[0].VehicleID != "VEH035" || len(got[0].Stops) != 1 || got[0].Stops[0].OutletID != "OUT005" {
+		t.Fatalf("got %+v, want VEH035 with only the OUT005 stop", got)
+	}
+	if got[0].LoaderID != "" || got[0].LoaderName != "" {
+		t.Errorf("loader should be hidden from a store manager, got %q %q", got[0].LoaderID, got[0].LoaderName)
+	}
+	if len(trips[0].Stops) != 2 {
+		t.Error("the input trips must not be changed")
+	}
+	if got := outletStops(trips, nil); len(got) != 0 {
+		t.Errorf("no outlet in the token: want no trips, got %d", len(got))
+	}
+}

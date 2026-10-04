@@ -128,6 +128,14 @@ router.post(
 );
 
 router.get(
+  '/outlets/:outletId/arrivals',
+  authenticateJwt,
+  requireRole('store_manager', 'dispatcher'),
+  enforceOutletScope('outletId'),
+  ExecutionController.listArrivals
+);
+
+router.get(
   '/outlets/:outletId/unloadings',
   authenticateJwt,
   requireRole('store_manager', 'dispatcher'),

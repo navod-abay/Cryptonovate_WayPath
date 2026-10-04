@@ -140,7 +140,7 @@ func TestRolesPerRoute(t *testing.T) {
 		"dispatcher":    {summary, schedule, deferrals, trips, trip, runs},
 		"loader":        {trips, trip},
 		"driver":        {trips, trip},
-		"store_manager": {},
+		"store_manager": {trips}, // only their own outlet's stops (TestOutletStops...)
 	}
 	all := []route{summary, schedule, deferrals, trips, trip, runs, start}
 	for role, ok := range allowed {

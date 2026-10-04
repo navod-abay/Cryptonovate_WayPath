@@ -49,6 +49,8 @@ export interface AlertRow {
 const AUDIENCE: Record<string, UserRole[]> = {
   'driver.incident': ['dispatcher', 'store_manager'],
   'driver.offline_delivery': ['dispatcher'],
+  // The driver marked arrival at the outlet: its store manager starts unloading.
+  'driver.arrived': ['store_manager'],
   'store.discrepancy': ['dispatcher'],
   'store.delivery_problem': ['dispatcher'],
   // Units missing or damaged at loading: the depot's dispatchers and the outlet's store manager.
@@ -121,7 +123,7 @@ export function storeUpdateView(row: AlertRow) {
     source,
     message: row.detail || row.summary,
     at: row.occurred_at.toISOString(),
-    link: row.type === 'driver.incident' ? '/deliveries/today' : undefined,
+    link: row.type === 'driver.incident' || row.type === 'driver.arrived' ? '/deliveries/today' : undefined,
     read: !!row.read,
     syncedLate: syncedLate(row),
   };

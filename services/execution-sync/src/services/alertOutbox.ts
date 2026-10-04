@@ -12,7 +12,7 @@ const NATS_URL = process.env.NATS_URL || 'nats://nats:4222';
  * The alert id is also the JetStream Nats-Msg-Id and the alert's primary key downstream, so a row
  * that is published twice (relay crash, driver re-sending the same report) is stored once.
  */
-export type AlertType = 'driver.incident' | 'driver.offline_delivery' | 'store.delivery_problem' | 'loader.shortfall';
+export type AlertType = 'driver.incident' | 'driver.offline_delivery' | 'driver.arrived' | 'store.delivery_problem' | 'loader.shortfall';
 
 export interface AlertEnvelope {
   id: string;

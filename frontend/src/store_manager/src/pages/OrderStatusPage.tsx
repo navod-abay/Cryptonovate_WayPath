@@ -1,4 +1,5 @@
-import { Link, useLocation, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
+import { PrimaryButton } from '@waypoint/ui';
 import Card from '@/components/Card';
 import TypeIcon from '@/components/TypeIcon';
 import KeyValueList from '@/components/KeyValueList';
@@ -6,7 +7,9 @@ import Timeline from '@/components/Timeline';
 import VehicleTag from '@/components/VehicleTag';
 import { orderLineValue } from '@/components/NextOrdersCard';
 import { useAppStore } from '@/state/store';
-import type { Order, OrderStatus } from '@/types';
+import { startUnloading } from '@/api/storeManagerApi';
+import { showError } from '@/state/toasts';
+import type { Delivery, Order, OrderStatus } from '@/types';
 import { formatClock, formatDayMonth, formatHHmm, fromISODate } from '@/utils/date';
 import { CATEGORY } from '@/config/categories';
 import './OrderStatusPage.css';
@@ -73,6 +76,7 @@ export default function OrderStatusPage() {
 
       <aside className="sm-status__side">
         <StatusAside order={order} deliveryId={delivery?.id} />
+        {delivery && order.status === 'on_the_way' && <DeliveryAction delivery={delivery} />}
       </aside>
     </main>
   );
@@ -122,5 +126,27 @@ function StatusAside({ order, deliveryId }: { order: Order; deliveryId?: string 
         </div>
       )}
     </>
+  );
+}
+
+/**
+ * The way forward while the order is on the way, as on Today's Deliveries: once the driver has
+ * marked arrival here, start unloading (the receipt screen), or carry on with it.
+ */
+function DeliveryAction({ delivery }: { delivery: Delivery }) {
+  const navigate = useNavigate();
+  const receive = () => navigate(`/deliveries/${delivery.id}/receive`);
+  if (delivery.status === 'unloading') {
+    return <PrimaryButton title="Continue Unloading" onClick={receive} style={{ borderRadius: 16, minHeight: 72, fontSize: 20 }} />;
+  }
+  if (delivery.status !== 'arrived') {
+    return <PrimaryButton title="Waiting for the vehicle" disabled onClick={() => undefined} style={{ borderRadius: 16, minHeight: 72, fontSize: 20 }} />;
+  }
+  return (
+    <PrimaryButton
+      title="Vehicle Arrived · Start Unloading"
+      onClick={() => startUnloading(delivery.id).then(receive).catch((e) => showError(e, 'Could not start unloading.'))}
+      style={{ borderRadius: 16, minHeight: 72, fontSize: 20 }}
+    />
   );
 }

@@ -400,7 +400,9 @@ paths:
       summary: The driver leaves the depot
       description: >-
         Only after the driver checked in and the loaders released the truck (every unit of every
-        order scanned or reported, then dispatched). Idempotent.
+        order scanned or reported, then dispatched). Every order loaded on the truck becomes
+        out_for_delivery in Order Management, as the driver. Idempotent: calling again re-sends any
+        order Order Management did not accept.
       security:
         - BearerAuth: []
       parameters:
@@ -412,7 +414,7 @@ paths:
             example: 20261005-VEH001-T1
       responses:
         '200':
-          description: '{ tripId, depotDepartedAt }'
+          description: '{ tripId, depotDepartedAt, ordersNotUpdated: orderRef[] (Order Management did not accept them yet) }'
         '403':
           description: The trip is not on the driver's vehicle
         '409':

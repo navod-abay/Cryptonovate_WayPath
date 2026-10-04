@@ -12,7 +12,6 @@ import DeliveryProblemModal from '@/components/DeliveryProblemModal';
 import { useAppStore } from '@/state/store';
 import { useNow } from '@/hooks/useNow';
 import { startUnloading } from '@/api/storeManagerApi';
-import { USE_MOCK } from '@/api/config';
 import { showError } from '@/state/toasts';
 import type { DeliveryStatus } from '@/types';
 import { formatHHmm, ORDER_TYPE_LABEL, toISODate } from '@/utils/date';
@@ -49,8 +48,8 @@ export default function TodayDeliveriesPage() {
   const badge = STATUS_BADGE[delivery.status];
   const sent = delivery.items.reduce((n, i) => n + i.sent, 0);
   const arrived = delivery.status !== 'on_the_way';
-  // The backend has no arrival signal, so with real data the store manager reports the vehicle's arrival.
-  const canStart = delivery.status === 'arrived' || (!USE_MOCK && delivery.status === 'on_the_way');
+  // Unloading starts once the driver has marked arrival here ("I've Arrived" in the driver app).
+  const canStart = delivery.status === 'arrived';
 
   const primary = () => {
     if (canStart) {
@@ -64,7 +63,7 @@ export default function TodayDeliveriesPage() {
   const primaryLabel =
     delivery.status === 'delivered' ? 'View Receipt'
       : delivery.status === 'unloading' ? 'Continue Unloading'
-      : delivery.status === 'on_the_way' ? 'Vehicle Arrived · Start Unloading'
+      : delivery.status === 'on_the_way' ? 'Waiting for the vehicle'
       : 'Start Unloading';
 
   return (

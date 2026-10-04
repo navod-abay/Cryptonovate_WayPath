@@ -113,6 +113,10 @@ export async function initDb() {
         updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
       );
       CREATE INDEX IF NOT EXISTS ix_stop_progress_trip ON stop_progress (trip_id);
+      -- The order and outlet of the stop, so a store manager can see the truck has arrived.
+      ALTER TABLE stop_progress ADD COLUMN IF NOT EXISTS order_ref VARCHAR(50);
+      ALTER TABLE stop_progress ADD COLUMN IF NOT EXISTS outlet_id VARCHAR(50);
+      CREATE INDEX IF NOT EXISTS ix_stop_progress_outlet ON stop_progress (outlet_id);
     `);
 
     // Delivery Events (bulk sync target)

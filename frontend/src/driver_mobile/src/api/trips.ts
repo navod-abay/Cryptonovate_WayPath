@@ -156,6 +156,19 @@ export function departFromDepot(tripId: string): Promise<void> {
   return postTripAction(tripId, 'depot-departure');
 }
 
+/**
+ * The store's 6-digit handover code, read out by the store manager: the order is delivered.
+ * Needs signal (the code is checked on the server); a wrong or expired code throws with the reason.
+ */
+export async function completeHandover(orderRef: string, code: string): Promise<void> {
+  const res = await authFetch(`${API_ROUTES.EXECUTION}/orders/${encodeURIComponent(orderRef)}/handover`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code }),
+  });
+  if (!res.ok) throw new Error(errorMessage(await res.json().catch(() => null), res.status));
+}
+
 /** Whether the loaders have released the truck yet (awaiting_driver | ready_to_load | loading | completed). */
 export async function fetchLoadingStatus(tripId: string): Promise<string | undefined> {
   const day = await fetchTodayTrips();

@@ -145,6 +145,16 @@ async function loadPlan(orders: BackendOrder[]): Promise<Map<string, { eta: stri
   return plan;
 }
 
+/** Orders whose truck the driver has marked as arrived here (execution-sync). Missing data just means none yet. */
+async function loadArrived(outletId: string): Promise<Set<string>> {
+  try {
+    const rows = await http.get<{ order_ref: string }[]>(`/execution/outlets/${encodeURIComponent(outletId)}/arrivals`);
+    return new Set(rows.map((r) => r.order_ref));
+  } catch {
+    return new Set();
+  }
+}
+
 /** Orders whose unloading the store manager has started (execution-sync). Missing data just means none started. */
 async function loadUnloading(outletId: string): Promise<Set<string>> {
   try {
@@ -155,7 +165,7 @@ async function loadUnloading(outletId: string): Promise<Set<string>> {
   }
 }
 
-interface Snapshot { orders: BackendOrder[]; plan: Awaited<ReturnType<typeof loadPlan>>; unloading: Set<string> }
+interface Snapshot { orders: BackendOrder[]; plan: Awaited<ReturnType<typeof loadPlan>>; unloading: Set<string>; arrived: Set<string> }
 let snapshot: { at: number; outletId: string; promise: Promise<Snapshot> } | null = null;
 
 /** All visible orders of the outlet with their lines and events. Shared for a few seconds so one page load makes one round of calls. */
@@ -164,8 +174,10 @@ function loadSnapshot(outletId: string): Promise<Snapshot> {
   const promise = (async () => {
     const list = await http.get<{ orders: BackendOrder[] }>('/orders/', { outlet_id: outletId, page_size: 50 });
     const visible = list.orders.filter((o) => o.status in ORDER_STATUS || o.status === 'draft');
-    const [orders, unloading] = await Promise.all([Promise.all(visible.map(loadOrderDetail)), loadUnloading(outletId)]);
-    return { orders, plan: await loadPlan(orders), unloading };
+    const [orders, unloading, arrived] = await Promise.all([
+      Promise.all(visible.map(loadOrderDetail)), loadUnloading(outletId), loadArrived(outletId),
+    ]);
+    return { orders, plan: await loadPlan(orders), unloading, arrived };
   })();
   snapshot = { at: Date.now(), outletId, promise };
   promise.catch(() => { if (snapshot?.promise === promise) snapshot = null; });
@@ -207,7 +219,9 @@ export async function fetchDrafts(outletId: string): Promise<DraftOrder[]> {
 }
 
 export async function fetchDeliveries(outletId: string): Promise<Delivery[]> {
-  const { orders, plan, unloading } = await loadSnapshot(outletId);
+  const { orders, plan, unloading, arrived } = await loadSnapshot(outletId);
+  // On the way → arrived (the driver pressed "I've Arrived" here) → unloading (the store manager started).
+  const onTheWay = (ref: string): Delivery['status'] => (unloading.has(ref) ? 'unloading' : arrived.has(ref) ? 'arrived' : 'on_the_way');
   return orders.filter((o) => o.status in DELIVERY_STATUS).map((o): Delivery => {
     const planned = plan.get(o.order_ref);
     const finished = o.status === 'received' || o.status === 'disputed';
@@ -219,7 +233,7 @@ export async function fetchDeliveries(outletId: string): Promise<Delivery[]> {
       date: o.order_date,
       eta: planned?.eta ?? o.window_open_time,
       window: [planned?.stop.windowOpen ?? o.window_open_time, planned?.stop.windowClose ?? o.window_close_time],
-      status: o.status === 'out_for_delivery' && unloading.has(o.order_ref) ? 'unloading' : DELIVERY_STATUS[o.status],
+      status: o.status === 'out_for_delivery' ? onTheWay(o.order_ref) : DELIVERY_STATUS[o.status],
       stops: (planned?.trip.stops ?? []).map((s) => ({
         label: s.outletId === outletId ? 'Your store' : s.outletId,
         done: s.sequence < planned!.stop.sequence,

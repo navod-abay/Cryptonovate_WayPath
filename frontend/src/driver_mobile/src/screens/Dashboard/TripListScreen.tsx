@@ -89,6 +89,12 @@ export default function TripListScreen({ navigation }: Props) {
     );
   }
 
+  // Trips run in order: a trip starts once every outlet of the trips before it is done (the server checks too).
+  const unfinished = trips
+    .slice(0, activeTripIndex)
+    .find(t => t.nodes.some(n => n.type === 'outlet' && n.status !== 'completed'));
+  const blocked = !tripData.isStarted && !!unfinished;
+
   const warehouseNode = tripData.nodes.find(n => n.type === 'warehouse');
   const outletNodes = tripData.nodes.filter(n => n.type === 'outlet');
 
@@ -172,8 +178,9 @@ export default function TripListScreen({ navigation }: Props) {
         </View>
 
         <PrimaryButton 
-          title={`${tripData.isStarted ? 'Continue' : 'Start'} ${tripData.activeTripId}`} 
+          title={blocked ? `Finish ${unfinished!.activeTripId} first` : `${tripData.isStarted ? 'Continue' : 'Start'} ${tripData.activeTripId}`} 
           onPress={handleStartTrip} 
+          disabled={blocked}
           isLoading={starting}
           style={{ marginTop: SPACING.lg, marginBottom: SPACING.xl }}
         />
