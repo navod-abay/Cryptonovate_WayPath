@@ -1,29 +1,35 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { authFetch } from '../api/auth';
+import { API_ROUTES } from '../api/config';
 
 export interface OfflineDelivery {
-  id: string; // unique ID for the offline task
+  eventId: string; // client-generated event ID
   tripId: string;
-  nodeId: string;
+  stopId: string;
+  orderRef: string;
+  outletId: string;
+  vehicleId?: string;
+  capturedAt: string;
+  status: string;
   unloadedPhotos: string[];
   paperPhotos: string[];
-  timestamp: string;
 }
 
 const STORAGE_KEY = '@offline_deliveries_queue';
 
-export const saveOfflineDelivery = async (delivery: Omit<OfflineDelivery, 'id'>) => {
+export const saveOfflineDelivery = async (delivery: Omit<OfflineDelivery, 'eventId'>) => {
   try {
     const existingQueueJSON = await AsyncStorage.getItem(STORAGE_KEY);
     const queue: OfflineDelivery[] = existingQueueJSON ? JSON.parse(existingQueueJSON) : [];
     
     const newTask: OfflineDelivery = {
       ...delivery,
-      id: Date.now().toString(),
+      eventId: Date.now().toString(),
     };
     
     queue.push(newTask);
     await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(queue));
-    console.log('[SyncService] Saved offline delivery:', newTask.id);
+    console.log('[SyncService] Saved offline delivery:', newTask.eventId);
   } catch (error) {
     console.error('[SyncService] Error saving offline delivery', error);
   }
@@ -44,21 +50,38 @@ export const syncOfflineDeliveries = async () => {
     
     for (const delivery of queue) {
       try {
-        // Here we would make the actual API call to the backend
-        // e.g. await axios.post('/api/deliveries/offline-sync', delivery);
+        const payload = {
+          eventId: delivery.eventId,
+          tripId: delivery.tripId,
+          stopId: delivery.stopId,
+          orderRef: delivery.orderRef,
+          outletId: delivery.outletId,
+          vehicleId: delivery.vehicleId,
+          capturedAt: delivery.capturedAt,
+          status: delivery.status,
+          proofs: {
+            unloadedPhotos: delivery.unloadedPhotos,
+            paperPhotos: delivery.paperPhotos
+          }
+        };
+
+        const res = await authFetch(`${API_ROUTES.EXECUTION}/sync`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        if (!res.ok) {
+           throw new Error(`Server returned ${res.status}`);
+        }
         
-        // Simulating network delay for backend call
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
-        console.log(`[SyncService] Successfully synced delivery: ${delivery.id}`);
+        console.log(`[SyncService] Successfully synced delivery: ${delivery.eventId}`);
       } catch (error) {
-        console.error(`[SyncService] Failed to sync delivery: ${delivery.id}`, error);
-        // If it fails, we push it back to the queue to try again next time
+        console.error(`[SyncService] Failed to sync delivery: ${delivery.eventId}`, error);
         remainingQueue.push(delivery);
       }
     }
     
-    // Update the queue with only the failed ones
     await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(remainingQueue));
     if (remainingQueue.length === 0) {
       console.log('[SyncService] All offline deliveries synced successfully!');

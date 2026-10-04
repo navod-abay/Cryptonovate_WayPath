@@ -1,6 +1,6 @@
 import { API_ROUTES } from './config';
 import { authFetch, errorMessage } from './auth';
-import { GoodsType, TripNode, TripPayload } from '../types/trip';
+import { GoodsType, TripNode, TripPayload, HandoverVerifyRequest, HandoverVerifyResponse } from '../types/trip';
 
 /** Planning's TripDetail as GET /api/execution/driver/active-route returns it. */
 interface PlannedStop {
@@ -110,4 +110,27 @@ export async function fetchTodayTrips(): Promise<DriverDay> {
   if (!res.ok) throw new Error(errorMessage(body, res.status));
   const day = body.data as { date: string; vehicleId: string; trips: PlannedTrip[] };
   return { date: day.date, vehicleId: day.vehicleId, trips: day.trips.map(toPayload) };
+}
+
+export async function verifyHandover(deliveryId: string, code: string, idempotencyKey: string): Promise<HandoverVerifyResponse> {
+  const req: HandoverVerifyRequest = {
+    code,
+    completedAt: new Date().toISOString()
+  };
+  
+  const res = await authFetch(`${API_ROUTES.EXECUTION}/deliveries/${deliveryId}/handover/verify`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Idempotency-Key': idempotencyKey,
+    },
+    body: JSON.stringify(req),
+  });
+  
+  const body = await res.json().catch(() => null);
+  if (!res.ok) {
+    throw { status: res.status, message: errorMessage(body, res.status) };
+  }
+  
+  return body as HandoverVerifyResponse;
 }
