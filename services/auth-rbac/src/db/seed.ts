@@ -139,6 +139,7 @@ export async function initDatabaseAndSeed(): Promise<void> {
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         ON CONFLICT (username) 
         DO UPDATE SET 
+          password_hash = EXCLUDED.password_hash,
           full_name = EXCLUDED.full_name,
           role = EXCLUDED.role,
           outlet_id = EXCLUDED.outlet_id,
