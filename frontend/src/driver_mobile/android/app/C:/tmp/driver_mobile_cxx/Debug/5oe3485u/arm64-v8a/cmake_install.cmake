@@ -44,6 +44,10 @@ endif()
 
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   # Include the install script for each subdirectory.
+  include("/home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/android/app/C:/tmp/driver_mobile_cxx/Debug/5oe3485u/arm64-v8a/AsyncStorageSpec_autolinked_build/cmake_install.cmake")
+  include("/home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/android/app/C:/tmp/driver_mobile_cxx/Debug/5oe3485u/arm64-v8a/RNCGeolocationSpec_autolinked_build/cmake_install.cmake")
+  include("/home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/android/app/C:/tmp/driver_mobile_cxx/Debug/5oe3485u/arm64-v8a/RNCNetInfoSpec_autolinked_build/cmake_install.cmake")
+  include("/home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/android/app/C:/tmp/driver_mobile_cxx/Debug/5oe3485u/arm64-v8a/RNImagePickerSpec_autolinked_build/cmake_install.cmake")
   include("/home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/android/app/C:/tmp/driver_mobile_cxx/Debug/5oe3485u/arm64-v8a/safeareacontext_autolinked_build/cmake_install.cmake")
   include("/home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/android/app/C:/tmp/driver_mobile_cxx/Debug/5oe3485u/arm64-v8a/rnscreens_autolinked_build/cmake_install.cmake")
   include("/home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/android/app/C:/tmp/driver_mobile_cxx/Debug/5oe3485u/arm64-v8a/rnsvg_autolinked_build/cmake_install.cmake")

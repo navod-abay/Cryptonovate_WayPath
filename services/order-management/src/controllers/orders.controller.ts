@@ -13,7 +13,9 @@ import type {
   ConfirmOrderSchema,
   CreateOrderInput,
   DeferOrderSchema,
+  DispatcherOverviewQuerySchema,
   ListOrdersQuery,
+  OrderWindowsQuerySchema,
   ReceiptInput,
   StatusChangeInput,
   ReplaceItemsSchema,
@@ -81,6 +83,16 @@ export async function getConfirmed(req: Request, res: Response) {
 export async function getSummary(req: Request, res: Response) {
   const q = req.query as unknown as z.infer<typeof SummaryQuerySchema>;
   ok(res, await orders.getSummary(q.date, q.depot));
+}
+
+export async function getDispatcherOverview(req: Request, res: Response) {
+  const q = req.query as unknown as z.infer<typeof DispatcherOverviewQuerySchema>;
+  ok(res, await orders.getDispatcherOverview(q.date, q.depot));
+}
+
+export async function getOrderWindows(req: Request, res: Response) {
+  const q = req.query as unknown as z.infer<typeof OrderWindowsQuerySchema>;
+  ok(res, orders.getOrderWindows(q.from, q.to));
 }
 
 export async function getAtRisk(req: Request, res: Response) {

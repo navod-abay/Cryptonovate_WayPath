@@ -1,6 +1,10 @@
 import { useEffect, useState } from 'react';
 import NetInfo from '@react-native-community/netinfo';
 import { syncOfflineDeliveries } from '../services/SyncService';
+import { flushIncidents } from '../services/IncidentReports';
+
+// Queued incident reports are retried this often while the app is open (cheap when the queue is empty).
+const INCIDENT_RETRY_MS = 60_000;
 
 export const useNetworkSync = () => {
   const [isOnline, setIsOnline] = useState<boolean>(true);
@@ -14,6 +18,7 @@ export const useNetworkSync = () => {
       if (!isOnline && currentlyOnline) {
         console.log('[useNetworkSync] Network connection restored. Triggering sync...');
         syncOfflineDeliveries();
+        flushIncidents();
       }
       
       setIsOnline(!!currentlyOnline);
@@ -27,6 +32,7 @@ export const useNetworkSync = () => {
       // Also attempt a sync right when the app opens, just in case there are leftover tasks!
       if (currentlyOnline) {
         syncOfflineDeliveries();
+        flushIncidents();
       }
     });
 
@@ -34,6 +40,11 @@ export const useNetworkSync = () => {
       unsubscribe();
     };
   }, [isOnline]);
+
+  useEffect(() => {
+    const id = setInterval(flushIncidents, INCIDENT_RETRY_MS);
+    return () => clearInterval(id);
+  }, []);
 
   return { isOnline };
 };

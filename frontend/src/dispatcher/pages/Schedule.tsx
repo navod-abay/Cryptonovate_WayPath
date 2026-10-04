@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Badge, COLORS } from '@waypoint/ui';
 import { CalendarCheck, CalendarX, Fuel, Milk, Truck } from 'lucide-react';
@@ -7,7 +7,7 @@ import { categories, today } from '../data/presentation';
 import { RequestState, useApi } from '../data/useApi';
 import { CategoryIcon, EmptyState, formatDate, isValidDate, Panel, VehicleIcon } from '../components/common';
 import OrderAccordion from '../components/OrderAccordion';
-import { isClosedDay, isScheduleAvailable } from '../data/scheduleAvailability';
+import { isClosedDay } from '../data/scheduleAvailability';
 import { addDays } from '../data/presentation';
 import type { Warehouse } from '../data/types';
 
@@ -16,11 +16,6 @@ export default function Schedule() {
   const warehouse = params.get('warehouse') === 'Kandy' ? 'Kandy' : 'Peliyagoda';
   const requestedDate = params.get('date');
   const date = isValidDate(requestedDate) ? requestedDate : today();
-  const [now,setNow] = useState(()=>new Date());
-  useEffect(()=>{
-    const timer=window.setInterval(()=>setNow(new Date()),1000);
-    return ()=>window.clearInterval(timer);
-  },[]);
   const change = (key: string, value: string) => { const next = new URLSearchParams(params); next.set(key, value); setParams(next); };
   if (isClosedDay(date)) {
     const day = (d: string) => `/dispatcher/schedule/today?date=${d}&warehouse=${warehouse}`;
@@ -30,10 +25,6 @@ export default function Schedule() {
         <div className="closed-day-links"><Link className="text-link" to={day(addDays(date,-1))}>View {formatDate(addDays(date,-1),true)}</Link><Link className="text-link" to={day(addDays(date,1))}>View {formatDate(addDays(date,1),true)}</Link></div></div>
     </Panel></main>;
   }
-  if (!isScheduleAvailable(date,now)) return <main className="page schedule-page"><Panel className="schedule-board">
-    <ScheduleHeading date={date} warehouse={warehouse} change={change} />
-    <div className="schedule-unavailable" role="status"><CalendarCheck size={48} strokeWidth={1.5} /><h2>Schedule not available yet</h2><p>The schedule for {formatDate(date,true)} is prepared after 5 PM on {formatDate(addDays(date,-1),true)} (Sri Lanka time).</p><p className="secondary">You can view upcoming orders while waiting for the schedule.</p><Link className="text-link" to="/dispatcher/schedule/upcoming">View upcoming orders</Link></div>
-  </Panel></main>;
   return <AvailableSchedule key={`${date}-${warehouse}`} date={date} warehouse={warehouse} change={change} />;
 }
 
@@ -44,9 +35,16 @@ function ScheduleHeading({date,warehouse,change}:ScheduleProps) {
   </div>;
 }
 
+// Planning starts right after the ordering cutoff, so check often for the finished schedule.
+const SCHEDULE_POLL_MS = 15000;
+
 function AvailableSchedule({date,warehouse,change}:ScheduleProps) {
-  const resource = useApi(signal=>data.getSchedule(date,warehouse,signal),[date,warehouse]);
+  const resource = useApi(signal=>data.getSchedule(date,warehouse,signal),[date,warehouse],SCHEDULE_POLL_MS);
   const [expanded, setExpanded] = useState<string | null>(null);
+  if (resource.data && !resource.data.prepared) return <main className="page schedule-page"><Panel className="schedule-board">
+    <ScheduleHeading date={date} warehouse={warehouse} change={change} />
+    <SchedulePending date={date} />
+  </Panel></main>;
   const vehicles = resource.data?.vehicles || [];
   const deferred = resource.data?.deferred || [];
   return <main className="page schedule-page">
@@ -71,4 +69,20 @@ function AvailableSchedule({date,warehouse,change}:ScheduleProps) {
       </aside>
     </div>
   </main>;
+}
+
+function SchedulePending({date}:{date:string}) {
+  const windows = useApi(signal=>data.getWindows(date,date,signal),[date]);
+  const cutoff = windows.data?.days[0]?.cutoffAt;
+  const time = (iso:string) => new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Colombo',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date(iso));
+  const cutoffDay = (iso:string) => formatDate(new Date(Date.parse(iso)+19800000).toISOString().slice(0,10),true);
+  const past = date < today();
+  return <div className="schedule-unavailable" role="status"><CalendarCheck size={48} strokeWidth={1.5} />
+    <h2>{past ? 'No schedule for this day' : 'Schedule not available yet'}</h2>
+    {past ? <p>Planning did not prepare a schedule for {formatDate(date,true)}.</p>
+      : cutoff && Date.parse(cutoff) > Date.now() ? <p>Ordering for {formatDate(date,true)} closes at {time(cutoff)} on {cutoffDay(cutoff)} (Sri Lanka time). The schedule appears here as soon as Planning finishes, usually within a few minutes.</p>
+      : <p>Planning is preparing the schedule for {formatDate(date,true)}. It appears here as soon as it is ready.</p>}
+    <RequestState resource={windows} />
+    {!past && <><p className="secondary">You can view upcoming orders while waiting for the schedule.</p><Link className="text-link" to="/dispatcher/schedule/upcoming">View upcoming orders</Link></>}
+  </div>;
 }

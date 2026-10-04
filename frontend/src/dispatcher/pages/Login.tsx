@@ -2,7 +2,7 @@ import { useEffect,useRef,useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowRight,Eye,EyeOff,LockKeyhole,MapPin,Route,Truck,UserRound } from 'lucide-react';
 import { PrimaryButton } from '@waypoint/ui';
-import { signIn, TEST_USERNAME, TEST_PASSWORD, usesTestLogin } from '../data/signIn';
+import { signIn } from '../data/signIn';
 
 export default function Login() {
   const navigate=useNavigate();const controller=useRef<AbortController>();
@@ -27,7 +27,6 @@ export default function Login() {
     <label htmlFor="dispatcher-username">Username</label><div className="login-input"><UserRound size={20} /><input id="dispatcher-username" name="username" autoComplete="username" placeholder="Enter your username" required maxLength={100} disabled={busy} value={username} onChange={event=>setUsername(event.target.value)} /></div>
     <label htmlFor="dispatcher-password">Password</label><div className="login-input"><LockKeyhole size={20} /><input id="dispatcher-password" name="password" autoComplete="current-password" type={visible ? 'text' : 'password'} placeholder="Enter your password" required disabled={busy} value={password} onChange={event=>setPassword(event.target.value)} /><button type="button" aria-label={visible ? 'Hide password' : 'Show password'} aria-pressed={visible} className="icon-button" onClick={()=>setVisible(value=>!value)}>{visible ? <EyeOff size={20} /> : <Eye size={20} />}</button></div>
     {error && <p className="form-error" role="alert">{error}</p>}<PrimaryButton title="Sign in" type="submit" isLoading={busy} iconRight={<ArrowRight size={21} />} onClick={()=>{}} className="login-submit" />
-    {usesTestLogin && <div className="test-login-hint"><strong>Test account</strong><span>Username: <code>{TEST_USERNAME}</code></span><span>Password: <code>{TEST_PASSWORD}</code></span></div>}
     <p className="login-footer">WayPath · Dispatcher</p>
   </form></section></main>;
 }

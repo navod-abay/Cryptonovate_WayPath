@@ -1,6 +1,8 @@
 import jwt from 'jsonwebtoken';
 import { pool } from '../db/pool';
-import { BulkSyncInput, PodInput, ShortfallInput } from '../schemas/execution.schema';
+import { BulkSyncInput, DeliveryProblemInput, DriverIncidentInput, PodInput, ShortfallInput } from '../schemas/execution.schema';
+import { AccessTokenPayload } from '../middleware/auth';
+import { enqueueAlert, relayPendingAlerts } from './alertOutbox';
 
 const PLANNING_SERVICE_URL = process.env.PLANNING_SERVICE_URL || 'http://planning-allocation:5003';
 const ORDER_SERVICE_URL = process.env.ORDER_SERVICE_URL || 'http://order-management:5002';
@@ -46,6 +48,60 @@ async function safeFetch(url: string, options: RequestInit = {}, timeoutMs = 500
     console.warn(`[sync.service] External HTTP call to ${url} failed or timed out: ${err.message}`);
     return null;
   }
+}
+
+/**
+ * Order Management only knows order statuses. A full or partial drop-off is a delivered order;
+ * a rejected stop leaves the order where it is (the dispatcher decides what happens next).
+ */
+const ORDER_STATUS_FOR: Record<string, 'delivered' | undefined> = {
+  delivered: 'delivered',
+  partially_delivered: 'delivered',
+  completed: 'delivered',
+};
+
+function notifyOrderStatus(orderRef: string, executionStatus: string) {
+  const status = ORDER_STATUS_FOR[executionStatus];
+  if (!status) return;
+  safeFetch(`${ORDER_SERVICE_URL}/api/orders/${encodeURIComponent(orderRef)}/status`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status }),
+  }).then((res) => {
+    if (res && !res.ok) console.warn(`[sync.service] Order Management refused ${orderRef} -> ${status} (${res.status})`);
+  });
+}
+
+const ISSUE_LABEL: Record<string, string> = {
+  no_receive: 'No one to receive',
+  closed: 'Outlet closed',
+  refused: 'Refused items',
+  blocked: 'Road access blocked',
+};
+const ACTION_LABEL: Record<string, string> = {
+  waited: 'Waited 15 minutes',
+  called: 'Called the manager',
+  alt_route: 'Took an alternative route',
+  skipped: 'Skipped the outlet',
+  partial: 'Partial unload',
+  returned: 'Returned all items',
+  wait_clear: 'Waited for clearance',
+};
+const OFFLINE_DELIVERY_LABEL: Record<string, string> = {
+  delivered: 'Delivered offline',
+  partially_delivered: 'Partially delivered offline',
+  rejected: 'Delivery rejected (offline)',
+};
+/** Device clocks drift; a capture time in the future is treated as "now". */
+const MAX_CLOCK_SKEW_MS = 5 * 60_000;
+
+function occurredAt(captured: string, received = Date.now()) {
+  const at = Date.parse(captured);
+  return new Date(at - received > MAX_CLOCK_SKEW_MS ? received : at).toISOString();
+}
+
+function actorOf(user?: AccessTokenPayload) {
+  return { actorId: user?.userId || null, actorName: user?.username || null, depot: user?.depot || null };
 }
 
 export class ExecutionSyncService {
@@ -187,12 +243,7 @@ export class ExecutionSyncService {
 
       await client.query('COMMIT');
 
-      // Async notification to Order Management microservice
-      safeFetch(`${ORDER_SERVICE_URL}/api/orders/${podData.orderRef}/status`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: podData.status }),
-      });
+      notifyOrderStatus(podData.orderRef, podData.status);
 
       return { stopExecution: stopRes.rows[0], deliveryEvent: eventRes.rows[0] };
     } catch (err) {
@@ -206,7 +257,8 @@ export class ExecutionSyncService {
   /**
    * Offline Bulk Sync Engine with Timestamp-based Conflict Resolution
    */
-  static async processBulkSync(bulkData: BulkSyncInput, driverId?: string) {
+  static async processBulkSync(bulkData: BulkSyncInput, user?: AccessTokenPayload) {
+    const driverId = user?.userId;
     const syncedEvents: any[] = [];
     const syncedTelemetryCount: number = bulkData.telemetry?.length || 0;
 
@@ -248,16 +300,40 @@ export class ExecutionSyncService {
           event.offlineCapturedAt,
         ];
 
-        const res = await pool.query(query, values);
-        if (res.rows.length > 0) {
-          syncedEvents.push(res.rows[0]);
-
-          // Trigger Order Management status update
-          safeFetch(`${ORDER_SERVICE_URL}/api/orders/${event.orderRef}/status`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ status: event.status }),
-          });
+        // Everything arriving through /sync was captured offline, so the dispatcher hears about it:
+        // that delivery was never confirmed with the store's handover code.
+        const client = await pool.connect();
+        let row: any;
+        try {
+          await client.query('BEGIN');
+          const res = await client.query(query, values);
+          row = res.rows[0];
+          if (row) {
+            await enqueueAlert(client, {
+              id: row.id,
+              type: 'driver.offline_delivery',
+              sourceRole: 'driver',
+              ...actorOf(user),
+              outletId: event.outletId || null,
+              vehicleId: null,
+              tripId: event.tripId || null,
+              orderRef: event.orderRef,
+              summary: `${OFFLINE_DELIVERY_LABEL[event.status] || event.status}${event.outletId ? ` at ${event.outletId}` : ''}`,
+              detail: `${event.orderRef} was recorded as ${event.status.replace('_', ' ')} without network, using photo proof instead of the store's handover code.`,
+              payload: { status: event.status, actualArrivalTime: event.actualArrivalTime || null },
+              occurredAt: occurredAt(event.actualArrivalTime || event.offlineCapturedAt),
+            });
+          }
+          await client.query('COMMIT');
+        } catch (err) {
+          await client.query('ROLLBACK');
+          throw err;
+        } finally {
+          client.release();
+        }
+        if (row) {
+          syncedEvents.push(row);
+          notifyOrderStatus(event.orderRef, event.status);
         }
       }
     }
@@ -271,6 +347,8 @@ export class ExecutionSyncService {
         body: JSON.stringify({ distanceKm: 25.0, syncedAt: new Date().toISOString() }),
       });
     }
+
+    if (syncedEvents.length > 0) void relayPendingAlerts();
 
     return {
       syncedEventsCount: syncedEvents.length,
@@ -299,23 +377,105 @@ export class ExecutionSyncService {
   }
 
   /**
-   * Store Manager Order Dispute Registration
+   * Driver incident reports. Each carries the id the device gave it, so a backlog flushed after an
+   * outage (or a retry whose response was lost) only stores and alerts once per report.
    */
-  static async disputeOrder(orderRef: string, storeManagerId?: string, discrepancyType?: string, description?: string) {
-    const query = `
-      INSERT INTO delivery_disputes (order_ref, store_manager_id, discrepancy_type, description)
-      VALUES ($1, $2, $3, $4)
-      RETURNING *;
-    `;
-    const res = await pool.query(query, [orderRef, storeManagerId || null, discrepancyType || 'general', description || '']);
+  static async recordDriverIncidents(incidents: DriverIncidentInput[], user?: AccessTokenPayload) {
+    const accepted: string[] = [];
+    const duplicates: string[] = [];
+    const actor = actorOf(user);
+    for (const incident of incidents) {
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        const res = await client.query(
+          `INSERT INTO driver_incidents (
+             id, driver_id, driver_username, depot, trip_id, stop_id, outlet_id, order_ref, vehicle_id,
+             issue, action, notes, captured_at
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+           ON CONFLICT (id) DO NOTHING
+           RETURNING id`,
+          [
+            incident.clientEventId, actor.actorId, actor.actorName, actor.depot, incident.tripId || null,
+            incident.stopId || null, incident.outletId || null, incident.orderRef || null, incident.vehicleId || null,
+            incident.issue, incident.action || null, incident.notes || null, incident.capturedAt,
+          ],
+        );
+        if (res.rows.length > 0) {
+          const issue = ISSUE_LABEL[incident.issue];
+          const action = incident.action ? ACTION_LABEL[incident.action] || incident.action : null;
+          await enqueueAlert(client, {
+            id: incident.clientEventId,
+            type: 'driver.incident',
+            sourceRole: 'driver',
+            ...actor,
+            outletId: incident.outletId || null,
+            vehicleId: incident.vehicleId || null,
+            tripId: incident.tripId || null,
+            orderRef: incident.orderRef || null,
+            summary: `${issue}${incident.outletId ? ` at ${incident.outletId}` : ''}`,
+            detail: [
+              `${issue}${incident.outletId ? ` at ${incident.outletId}` : ''}${incident.tripId ? ` (${incident.tripId})` : ''}.`,
+              action ? `Driver: ${action}.` : '',
+              incident.notes ? `Notes: ${incident.notes}` : '',
+            ].filter(Boolean).join(' '),
+            payload: { issue: incident.issue, action: incident.action || null, stopId: incident.stopId || null },
+            occurredAt: occurredAt(incident.capturedAt),
+          });
+          accepted.push(incident.clientEventId);
+        } else {
+          duplicates.push(incident.clientEventId);
+        }
+        await client.query('COMMIT');
+      } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+      } finally {
+        client.release();
+      }
+    }
+    if (accepted.length > 0) void relayPendingAlerts();
+    return { accepted, duplicates };
+  }
 
-    // Notify Order Management microservice
-    safeFetch(`${ORDER_SERVICE_URL}/api/orders/${orderRef}/status`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: 'disputed', discrepancyType }),
-    });
-
-    return res.rows[0];
+  /**
+   * Store manager reports a problem with a delivery that is still on the way (late, unreachable driver...).
+   * The outlet always comes from the token.
+   */
+  static async reportDeliveryProblem(deliveryId: string, input: DeliveryProblemInput, user?: AccessTokenPayload) {
+    const outletId = user?.outlet_id || null;
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const res = await client.query(
+        `INSERT INTO delivery_problems (delivery_id, order_ref, outlet_id, store_manager_id, problems)
+         VALUES ($1, $2, $3, $4, $5)
+         RETURNING id`,
+        [deliveryId, input.orderRef || null, outletId, user?.userId || null, JSON.stringify(input.problems)],
+      );
+      const id: string = res.rows[0].id;
+      await enqueueAlert(client, {
+        id,
+        type: 'store.delivery_problem',
+        sourceRole: 'store_manager',
+        ...actorOf(user),
+        outletId,
+        vehicleId: null,
+        tripId: null,
+        orderRef: input.orderRef || null,
+        summary: input.problems.join(', '),
+        detail: `${outletId || 'The store'} reported a problem with delivery ${input.orderRef || deliveryId}: ${input.problems.join('; ')}.`,
+        payload: { deliveryId, problems: input.problems },
+        occurredAt: new Date().toISOString(),
+      });
+      await client.query('COMMIT');
+      void relayPendingAlerts();
+      return { id };
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
   }
 }

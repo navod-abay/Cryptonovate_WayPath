@@ -1,0 +1,268 @@
+openapi: 3.0.3
+info:
+  title: Notification Service API
+  version: 1.0.0
+  description: >-
+    Dashboard alerts for the dispatcher and store manager apps. Producers publish to the NATS
+    JetStream stream `ALERTS` (subjects `alerts.<type>`); this service stores each alert once and
+    pushes it to connected browsers over Server-Sent Events.
+
+
+    Alert types and who sees them:
+
+    - `driver.incident`: dispatcher, and the store manager of the alert's outlet
+
+    - `driver.offline_delivery`: dispatcher
+
+    - `store.discrepancy`: dispatcher
+
+    - `store.delivery_problem`: dispatcher
+
+
+    Store managers only see alerts about the outlet in their token, raised by someone else.
+    A dispatcher whose token has a depot only sees that depot's alerts (and alerts without one).
+servers:
+  - url: http://localhost/api/notifications
+    description: Via NGINX API Gateway
+  - url: http://localhost:5007
+    description: Direct local container access
+tags:
+  - name: System
+  - name: Dispatcher
+  - name: Store Manager
+  - name: Live
+
+paths:
+  /health:
+    get:
+      tags: [System]
+      summary: Health Check
+      responses:
+        '200':
+          description: Service is healthy
+
+  /alerts:
+    get:
+      tags: [Dispatcher]
+      summary: List alerts, newest first by when they happened
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - name: before
+          in: query
+          description: Only alerts that happened before this time (paging).
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: Alerts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/DispatcherAlert'
+        '401':
+          description: Missing or invalid token
+        '403':
+          description: Not a dispatcher
+
+  /alerts/{id}:
+    get:
+      tags: [Dispatcher]
+      summary: One alert
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Alert
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/DispatcherAlert'
+        '404':
+          description: Not found, or not visible to this dispatcher
+
+  /outlets/{outletId}/updates:
+    get:
+      tags: [Store Manager]
+      summary: Recent Updates for the signed-in store manager's outlet
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: outletId
+          in: path
+          required: true
+          description: Must equal the token's outlet_id.
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 100
+      responses:
+        '200':
+          description: Updates
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/StoreUpdate'
+        '403':
+          description: Another outlet, or not a store manager
+
+  /read:
+    post:
+      tags: [Dispatcher, Store Manager]
+      summary: Mark alerts read for the signed-in user
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ids]
+              properties:
+                ids:
+                  type: array
+                  minItems: 1
+                  maxItems: 500
+                  items:
+                    type: string
+                    format: uuid
+      responses:
+        '204':
+          description: Marked read (ids the user cannot see are ignored)
+
+  /stream:
+    get:
+      tags: [Live]
+      summary: Live alerts (Server-Sent Events)
+      description: >-
+        Send the bearer token in the Authorization header (use a fetch-based EventSource).
+        Frames: `event: ready` once on connect, then `event: alerts` whose data is an array of
+        DispatcherAlert (dispatcher) or StoreUpdate (store manager). Each frame's `id` is a cursor:
+        reconnect with `Last-Event-ID` to receive everything missed. Load the REST list after
+        `ready` so nothing published between the two requests is lost. The stream closes when the
+        access token expires; reconnect with a refreshed token.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: Last-Event-ID
+          in: header
+          schema:
+            type: string
+      responses:
+        '200':
+          description: text/event-stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+
+components:
+  schemas:
+    DispatcherAlert:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          example: driver.incident
+        kind:
+          type: string
+          enum: [driver, warehouse, store]
+        source:
+          type: string
+          description: Vehicle (or driver username) for driver alerts, outlet for store alerts.
+          example: OUT001
+        summary:
+          type: string
+        detail:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+          description: Same as occurredAt.
+        occurredAt:
+          type: string
+          format: date-time
+        receivedAt:
+          type: string
+          format: date-time
+        syncedLate:
+          type: boolean
+          description: Reached the server more than 5 minutes after it happened (queued offline).
+        vehicleId:
+          type: string
+        orderId:
+          type: string
+        outletId:
+          type: string
+        tripId:
+          type: string
+        read:
+          type: boolean
+    StoreUpdate:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        source:
+          type: string
+          enum: [driver, dispatcher, loader]
+        message:
+          type: string
+        at:
+          type: string
+          format: date-time
+        link:
+          type: string
+        read:
+          type: boolean
+        syncedLate:
+          type: boolean
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

@@ -12,6 +12,102 @@ if(NOT "${NEW_GLOB}" STREQUAL "${OLD_GLOB}")
   file(TOUCH_NOCREATE "/home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/android/app/C:/tmp/driver_mobile_cxx/Debug/5oe3485u/x86/CMakeFiles/cmake.verify_globs")
 endif()
 
+# react_codegen_SRCS at /home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/node_modules/@react-native-async-storage/async-storage/android/build/generated/source/codegen/jni/CMakeLists.txt:9 (file)
+file(GLOB NEW_GLOB LIST_DIRECTORIES true "/home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/node_modules/@react-native-async-storage/async-storage/android/build/generated/source/codegen/jni/*.cpp")
+set(OLD_GLOB
+  "/home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/node_modules/@react-native-async-storage/async-storage/android/build/generated/source/codegen/jni/AsyncStorageSpec-generated.cpp"
+  )
+if(NOT "${NEW_GLOB}" STREQUAL "${OLD_GLOB}")
+  message("-- GLOB mismatch!")
+  file(TOUCH_NOCREATE "/home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/android/app/C:/tmp/driver_mobile_cxx/Debug/5oe3485u/x86/CMakeFiles/cmake.verify_globs")
+endif()
+
+# react_codegen_SRCS at /home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/node_modules/@react-native-async-storage/async-storage/android/build/generated/source/codegen/jni/CMakeLists.txt:9 (file)
+file(GLOB NEW_GLOB LIST_DIRECTORIES true "/home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/node_modules/@react-native-async-storage/async-storage/android/build/generated/source/codegen/jni/react/renderer/components/AsyncStorageSpec/*.cpp")
+set(OLD_GLOB
+  "/home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/node_modules/@react-native-async-storage/async-storage/android/build/generated/source/codegen/jni/react/renderer/components/AsyncStorageSpec/ComponentDescriptors.cpp"
+  "/home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/node_modules/@react-native-async-storage/async-storage/android/build/generated/source/codegen/jni/react/renderer/components/AsyncStorageSpec/EventEmitters.cpp"
+  "/home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/node_modules/@react-native-async-storage/async-storage/android/build/generated/source/codegen/jni/react/renderer/components/AsyncStorageSpec/Props.cpp"
+  "/home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/node_modules/@react-native-async-storage/async-storage/android/build/generated/source/codegen/jni/react/renderer/components/AsyncStorageSpec/ShadowNodes.cpp"
+  "/home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/node_modules/@react-native-async-storage/async-storage/android/build/generated/source/codegen/jni/react/renderer/components/AsyncStorageSpec/States.cpp"
+  )
+if(NOT "${NEW_GLOB}" STREQUAL "${OLD_GLOB}")
+  message("-- GLOB mismatch!")
+  file(TOUCH_NOCREATE "/home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/android/app/C:/tmp/driver_mobile_cxx/Debug/5oe3485u/x86/CMakeFiles/cmake.verify_globs")
+endif()
+
+# react_codegen_SRCS at /home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/node_modules/@react-native-community/geolocation/android/build/generated/source/codegen/jni/CMakeLists.txt:9 (file)
+file(GLOB NEW_GLOB LIST_DIRECTORIES true "/home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/node_modules/@react-native-community/geolocation/android/build/generated/source/codegen/jni/*.cpp")
+set(OLD_GLOB
+  "/home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/node_modules/@react-native-community/geolocation/android/build/generated/source/codegen/jni/RNCGeolocationSpec-generated.cpp"
+  )
+if(NOT "${NEW_GLOB}" STREQUAL "${OLD_GLOB}")
+  message("-- GLOB mismatch!")
+  file(TOUCH_NOCREATE "/home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/android/app/C:/tmp/driver_mobile_cxx/Debug/5oe3485u/x86/CMakeFiles/cmake.verify_globs")
+endif()
+
+# react_codegen_SRCS at /home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/node_modules/@react-native-community/geolocation/android/build/generated/source/codegen/jni/CMakeLists.txt:9 (file)
+file(GLOB NEW_GLOB LIST_DIRECTORIES true "/home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/node_modules/@react-native-community/geolocation/android/build/generated/source/codegen/jni/react/renderer/components/RNCGeolocationSpec/*.cpp")
+set(OLD_GLOB
+  "/home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/node_modules/@react-native-community/geolocation/android/build/generated/source/codegen/jni/react/renderer/components/RNCGeolocationSpec/ComponentDescriptors.cpp"
+  "/home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/node_modules/@react-native-community/geolocation/android/build/generated/source/codegen/jni/react/renderer/components/RNCGeolocationSpec/EventEmitters.cpp"
+  "/home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/node_modules/@react-native-community/geolocation/android/build/generated/source/codegen/jni/react/renderer/components/RNCGeolocationSpec/Props.cpp"
+  "/home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/node_modules/@react-native-community/geolocation/android/build/generated/source/codegen/jni/react/renderer/components/RNCGeolocationSpec/ShadowNodes.cpp"
+  "/home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/node_modules/@react-native-community/geolocation/android/build/generated/source/codegen/jni/react/renderer/components/RNCGeolocationSpec/States.cpp"
+  )
+if(NOT "${NEW_GLOB}" STREQUAL "${OLD_GLOB}")
+  message("-- GLOB mismatch!")
+  file(TOUCH_NOCREATE "/home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/android/app/C:/tmp/driver_mobile_cxx/Debug/5oe3485u/x86/CMakeFiles/cmake.verify_globs")
+endif()
+
+# react_codegen_SRCS at /home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/node_modules/@react-native-community/netinfo/android/build/generated/source/codegen/jni/CMakeLists.txt:9 (file)
+file(GLOB NEW_GLOB LIST_DIRECTORIES true "/home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/node_modules/@react-native-community/netinfo/android/build/generated/source/codegen/jni/*.cpp")
+set(OLD_GLOB
+  "/home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/node_modules/@react-native-community/netinfo/android/build/generated/source/codegen/jni/RNCNetInfoSpec-generated.cpp"
+  )
+if(NOT "${NEW_GLOB}" STREQUAL "${OLD_GLOB}")
+  message("-- GLOB mismatch!")
+  file(TOUCH_NOCREATE "/home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/android/app/C:/tmp/driver_mobile_cxx/Debug/5oe3485u/x86/CMakeFiles/cmake.verify_globs")
+endif()
+
+# react_codegen_SRCS at /home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/node_modules/@react-native-community/netinfo/android/build/generated/source/codegen/jni/CMakeLists.txt:9 (file)
+file(GLOB NEW_GLOB LIST_DIRECTORIES true "/home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/node_modules/@react-native-community/netinfo/android/build/generated/source/codegen/jni/react/renderer/components/RNCNetInfoSpec/*.cpp")
+set(OLD_GLOB
+  "/home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/node_modules/@react-native-community/netinfo/android/build/generated/source/codegen/jni/react/renderer/components/RNCNetInfoSpec/ComponentDescriptors.cpp"
+  "/home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/node_modules/@react-native-community/netinfo/android/build/generated/source/codegen/jni/react/renderer/components/RNCNetInfoSpec/EventEmitters.cpp"
+  "/home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/node_modules/@react-native-community/netinfo/android/build/generated/source/codegen/jni/react/renderer/components/RNCNetInfoSpec/Props.cpp"
+  "/home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/node_modules/@react-native-community/netinfo/android/build/generated/source/codegen/jni/react/renderer/components/RNCNetInfoSpec/ShadowNodes.cpp"
+  "/home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/node_modules/@react-native-community/netinfo/android/build/generated/source/codegen/jni/react/renderer/components/RNCNetInfoSpec/States.cpp"
+  )
+if(NOT "${NEW_GLOB}" STREQUAL "${OLD_GLOB}")
+  message("-- GLOB mismatch!")
+  file(TOUCH_NOCREATE "/home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/android/app/C:/tmp/driver_mobile_cxx/Debug/5oe3485u/x86/CMakeFiles/cmake.verify_globs")
+endif()
+
+# react_codegen_SRCS at /home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/node_modules/react-native-image-picker/android/build/generated/source/codegen/jni/CMakeLists.txt:9 (file)
+file(GLOB NEW_GLOB LIST_DIRECTORIES true "/home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/node_modules/react-native-image-picker/android/build/generated/source/codegen/jni/*.cpp")
+set(OLD_GLOB
+  "/home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/node_modules/react-native-image-picker/android/build/generated/source/codegen/jni/RNImagePickerSpec-generated.cpp"
+  )
+if(NOT "${NEW_GLOB}" STREQUAL "${OLD_GLOB}")
+  message("-- GLOB mismatch!")
+  file(TOUCH_NOCREATE "/home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/android/app/C:/tmp/driver_mobile_cxx/Debug/5oe3485u/x86/CMakeFiles/cmake.verify_globs")
+endif()
+
+# react_codegen_SRCS at /home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/node_modules/react-native-image-picker/android/build/generated/source/codegen/jni/CMakeLists.txt:9 (file)
+file(GLOB NEW_GLOB LIST_DIRECTORIES true "/home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/node_modules/react-native-image-picker/android/build/generated/source/codegen/jni/react/renderer/components/RNImagePickerSpec/*.cpp")
+set(OLD_GLOB
+  "/home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/node_modules/react-native-image-picker/android/build/generated/source/codegen/jni/react/renderer/components/RNImagePickerSpec/ComponentDescriptors.cpp"
+  "/home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/node_modules/react-native-image-picker/android/build/generated/source/codegen/jni/react/renderer/components/RNImagePickerSpec/EventEmitters.cpp"
+  "/home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/node_modules/react-native-image-picker/android/build/generated/source/codegen/jni/react/renderer/components/RNImagePickerSpec/Props.cpp"
+  "/home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/node_modules/react-native-image-picker/android/build/generated/source/codegen/jni/react/renderer/components/RNImagePickerSpec/ShadowNodes.cpp"
+  "/home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/node_modules/react-native-image-picker/android/build/generated/source/codegen/jni/react/renderer/components/RNImagePickerSpec/States.cpp"
+  )
+if(NOT "${NEW_GLOB}" STREQUAL "${OLD_GLOB}")
+  message("-- GLOB mismatch!")
+  file(TOUCH_NOCREATE "/home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/android/app/C:/tmp/driver_mobile_cxx/Debug/5oe3485u/x86/CMakeFiles/cmake.verify_globs")
+endif()
+
 # LIB_CUSTOM_SRCS at /home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/node_modules/react-native-safe-area-context/android/src/main/jni/CMakeLists.txt:12 (file)
 file(GLOB NEW_GLOB LIST_DIRECTORIES true "/home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/node_modules/react-native-safe-area-context/android/src/main/jni/*.cpp")
 set(OLD_GLOB

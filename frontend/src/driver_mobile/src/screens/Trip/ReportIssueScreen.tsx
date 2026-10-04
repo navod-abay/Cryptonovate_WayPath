@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import {View, StyleSheet, TouchableOpacity, SafeAreaView, StatusBar, ScrollView, TextInput, KeyboardAvoidingView, Platform} from 'react-native';
+import {View, StyleSheet, TouchableOpacity, SafeAreaView, StatusBar, ScrollView, TextInput, KeyboardAvoidingView, Platform, Alert} from 'react-native';
 import CustomText from '../../components/CustomText';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RouteProp } from '@react-navigation/native';
@@ -15,6 +15,7 @@ import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import Fontisto from 'react-native-vector-icons/Fontisto';
 import AntDesign from 'react-native-vector-icons/AntDesign';
 import { launchCamera, CameraOptions } from 'react-native-image-picker';
+import { reportIncident, type IncidentIssue } from '../../services/IncidentReports';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'ReportIssue'>;
@@ -23,7 +24,7 @@ type Props = {
 
 export default function ReportIssueScreen({ navigation, route }: Props) {
   const insets = useSafeAreaInsets();
-  const { tripId, nodeId, nodeTitle, onReportSubmitted } = route.params;
+  const { tripId, nodeId, nodeTitle, outletId, onReportSubmitted } = route.params;
 
   // Form State
   const [selectedIssue, setSelectedIssue] = useState<string | null>(null);
@@ -81,17 +82,25 @@ export default function ReportIssueScreen({ navigation, route }: Props) {
 
   const actions = selectedIssue ? actionsMap[selectedIssue] : [];
 
-  const handleSendReport = () => {
+  const handleSendReport = async () => {
+    if (!selectedIssue) return;
     setIsSubmitting(true);
-    // Simulate API payload submission to backend
-    const payload = { tripId, nodeId, issue: selectedIssue, action: selectedAction, notes };
-    console.log('Sending Report:', payload);
-
-    setTimeout(() => {
-      setIsSubmitting(false);
-      onReportSubmitted(); // Updates the flag on the ActiveTripScreen
-      navigation.goBack();
-    }, 1000);
+    // Saved on the phone first, so a report made without signal is sent once the network is back.
+    // Photos are not sent yet.
+    const result = await reportIncident({
+      tripId,
+      stopId: nodeId,
+      outletId,
+      issue: selectedIssue as IncidentIssue,
+      action: selectedAction ?? undefined,
+      notes: notes.trim() || undefined,
+    }).catch(() => 'queued' as const);
+    setIsSubmitting(false);
+    onReportSubmitted(); // Updates the flag on the ActiveTripScreen
+    if (result === 'queued') {
+      Alert.alert('Report saved', 'No connection right now. It will be sent to the dispatcher automatically.');
+    }
+    navigation.goBack();
   };
 
   return (

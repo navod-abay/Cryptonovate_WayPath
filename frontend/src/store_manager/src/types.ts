@@ -157,6 +157,8 @@ export interface Delivery {
   reports: IssueReport[];
   arrivedAt?: string;
   confirmedAt?: string;
+  /** Receipt finished on this device, waiting for the driver's delivery proof to reach the server. */
+  receiptQueued?: boolean;
 }
 
 export type UpdateSource = 'driver' | 'dispatcher' | 'loader';
@@ -169,6 +171,8 @@ export interface Update {
   /** In-app route to open when the update is clicked. */
   link?: string;
   read: boolean;
+  /** Reached the server long after it happened (queued on the driver's phone while offline). */
+  syncedLate?: boolean;
 }
 
 export interface ConfirmationCode {

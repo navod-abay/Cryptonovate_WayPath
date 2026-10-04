@@ -1,5 +1,5 @@
 import { env } from '../config/env.js';
-import { colomboMinutesSinceMidnight, colomboToday, nextOperatingDay, now } from './calendar.js';
+import { businessInstant, colomboMinutesSinceMidnight, colomboToday, nextOperatingDay, now, prevOperatingDay } from './calendar.js';
 import { appError } from './errors.js';
 
 const CUTOFF_MINUTES = env.ORDER_CUTOFF_HOUR * 60;
@@ -13,10 +13,23 @@ export function nextRunDate(at: Date = now()): string {
   return nextOperatingDay(colomboToday(at));
 }
 
-/** Earliest delivery date still open for ordering at `at` (§5.3 targetDeliveryDate). */
+/**
+ * When ordering for `deliveryDate` closes: the cutoff hour on the operating day before it,
+ * which is when the cutoff sweep freezes that run's pool.
+ */
+export function cutoffInstant(deliveryDate: string): Date {
+  return businessInstant(prevOperatingDay(deliveryDate), `${String(env.ORDER_CUTOFF_HOUR).padStart(2, '0')}:00`);
+}
+
+/**
+ * Earliest delivery date still open for ordering at `at` (§5.3 targetDeliveryDate): the first run
+ * whose cutoff has not passed. On a non-operating day the next run's cutoff was on the last
+ * operating day (Monday's closes Saturday), so it is already closed.
+ */
 export function earliestDeliveryDate(at: Date = now()): string {
-  const next = nextRunDate(at);
-  return isPastCutoff(at) ? nextOperatingDay(next) : next;
+  let date = nextRunDate(at);
+  while (cutoffInstant(date) <= at) date = nextOperatingDay(date);
+  return date;
 }
 
 /** A delivery date is open while its ordering cutoff has not passed. */

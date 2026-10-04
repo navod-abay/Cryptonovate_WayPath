@@ -1,17 +1,14 @@
 # Dispatcher integration for testing
 
-Dispatcher is a standalone React app. It makes API requests and falls back to an editable JSON file. Its login defaults to a predefined test account, with an optional Auth API mode. Backend authentication/session enforcement belongs to the service team. This frontend change creates no backend services, routes or database tables.
+Dispatcher is a standalone React app. Users sign in through auth-rbac and every API call carries the access token. There is no sample-data fallback: failed or rejected requests show an error and Retry control.
 
 ## Data flow
 
 1. A screen asks `frontend/src/dispatcher/data/dispatcherRepository.ts` for data.
-2. The HTTP helper requests the configured API, without auth headers.
-3. If the API is unavailable, errors, or times out after three seconds, it fetches `/data/dispatcher.json` from the app's own static files.
-4. `data/fileData.ts` maps that JSON into the expected response. A banner identifies file data.
+2. The HTTP helper (`data/http.ts`) calls the configured API with `Authorization: Bearer <access token>`, timing out after three seconds.
+3. On a 401 it refreshes the access token once and retries.
 
-The file lives at `frontend/src/dispatcher/public/data/dispatcher.json` and is copied into production builds automatically. Edit it and reload to change demo data. `dateOffset` keeps sample orders relative to today; no database or Docker setup is needed.
-
-Request cancellation never triggers fallback. Successful empty API responses are preserved. The app polls APIs every minute, so available services can replace fallback data without changing screens. If both API and file are unavailable, the screen shows an error and Retry control.
+Successful empty API responses are preserved. The app polls APIs every minute.
 
 ## Existing APIs used
 
@@ -26,40 +23,39 @@ Paths include the gateway `/api` prefix.
 | Depot schedule and nested trips | GET `/api/planning/depots/{depot}/schedule?date=…` |
 | Schedule summaries | GET `/api/planning/schedule/summary?date=…` |
 | Deferred orders | GET `/api/planning/schedule/deferrals?date=…&depot=…` |
+| Category totals (delivered / total per chilled, dry, tech, style) | GET `/api/orders/dispatcher/overview?date=…` |
+| Ordering cutoff per delivery date | GET `/api/orders/dispatcher/windows?from=…&to=…` |
 
-Planning currently returns stub schedules; the UI labels those responses. Existing backend auth remains untouched; rejected unauthenticated requests use file data for this testing workflow.
+Planning currently returns stub schedules; the UI labels those responses.
 
 ## Optional mappings for future services
 
-The repository keeps these mappings isolated so service developers can replace the URLs and response mapping when their contracts are ready. These endpoints are **not implemented by this frontend change**; the JSON file supplies their data meanwhile.
+The repository keeps these mappings isolated so service developers can replace the URLs and response mapping when their contracts are ready. These endpoints are **not implemented yet**; until they are, those panels show an error.
 
 | Data | Current placeholder mapping |
 | --- | --- |
-| Category totals | GET `/api/orders/dispatcher/overview?date=…` |
-| Cutoff windows | GET `/api/orders/dispatcher/windows?from=…&to=…` |
 | Weekly statistics | GET `/api/analytics/dispatcher/statistics?date=…` |
 | Demand chart | GET `/api/analytics/forecast/demand?date=…` |
-| Incidents | GET `/api/execution/incidents` |
-| Incident detail | GET `/api/execution/incidents/{id}` |
 | Weekly fuel usage | GET `/api/fleet/fuel-usage/weekly?date=…&depot=…` |
 
-Frontend interfaces for these shapes live next to the repository. Sample numbers in the file demonstrate the supplied designs; they are not calculated from live database records or advertised as a trained prediction.
+## Alerts (implemented)
+
+The Alerts panel reads notification-service: GET `/api/notifications/alerts?limit=50` and GET `/api/notifications/alerts/{id}`, plus live updates from GET `/api/notifications/stream` (Server-Sent Events, see `data/alertStream.ts`). Alerts come from driver incidents, offline deliveries synced from the driver app, store receipt discrepancies and store delivery problems. One that reached the server long after it happened (queued during an outage) shows "synced … ago".
+
+Frontend interfaces for these shapes live next to the repository.
 
 ## Configuration and verification
 
 Run `npm ci` then `npm run dev` from `frontend/src/dispatcher`, and open http://127.0.0.1:5173/dispatcher.
 
-- Local Vite proxies match the existing service ports 5002–5006.
+- Local Vite proxies match the existing service ports 5001–5007.
 - `VITE_API_BASE_URL` selects a gateway origin; leave empty for local proxy.
-- `VITE_FILE_FALLBACK=false` disables fallback for API debugging. Default is true.
-- `npm test` checks API-first behavior, unauthenticated requests, file-backed screen data, cancellation and failed file loading.
-- `npm run build` validates TypeScript and builds the app and static JSON file.
+- `npm test` checks API calls, token handling and refresh, error surfacing and cancellation.
+- `npm run build` validates TypeScript and builds the app.
 
 ## Login call
 
-Default `VITE_LOGIN_MODE=demo` accepts username `dispatcher` and password `Dispatcher123!`, without requiring a backend. Incorrect credentials are rejected. An in-memory flag gates Dispatcher routes and is cleared on sign-out or a full reload. This is only a frontend testing flow, not production authentication; no passwords or tokens are stored.
-
-Set `VITE_LOGIN_MODE=api` and restart Vite to use `POST /api/auth/login`, submitting `{username,password}` with JSON content type. Success opens `/dispatcher`; errors remain visible and never become successful file fallback. The service team still needs to implement backend authentication/session enforcement.
+`POST /api/auth/login` with `{username,password}` as JSON (seeded dispatcher: `dispatcher_admin` / `Password123!`). Success opens `/dispatcher`; errors stay on the form. The access and refresh tokens are kept in memory only, sent as `Authorization: Bearer` on every API call, and the access token is refreshed once when a call returns 401. Sign-out or a full reload clears them.
 
 The login UI lives at `/login`, also opened by `/`. It has username/password fields and a show/hide-password control. The dev proxy forwards Auth to port 5001.
 
@@ -81,7 +77,7 @@ Dates are ISO dates in Asia/Colombo, inclusive at both ends. `status` is the bas
 
 The existing Fleet status PATCH only stores immediate `available`/`in_workshop`; it does not implement dated availability. The PUT above is a proposed frontend mapping for the service developer to implement or rename. No existing backend route was modified.
 
-`GET /api/fleet/vehicles` should include optional `unavailable_periods:[{from,to}]` alongside the existing status. The frontend derives today's status and an active end date. On an absent/unavailable PUT endpoint, edits are saved locally for testing and applied to file data or a legacy list response missing calendar fields. Server calendar fields take precedence when available. Explicit 400/401/403/409/422 errors are surfaced, not converted to successful local saves.
+`GET /api/fleet/vehicles` should include optional `unavailable_periods:[{from,to}]` alongside the existing status. The frontend derives today's status and an active end date. Failed or rejected saves are shown as errors.
 
 ## Capacity and remaining weekly fuel
 

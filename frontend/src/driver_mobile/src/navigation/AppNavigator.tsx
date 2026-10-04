@@ -21,7 +21,7 @@ export type RootStackParamList = {
   History: undefined;
   PastTripDetails: { tripId: string };
   ActiveTrip: { tripData: TripPayload; initialIndex?: number };
-  ReportIssue: { tripId: string; nodeId: string; nodeTitle: string; onReportSubmitted: () => void };
+  ReportIssue: { tripId: string; nodeId: string; nodeTitle: string; outletId?: string; onReportSubmitted: () => void };
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();

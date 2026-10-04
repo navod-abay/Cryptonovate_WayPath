@@ -123,6 +123,8 @@ export default function ActiveTripScreen({ navigation, route }: Props) {
       tripId: tripData.activeTripId,
       nodeId: currentNode.id,
       nodeTitle: currentNode.title,
+      // Outlet stops are titled with their outlet id (e.g. OUT001).
+      outletId: currentNode.type === 'outlet' ? currentNode.title : undefined,
       onReportSubmitted: () => {
         // Increment the report count when the modal closes successfully
         const updatedNodes = [...nodes];

@@ -67,6 +67,8 @@ const envSchema = z.object({
 
   // Fleet & Directory's API: the source of vehicle data (reefer capacity, demo seed).
   FLEET_SERVICE_URL: required('FLEET_SERVICE_URL').pipe(z.string().url('FLEET_SERVICE_URL must be a URL')),
+  // NATS JetStream: receipt discrepancies are relayed from order_alert_outbox to the ALERTS stream.
+  NATS_URL: required('NATS_URL'),
   FLEET_TIMEOUT_MS: intFromString('3000', 100, 60_000),
   FLEET_RETRY_DELAY_MS: intFromString('2000', 0, 60_000),
   // How often outlets_ref is re-copied from Fleet's outlets table.
