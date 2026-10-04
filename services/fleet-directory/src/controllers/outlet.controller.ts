@@ -43,6 +43,18 @@ export class OutletController {
       }
 
       const { outlet_ids } = validationResult.data;
+      // A store manager may only look up their own outlet.
+      const user = req.user;
+      if (user?.role === 'store_manager' && outlet_ids.some((id) => id !== user.outlet_id)) {
+        res.status(403).json({
+          success: false,
+          error: {
+            code: 'OUTLET_SCOPE_VIOLATION',
+            message: `Store manager for ${user.outlet_id ?? 'no outlet'} may only look up their own outlet`,
+          },
+        });
+        return;
+      }
       if (outlet_ids.length === 0) {
         res.status(200).json({
           success: true,
