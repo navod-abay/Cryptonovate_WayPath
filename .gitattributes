@@ -1,0 +1,52 @@
+# ============================================================
+# .gitattributes — enforce LF line endings for all text files
+# so the repo is always Linux-compatible when deployed.
+# ============================================================
+
+# Default: normalise all text files to LF in the repo.
+* text=auto eol=lf
+
+# Explicitly LF for files that MUST be LF on the target (Linux/Docker).
+*.sh           text eol=lf
+*.bash         text eol=lf
+Dockerfile     text eol=lf
+*.dockerfile   text eol=lf
+*.env          text eol=lf
+*.env.*        text eol=lf
+
+# Config / infrastructure
+*.yml          text eol=lf
+*.yaml         text eol=lf
+*.tf           text eol=lf
+*.tfvars       text eol=lf
+*.json         text eol=lf
+*.toml         text eol=lf
+
+# Source code
+*.ts           text eol=lf
+*.tsx          text eol=lf
+*.js           text eol=lf
+*.jsx          text eol=lf
+*.go           text eol=lf
+*.sql          text eol=lf
+*.md           text eol=lf
+*.html         text eol=lf
+*.css          text eol=lf
+
+# Binary files — never convert
+*.png          binary
+*.jpg          binary
+*.jpeg         binary
+*.gif          binary
+*.ico          binary
+*.svg          binary
+*.webp         binary
+*.woff         binary
+*.woff2        binary
+*.ttf          binary
+*.eot          binary
+*.otf          binary
+*.zip          binary
+*.gz           binary
+*.tar          binary
+*.lock         text eol=lf
