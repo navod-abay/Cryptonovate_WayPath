@@ -92,11 +92,12 @@ func (s *memStore) Trip(_ context.Context, id string) (*TripDetail, error) {
 	return nil, nil
 }
 
-func (s *memStore) Trips(_ context.Context, date time.Time, depot, vehicleID string) ([]TripDetail, error) {
+func (s *memStore) Trips(_ context.Context, date time.Time, f TripFilter) ([]TripDetail, error) {
 	out := []TripDetail{}
 	if _, p := s.completed(date.Format(dateLayout)); p != nil {
 		for _, t := range p.Trips {
-			if (depot == "" || t.Depot == depot) && (vehicleID == "" || t.VehicleID == vehicleID) {
+			if (f.Depot == "" || t.Depot == f.Depot) && (f.VehicleID == "" || t.VehicleID == f.VehicleID) &&
+				(f.LoaderID == "" || t.LoaderID == f.LoaderID) {
 				out = append(out, t)
 			}
 		}
@@ -199,8 +200,12 @@ func samplePlan(date string) *Plan {
 			t.WeightKg += t.Stops[i].WeightKg
 			t.VolumeM3 += t.Stops[i].VolumeM3
 		}
+		loader := testUserID // the loader of userToken
+		if veh == "VEH018" {
+			loader = "loader-2"
+		}
 		return TripDetail{Trip: t, PlanDate: date, Depot: depot, VehicleID: veh, VehicleType: typ, VehicleTemp: temp,
-			WeightCapacityKg: capKg, VolumeCapacityM3: capM3}
+			WeightCapacityKg: capKg, VolumeCapacityM3: capM3, LoaderID: loader, LoaderName: "Loader " + loader}
 	}
 	items := []StopItem{{SKU: "MILK-CRT", Description: "Milk crate", Qty: 4}}
 	return &Plan{

@@ -6,120 +6,81 @@ This document outlines all the REST API endpoints, request payloads, and respons
 
 ## 1. Authentication
 
-### 1.1 Driver Login
-Authenticates the driver and returns JWT tokens.
+### 1.1 Driver Login (implemented)
+Drivers sign in like loaders: their own 4-digit PIN at the depot the phone is set to. There is one
+driver account per vehicle; the token carries the vehicle (`vehicle_id`).
 
-- **Endpoint:** `POST /api/auth/login`
+- **Endpoint:** `POST /api/auth/pin-login`
 - **Request Body:**
   ```json
-  {
-    "username": "driver_001",
-    "password": "securepassword"
-  }
+  { "depot": "Peliyagoda", "role": "driver", "pin": "1001" }
   ```
 - **Success Response (200 OK):**
   ```json
   {
-    "accessToken": "eyJhbG...",
-    "refreshToken": "dGVzdC...",
-    "driver": {
-      "id": "drv_123",
-      "name": "John Doe",
-      "vehicleNumber": "WP-1234"
+    "success": true,
+    "access_token": "eyJhbG...",
+    "refresh_token": "eyJhbG...",
+    "user": {
+      "id": "ff22275d-…",
+      "username": "driver_veh001",
+      "role": "driver",
+      "fullName": "Chamara Weerasinghe",
+      "outletId": null,
+      "depot": "Peliyagoda",
+      "vehicleId": "VEH001"
     }
   }
   ```
+- **401:** wrong PIN for that depot. The access token lasts 15 minutes; `POST /api/auth/refresh`
+  with `{ "refresh_token": "…" }` renews it for the 16-hour shift (the app does this on a 401).
 
 ---
 
 ## 2. Trip Management
 
-### 2.1 Get Today's Trips
-Fetches all the trips assigned to the logged-in driver for the current day. The first trip in the array is usually the active/next trip.
+### 2.1 Get Today's Trips (implemented)
+The planned trips of the signed-in driver's vehicle for today (Colombo date), in trip order. The app
+maps each trip to its depot card plus one card per stop (src/api/trips.ts).
 
-- **Endpoint:** `GET /api/trips/today`
+- **Endpoint:** `GET /api/execution/driver/active-route` (optional `?date=YYYY-MM-DD`)
 - **Headers:** `Authorization: Bearer <accessToken>`
 - **Success Response (200 OK):**
   ```json
   {
-    "trips": [
-      {
-        "activeTripId": "Trip 1",
-        "isStarted": true,
-        "nodes": [
-          {
-            "id": "node_01",
-            "type": "warehouse",
-            "goodsType": "chilled",
-            "title": "Peliyagoda Warehouse",
-            "badgeText": "DOCK 3",
-            "location": "Peliyagoda",
-            "scheduledStart": "02:30 AM",
-            "scheduledEnd": "03:30 AM",
-            "status": "completed",
-            "reportCount": 0,
-            "inventory": [],
-            "logs": []
-          },
-          {
-            "id": "node_02",
-            "type": "outlet",
-            "goodsType": "chilled",
-            "title": "OUT001",
-            "badgeText": "MALL BAY DOCK",
-            "location": "Colombo",
-            "scheduledStart": "05:30 AM",
-            "scheduledEnd": "08:30 AM",
-            "estimatedArrival": "5:28 AM",
-            "status": "pending",
-            "reportCount": 0,
-            "inventory": [
-              { "id": "1", "name": "Dairy Crates", "expected": 6, "actual": 0 },
-              { "id": "2", "name": "Fresh Milk Crates", "expected": 5, "actual": 0 }
-            ],
-            "logs": []
-          }
-        ]
-      },
-      {
-        "activeTripId": "Trip 2",
-        "isStarted": false,
-        "nodes": [
-          {
-            "id": "node_03",
-            "type": "warehouse",
-            "goodsType": "dry",
-            "title": "Kandy Warehouse",
-            "badgeText": "DOCK 1",
-            "location": "Kandy",
-            "scheduledStart": "01:00 PM",
-            "scheduledEnd": "02:00 PM",
-            "status": "pending",
-            "inventory": [],
-            "logs": []
-          },
-          {
-            "id": "node_04",
-            "type": "outlet",
-            "goodsType": "tech",
-            "title": "OUT022",
-            "badgeText": "STREET",
-            "location": "Kandy",
-            "scheduledStart": "02:30 PM",
-            "scheduledEnd": "04:30 PM",
-            "estimatedArrival": "2:15 PM",
-            "status": "pending",
-            "reportCount": 0,
-            "inventory": [],
-            "logs": []
-          }
-        ]
-      }
-    ]
+    "success": true,
+    "data": {
+      "date": "2026-10-05",
+      "vehicleId": "VEH001",
+      "trips": [
+        {
+          "tripId": "20261005-VEH001-T1",
+          "tripNumber": 1,
+          "depot": "Peliyagoda",
+          "district": "Puttalam",
+          "departureTime": "03:30",
+          "returnTime": "09:46",
+          "loadingStatus": "loading",
+          "stops": [
+            {
+              "stopId": "20261005-VEH001-T1-S1",
+              "sequence": 1,
+              "orderRef": "ORD-20261005-00512",
+              "outletId": "OUT074",
+              "brand": "Fresh",
+              "temperature": "ambient",
+              "eta": "06:23",
+              "windowOpen": "05:30",
+              "windowClose": "08:00",
+              "items": [{ "sku": "RICE-5KG", "description": "Samba rice 5kg bag", "qty": 1 }]
+            }
+          ]
+        }
+      ]
+    }
   }
   ```
-
----
+- **403:** the account is not linked to a vehicle. A driver only ever gets their own vehicle's trips.
 
 ### 2.2 Start Trip
 Marks a trip as 'started' by the driver. This notifies the dispatch system that the driver is en route to the first node.

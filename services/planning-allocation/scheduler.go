@@ -161,7 +161,7 @@ func (s *Scheduler) recordHistory(ctx context.Context, date time.Time) bool {
 	if s.historyOff || s.historyDone[day] {
 		return true
 	}
-	trips, err := s.plans.Trips(ctx, date, "", "")
+	trips, err := s.plans.Trips(ctx, date, TripFilter{})
 	if err != nil {
 		log.Printf("[%s] history: load plan for %s: %v", serviceName, day, err)
 		return false

@@ -8,10 +8,11 @@ RUN npm ci
 # Shared source files resolve React/types through their frontend ancestor.
 RUN ln -s /app/src/loader/node_modules /app/node_modules
 COPY src/loader .
-ARG VITE_API_BASE_URL=/api
-ARG VITE_USE_MOCK_API=true
-ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
-ENV VITE_USE_MOCK_API=$VITE_USE_MOCK_API
+# The gateway origin (the app appends /api/<service>) and the depot this kiosk stands in.
+ARG VITE_API_GATEWAY_URL=http://localhost
+ARG VITE_LOADER_DEPOT=Peliyagoda
+ENV VITE_API_GATEWAY_URL=$VITE_API_GATEWAY_URL
+ENV VITE_LOADER_DEPOT=$VITE_LOADER_DEPOT
 RUN npm run build
 
 EXPOSE 4173

@@ -9,6 +9,8 @@ import PrimaryButton from '../../components/PrimaryButton';
 import WarehouseCard from '../../components/WarehouseCard';
 import OutletRow from '../../components/OutletRow';
 import { TripPayload } from '../../types/trip';
+import { AuthError, Driver, getDriver } from '../../api/auth';
+import { fetchTodayTrips } from '../../api/trips';
 import Fontisto from 'react-native-vector-icons/Fontisto';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 
@@ -21,6 +23,9 @@ export default function TripListScreen({ navigation }: Props) {
   const [loading, setLoading] = useState(true);
   const [trips, setTrips] = useState<TripPayload[]>([]);
   const [activeTripIndex, setActiveTripIndex] = useState(0);
+  const [driver, setDriver] = useState<Driver | null>(null);
+  const [vehicleId, setVehicleId] = useState('');
+  const [error, setError] = useState('');
 
   useEffect(() => {
     fetchCurrentTrip();
@@ -28,36 +33,46 @@ export default function TripListScreen({ navigation }: Props) {
 
   const fetchCurrentTrip = async () => {
     setLoading(true);
-    setTimeout(() => {
-      setTrips([
-        {
-          activeTripId: "Trip 1",
-          isStarted: false, 
-          nodes: [
-            { id: 'w1', type: 'warehouse', goodsType: 'chilled', sequence: 0, title: 'Peliyagoda Warehouse', badgeText: 'DOCK 3', location: 'Peliyagoda', scheduledStart: '02:30 AM', scheduledEnd: '03:30 AM', status: 'pending', logs: [], inventory: [] },
-            { id: 'o1', type: 'outlet', goodsType: 'chilled', sequence: 1, title: 'OUT001', badgeText: 'MALL BAY DOCK', location: 'Colombo', scheduledStart: '05:30 AM', scheduledEnd: '08:30 AM', estimatedArrival: '5:28 AM', status: 'pending', logs: [], inventory: [{ id: '1', name: 'Diary Crates', expected: 6, actual: 5 }, { id: '2', name: 'Fresh Milk Crates', expected: 5, actual: 5 }] },
-            { id: 'o2', type: 'outlet', goodsType: 'style', sequence: 2, title: 'OUT018', badgeText: 'STREET', location: 'Colombo', scheduledStart: '07:00 AM', scheduledEnd: '05:00 PM', estimatedArrival: '7:05 AM', status: 'pending', logs: [], inventory: [] },
-          ]
-        },
-        {
-          activeTripId: "Trip 2",
-          isStarted: false, 
-          nodes: [
-            { id: 'w2', type: 'warehouse', goodsType: 'dry', sequence: 0, title: 'Kandy Warehouse', badgeText: 'DOCK 1', location: 'Kandy', scheduledStart: '01:00 PM', scheduledEnd: '02:00 PM', status: 'pending', logs: [], inventory: [] },
-            { id: 'o3', type: 'outlet', goodsType: 'tech', sequence: 1, title: 'OUT022', badgeText: 'STREET', location: 'Kandy', scheduledStart: '02:30 PM', scheduledEnd: '04:30 PM', estimatedArrival: '2:15 PM', status: 'pending', logs: [], inventory: [] },
-          ]
-        }
-      ]);
+    setError('');
+    try {
+      setDriver(await getDriver());
+      const day = await fetchTodayTrips();
+      setTrips(day.trips);
+      setVehicleId(day.vehicleId);
+      setActiveTripIndex(0);
+    } catch (err) {
+      if (err instanceof AuthError) {
+        navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+        return;
+      }
+      setError(err instanceof Error ? err.message : 'Could not load your trips');
+    } finally {
       setLoading(false);
-    }, 1000);
+    }
   };
   
   const tripData = trips[activeTripIndex];
 
-  if (loading || !tripData) {
+  if (loading) {
     return (
       <View style={[styles.container, styles.center]}>
         <ActivityIndicator size="large" color={COLORS.primaryDark} />
+      </View>
+    );
+  }
+
+  if (!tripData) {
+    // No plan for this vehicle today, or the trips could not be loaded.
+    return (
+      <View style={[styles.container, styles.center, { padding: SPACING.lg }]}>
+        <CustomText style={styles.emptyTitle}>{error ? 'Could not load your trips' : 'No trips today'}</CustomText>
+        <CustomText style={styles.emptyText}>
+          {error || `${vehicleId || driver?.vehicleId || 'Your vehicle'} has no planned trips for today.`}
+        </CustomText>
+        <PrimaryButton title="Try again" onPress={fetchCurrentTrip} style={{ marginTop: SPACING.lg }} />
+        <TouchableOpacity onPress={() => navigation.navigate('Profile')} style={{ marginTop: SPACING.md }}>
+          <CustomText style={styles.emptyLink}>Profile</CustomText>
+        </TouchableOpacity>
       </View>
     );
   }
@@ -83,8 +98,10 @@ export default function TripListScreen({ navigation }: Props) {
       {/* HEADER SECTION */}
       <View style={[styles.header, { paddingTop: insets.top + SPACING.md }]}>
         <View>
-          <CustomText style={styles.greeting}>Hello Nimal !</CustomText>
-          <CustomText style={styles.subGreeting}>02 Trips Today</CustomText>
+          <CustomText style={styles.greeting}>Hello {driver?.fullName.split(' ')[0] ?? 'Driver'} !</CustomText>
+          <CustomText style={styles.subGreeting}>
+            {String(trips.length).padStart(2, '0')} {trips.length === 1 ? 'Trip' : 'Trips'} Today · {vehicleId}
+          </CustomText>
         </View>
         <TouchableOpacity onPress={() => navigation.navigate('History')}>
           <Fontisto name="history" style={{ color: COLORS.surface, fontSize: FONT_SIZE.xl }}/>
@@ -95,7 +112,7 @@ export default function TripListScreen({ navigation }: Props) {
       <View style={styles.tabContainer}>
         {trips.map((trip, idx) => (
           <TouchableOpacity 
-            key={idx} 
+            key={trip.tripId} 
             style={[styles.tab, activeTripIndex === idx && styles.activeTab]}
             onPress={() => setActiveTripIndex(idx)}
           >
@@ -161,5 +178,8 @@ const styles = StyleSheet.create({
   listContent: { padding: SPACING.lg },
   cardWrapper: { borderWidth: 1, borderColor: COLORS.border, borderRadius: scale(12), padding: SPACING.sm, backgroundColor: 'transparent' },
   bottomNav: { flexDirection: 'row', justifyContent: 'space-around', backgroundColor: COLORS.surface, paddingTop: SPACING.md, borderTopWidth: 1, borderTopColor: COLORS.border },
-  navItem: { flex: 1, alignItems: 'center', justifyContent: 'center' }
+  navItem: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  emptyTitle: { fontSize: FONT_SIZE.xl, fontWeight: FONT_WEIGHT.bold, color: COLORS.textMain, marginBottom: SPACING.sm },
+  emptyText: { fontSize: FONT_SIZE.sm, color: COLORS.textSecondary, textAlign: 'center' },
+  emptyLink: { fontSize: FONT_SIZE.sm, color: COLORS.primaryDark, fontWeight: FONT_WEIGHT.medium }
 });

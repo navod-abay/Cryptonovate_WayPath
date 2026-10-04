@@ -18,6 +18,8 @@ info:
 
     - `store.delivery_problem`: dispatcher
 
+    - `loader.shortfall`: dispatcher, and the store manager of the alert's outlet (units missing or damaged at loading)
+
 
     Store managers only see alerts about the outlet in their token, raised by someone else.
     A dispatcher whose token has a depot only sees that depot's alerts (and alerts without one).

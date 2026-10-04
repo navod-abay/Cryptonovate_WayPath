@@ -22,6 +22,20 @@ router.get(
 );
 
 router.post(
+  '/trips/:tripId/start',
+  authenticateJwt,
+  requireRole('loader', 'dispatcher'),
+  ExecutionController.startLoading
+);
+
+router.post(
+  '/trips/:tripId/scans',
+  authenticateJwt,
+  requireRole('loader', 'dispatcher'),
+  ExecutionController.recordScan
+);
+
+router.post(
   '/trips/:tripId/shortfall',
   authenticateJwt,
   requireRole('loader', 'dispatcher'),

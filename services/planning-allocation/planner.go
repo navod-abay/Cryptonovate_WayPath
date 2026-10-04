@@ -34,14 +34,15 @@ type PlanWriter interface {
 //  1. close the ordering window (idempotent cutoff sweep in Order Management),
 //  2. read the confirmed pool and the fleet,
 //  3. run ALNS3 with several seeds and keep the cheapest plan,
-//  4. check booklet rules 1–7, store the plan, then write allocations and deferrals back to
-//     Order Management in one all-or-nothing status batch.
+//  4. check booklet rules 1–7, share the vehicles among each depot's loaders, store the plan, then
+//     write allocations and deferrals back to Order Management in one all-or-nothing status batch.
 type ALNSPlanner struct {
-	orders OrdersAPI
-	fleet  FleetAPI
-	store  PlanWriter
-	params ALNSParams
-	seeds  int
+	orders  OrdersAPI
+	fleet   FleetAPI
+	loaders LoadersAPI // nil = trips are not assigned to loaders
+	store   PlanWriter
+	params  ALNSParams
+	seeds   int
 	// catchupSeeds replaces seeds for catch-up runs (past days and today at startup), which only
 	// need a good plan quickly; the nightly and manual runs keep the full seed count.
 	catchupSeeds int
@@ -76,6 +77,12 @@ func (p *ALNSPlanner) Plan(ctx context.Context, runID, trigger string, planDate 
 	metrics, err := p.fleet.TravelMetrics(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("read travel metrics: %w", err)
+	}
+	var loaders []Loader
+	if p.loaders != nil {
+		if loaders, err = p.loaders.Loaders(ctx); err != nil {
+			return nil, fmt.Errorf("read loaders: %w", err)
+		}
 	}
 	orders, vehs, travel, err := buildInputs(pool, vehicles, fuel, metrics)
 	if err != nil {
@@ -135,6 +142,11 @@ func (p *ALNSPlanner) Plan(ctx context.Context, runID, trigger string, planDate 
 		}
 	}
 	stats.Deferred, stats.Trips, stats.VehiclesUsed = len(plan.Deferrals), len(plan.Trips), len(used)
+	if p.loaders != nil {
+		for _, depot := range assignLoaders(plan.Trips, loaders) {
+			log.Printf("[%s] %s: %s has no loader; its trips are not assigned to anyone", serviceName, day, depot)
+		}
+	}
 
 	if err := p.store.SavePlan(ctx, runID, planDate, plan); err != nil {
 		return nil, fmt.Errorf("store plan: %w", err)

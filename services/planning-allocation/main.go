@@ -100,9 +100,10 @@ func main() {
 
 	orders := newOrderClient(env("ORDER_SERVICE_URL", "http://order-management:5002"), secret)
 	fleet := newFleetClient(env("FLEET_SERVICE_URL", "http://fleet-directory:5004"), secret)
+	auth := newAuthClient(env("AUTH_SERVICE_URL", "http://auth-rbac:5001"), secret)
 	params := DefaultALNSParams()
 	params.Iterations = envInt("PLANNING_ITERATIONS", 2000)
-	planner := &ALNSPlanner{orders: orders, fleet: fleet, store: store, params: params, seeds: envInt("PLANNING_SEEDS", 5),
+	planner := &ALNSPlanner{orders: orders, fleet: fleet, loaders: auth, store: store, params: params, seeds: envInt("PLANNING_SEEDS", 5),
 		catchupSeeds: envInt("PLANNING_CATCHUP_SEEDS", 1)}
 	if env("PLANNING_SEEDED_PLANS", "on") != "off" {
 		days, err := parseSeededPlans(seedPlansCSV)
@@ -147,7 +148,7 @@ func main() {
 	api.routes(mux)
 
 	if env("PLANNING_SCHEDULER", "on") != "off" {
-		sched := &Scheduler{orders: orders, deps: []func(context.Context) error{orders.Ready, fleet.Ready},
+		sched := &Scheduler{orders: orders, deps: []func(context.Context) error{orders.Ready, fleet.Ready, auth.Ready},
 			runs: runs, store: store, plans: store, triggerHour: envInt("PLANNING_TRIGGER_HOUR", 16),
 			catchupDays: envInt("PLANNING_CATCHUP_DAYS", 7),
 			interval:    time.Duration(envInt("PLANNING_TICK_SECONDS", 60)) * time.Second,

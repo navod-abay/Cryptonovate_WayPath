@@ -1,4 +1,3 @@
-import React from 'react';
 import { ChilledIcon, CarrotIcon, TechIcon, TruckIcon, VanIcon } from './icons';
 import { Vehicle } from './VehicleCard';
 import { BackButton } from './BackButton';
@@ -36,7 +35,7 @@ export function CommonHeader({
       <div className="bg-[#1a3a5c] text-white px-6 h-[72px] flex items-center justify-between">
         {/* Left: Back + Vehicle Info */}
         <div className="flex items-center gap-4">
-          <BackButton onClick={onBack} />
+          {onBack && <BackButton onClick={onBack} />}
           <div className="flex flex-col gap-1.5">
             <span className="text-base font-bold">{vehicle.id}</span>
             <div className="flex items-center gap-2">
