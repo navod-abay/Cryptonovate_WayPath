@@ -99,7 +99,7 @@ func main() {
 	}
 
 	orders := newOrderClient(env("ORDER_SERVICE_URL", "http://order-management:5002"), secret)
-	fleet := newFleetClient(env("FLEET_SERVICE_URL", "http://fleet-directory:5004"))
+	fleet := newFleetClient(env("FLEET_SERVICE_URL", "http://fleet-directory:5004"), secret)
 	params := DefaultALNSParams()
 	params.Iterations = envInt("PLANNING_ITERATIONS", 2000)
 	planner := &ALNSPlanner{orders: orders, fleet: fleet, store: store, params: params, seeds: envInt("PLANNING_SEEDS", 5)}
