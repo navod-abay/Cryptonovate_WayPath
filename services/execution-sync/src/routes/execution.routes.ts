@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { ExecutionController } from '../controllers/execution.controller';
-import { authenticateJwt, requireRole } from '../middleware/auth';
+import { authenticateJwt, enforceOutletScope, requireRole } from '../middleware/auth';
 
 const router = Router();
 
@@ -19,6 +19,20 @@ router.get(
   authenticateJwt,
   requireRole('loader', 'dispatcher'),
   ExecutionController.getManifest
+);
+
+router.post(
+  '/trips/:tripId/start',
+  authenticateJwt,
+  requireRole('loader', 'dispatcher'),
+  ExecutionController.startLoading
+);
+
+router.post(
+  '/trips/:tripId/scans',
+  authenticateJwt,
+  requireRole('loader', 'dispatcher'),
+  ExecutionController.recordScan
 );
 
 router.post(
@@ -79,10 +93,32 @@ router.post(
 // D. STORE MANAGER CONFIRMATION & DELIVERY PROBLEM ROUTES (Role: store_manager, dispatcher)
 // ============================================================================
 router.post(
-  '/orders/:orderRef/confirm',
+  '/orders/:orderRef/unloading',
   authenticateJwt,
   requireRole('store_manager', 'dispatcher'),
+  ExecutionController.startUnloading
+);
+
+router.get(
+  '/outlets/:outletId/unloadings',
+  authenticateJwt,
+  requireRole('store_manager', 'dispatcher'),
+  enforceOutletScope('outletId'),
+  ExecutionController.listUnloadings
+);
+
+router.post(
+  '/orders/:orderRef/confirm',
+  authenticateJwt,
+  requireRole('store_manager'),
   ExecutionController.confirmOrder
+);
+
+router.post(
+  '/orders/:orderRef/handover',
+  authenticateJwt,
+  requireRole('driver'),
+  ExecutionController.handover
 );
 
 router.post(

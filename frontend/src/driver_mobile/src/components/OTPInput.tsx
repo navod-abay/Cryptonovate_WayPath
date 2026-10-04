@@ -6,9 +6,11 @@ interface OTPInputProps {
   code: string[];
   setCode: (code: string[]) => void;
   length?: number;
+  /** Mask the digits (PINs). */
+  secure?: boolean;
 }
 
-export default function OTPInput({ code, setCode, length = 4 }: OTPInputProps) {
+export default function OTPInput({ code, setCode, length = 4, secure = false }: OTPInputProps) {
   // Explicitly type the ref to hold an array of TextInput references or nulls
   const inputs = useRef<Array<TextInput | null>>([]);
 
@@ -30,6 +32,7 @@ export default function OTPInput({ code, setCode, length = 4 }: OTPInputProps) {
           key={index}
           style={styles.box}
           keyboardType="numeric"
+          secureTextEntry={secure}
           maxLength={1}
           value={code[index]}
           onChangeText={(text) => handleChangeText(text, index)}

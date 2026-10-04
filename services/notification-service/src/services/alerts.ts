@@ -51,6 +51,8 @@ const AUDIENCE: Record<string, UserRole[]> = {
   'driver.offline_delivery': ['dispatcher'],
   'store.discrepancy': ['dispatcher'],
   'store.delivery_problem': ['dispatcher'],
+  // Units missing or damaged at loading: the depot's dispatchers and the outlet's store manager.
+  'loader.shortfall': ['dispatcher', 'store_manager'],
 };
 const audienceOf = (type: string) => AUDIENCE[type] ?? ['dispatcher'];
 const typesFor = (role: UserRole) => Object.keys(AUDIENCE).filter((t) => AUDIENCE[t].includes(role));

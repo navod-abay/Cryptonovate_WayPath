@@ -1,13 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { TickIcon, ContainerIcon } from './icons';
 import { Vehicle } from './VehicleCard';
 import { CommonHeader } from './CommonHeader';
-import { getManifest, dispatchTrip } from '../api/executionApi';
+import { dispatchTrip } from '../api/executionApi';
+import { minutesUntil } from './departure';
 import truckIllustration from './icons/TruckIllustration.png';
 
 interface FinalCheckScreenProps {
   vehicle: Vehicle;
   outlets: string[];
+  workerName: string;
   onBack: () => void;
   onRelease: (vehicleId: string) => void;
 }
@@ -21,11 +23,12 @@ const checklistItems = [
 export function FinalCheckScreen({
   vehicle,
   outlets,
+  workerName,
   onBack,
   onRelease,
 }: FinalCheckScreenProps) {
   const [activeOutlet, setActiveOutlet] = useState(outlets.length); // Container icon selected by default
-  const [departMinutes, setDepartMinutes] = useState(5);
+  const departMinutes = minutesUntil(vehicle.departureTime);
   const [checkedItems, setCheckedItems] = useState<boolean[]>([true, true, true]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
@@ -44,8 +47,7 @@ export function FinalCheckScreen({
     setIsLoading(true);
     setError('');
     try {
-      const tripId = `TRIP-${vehicle.id}`;
-      await dispatchTrip(tripId);
+      await dispatchTrip(vehicle.tripId);
       onRelease(vehicle.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to release vehicle');
@@ -68,7 +70,7 @@ export function FinalCheckScreen({
         vehicle={vehicle}
         departMinutes={departMinutes}
         currentTime={timeString}
-        workerName="Thilak S."
+        workerName={workerName}
         onBack={onBack}
       />
 

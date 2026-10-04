@@ -1,7 +1,8 @@
 import { Request, Response, NextFunction } from 'express';
 import { UserRole } from '../types/auth.types';
 
-export const requireRoles = (allowedRoles: UserRole[]) => {
+// 'system' is not a user role: it is the role of the tokens services sign for each other.
+export const requireRoles = (allowedRoles: (UserRole | 'system')[]) => {
   return (req: Request, res: Response, next: NextFunction): void => {
     if (!req.user) {
       res.status(401).json({
@@ -14,7 +15,7 @@ export const requireRoles = (allowedRoles: UserRole[]) => {
       return;
     }
 
-    if (!allowedRoles.includes(req.user.role)) {
+    if (!allowedRoles.includes(req.user.role as UserRole | 'system')) {
       res.status(403).json({
         success: false,
         error: {

@@ -16,7 +16,9 @@ CREATE TABLE IF NOT EXISTS outlets (
     parking_constraint VARCHAR(50),
     mall_window VARCHAR(50),
     window_open_time TIME,
-    window_close_time TIME
+    window_close_time TIME,
+    name VARCHAR(100),
+    address VARCHAR(200)
 );
 
 CREATE TABLE IF NOT EXISTS vehicles (
@@ -78,6 +80,13 @@ CREATE INDEX IF NOT EXISTS idx_vehicle_downtime_dates  ON vehicle_downtime(date_
 -- 2. Natively Seed Data from the mounted CSV files
 COPY outlets (outlet_id, brand, district, depot, dock_type, parking_constraint, mall_window, window_open_time, window_close_time) 
 FROM '/data/General Data/outlets.csv' DELIMITER ',' CSV HEADER NULL '';
+
+-- The dataset has no outlet names or addresses. Give every outlet a readable name built from its
+-- brand, district and id; addresses stay empty until real ones are loaded into the column.
+UPDATE outlets SET name = brand || ' ' || district || ' (' || outlet_id || ')' WHERE name IS NULL;
+
+-- Demo address for the demo outlet (OUT001, the one the seeded store manager belongs to).
+UPDATE outlets SET address = 'No. 45, Galle Road, Colombo 03' WHERE outlet_id = 'OUT001' AND address IS NULL;
 
 COPY vehicles (vehicle_id, type, temp, weight_cap_kg, volume_cap_m3, fuel_type, km_per_l, weekly_fuel_quota_l, depot, weekly_range_km) 
 FROM '/data/General Data/vehicles.csv' DELIMITER ',' CSV HEADER NULL '';

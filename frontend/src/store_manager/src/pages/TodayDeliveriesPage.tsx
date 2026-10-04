@@ -12,6 +12,7 @@ import DeliveryProblemModal from '@/components/DeliveryProblemModal';
 import { useAppStore } from '@/state/store';
 import { useNow } from '@/hooks/useNow';
 import { startUnloading } from '@/api/storeManagerApi';
+import { USE_MOCK } from '@/api/config';
 import { showError } from '@/state/toasts';
 import type { DeliveryStatus } from '@/types';
 import { formatHHmm, ORDER_TYPE_LABEL, toISODate } from '@/utils/date';
@@ -48,9 +49,11 @@ export default function TodayDeliveriesPage() {
   const badge = STATUS_BADGE[delivery.status];
   const sent = delivery.items.reduce((n, i) => n + i.sent, 0);
   const arrived = delivery.status !== 'on_the_way';
+  // The backend has no arrival signal, so with real data the store manager reports the vehicle's arrival.
+  const canStart = delivery.status === 'arrived' || (!USE_MOCK && delivery.status === 'on_the_way');
 
   const primary = () => {
-    if (delivery.status === 'arrived') {
+    if (canStart) {
       startUnloading(delivery.id)
         .then(() => navigate(`/deliveries/${delivery.id}/receive`))
         .catch((e) => showError(e, 'Could not start unloading.'));
@@ -59,7 +62,10 @@ export default function TodayDeliveriesPage() {
     }
   };
   const primaryLabel =
-    delivery.status === 'delivered' ? 'View Receipt' : delivery.status === 'unloading' ? 'Continue Unloading' : 'Start Unloading';
+    delivery.status === 'delivered' ? 'View Receipt'
+      : delivery.status === 'unloading' ? 'Continue Unloading'
+      : delivery.status === 'on_the_way' ? 'Vehicle Arrived · Start Unloading'
+      : 'Start Unloading';
 
   return (
     <main className="sm-page sm-today">
@@ -102,7 +108,7 @@ export default function TodayDeliveriesPage() {
           <PrimaryButton
             title={primaryLabel}
             onClick={primary}
-            disabled={!arrived}
+            disabled={!arrived && !canStart}
             style={{ borderRadius: 16, minHeight: 84, fontSize: 22 }}
           />
         </div>

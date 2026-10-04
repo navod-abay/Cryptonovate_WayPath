@@ -36,7 +36,8 @@ const apiPrefix = "/api/planning"
 // Who may call what. Every route needs an access token; /health and / (main.go) stay public.
 var (
 	dispatchers = []string{"dispatcher", "system"}
-	// Any driver may read any trip until drivers are linked to vehicles; loaders see their own depot.
+	// A driver sees only the trips of the vehicle in their token; a loader sees only the vehicles
+	// assigned to them (assignLoaders), which are all in their own depot.
 	tripReaders = []string{"dispatcher", "loader", "driver", "system"}
 	// Planning runs start themselves at 16:00 (scheduler.go). Only a service token can start one by
 	// hand, to recover a date the scheduler gave up on; no user role can.
@@ -156,7 +157,9 @@ func (a *API) getDeferrals(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, DeferralList{Date: date.Format(dateLayout), Depot: depot, Count: len(orders), Orders: orders})
 }
 
-// GET /trips?date=YYYY-MM-DD&depot=Peliyagoda&vehicleId=VEH003 — trips with stops and items to load.
+// GET /trips?date=YYYY-MM-DD&depot=Peliyagoda&vehicleId=VEH003&loaderId=<uuid> — trips with stops and
+// items to load. A loader always gets the trips assigned to them, whatever loaderId says, and a
+// driver the trips of their own vehicle, whatever vehicleId says.
 func (a *API) listTrips(w http.ResponseWriter, r *http.Request) {
 	date, err := a.dateParam(r)
 	if err != nil {
@@ -170,7 +173,19 @@ func (a *API) listTrips(w http.ResponseWriter, r *http.Request) {
 	if depot, ok = loaderDepot(w, r, depot); !ok {
 		return
 	}
-	trips, err := a.store.Trips(r.Context(), date, depot, strings.TrimSpace(r.URL.Query().Get("vehicleId")))
+	f := TripFilter{Depot: depot, VehicleID: strings.TrimSpace(r.URL.Query().Get("vehicleId")),
+		LoaderID: strings.TrimSpace(r.URL.Query().Get("loaderId"))}
+	if c := claimsFrom(r); c != nil && c.Role == "loader" {
+		f.LoaderID = c.Sub
+	}
+	vehicle, ok := driverVehicle(w, r)
+	if !ok {
+		return
+	}
+	if vehicle != "" {
+		f.VehicleID = vehicle // a driver always gets their own vehicle's trips
+	}
+	trips, err := a.store.Trips(r.Context(), date, f)
 	if err != nil {
 		serverError(w, "could not load trips", err)
 		return
@@ -190,6 +205,16 @@ func (a *API) getTrip(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, ok := loaderDepot(w, r, trip.Depot); !ok {
+		return
+	}
+	if c := claimsFrom(r); c != nil && c.Role == "loader" && trip.LoaderID != c.Sub {
+		writeError(w, http.StatusForbidden, "trip "+trip.TripID+" is not assigned to you")
+		return
+	}
+	if vehicle, ok := driverVehicle(w, r); !ok {
+		return
+	} else if vehicle != "" && trip.VehicleID != vehicle {
+		writeError(w, http.StatusForbidden, "trip "+trip.TripID+" is not on your vehicle")
 		return
 	}
 	writeJSON(w, http.StatusOK, trip)

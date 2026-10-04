@@ -154,6 +154,12 @@ const csvOrRepeated = <T extends z.ZodTypeAny>(item: T) =>
 const optionalQueryString = <T extends z.ZodTypeAny>(schema: T) =>
   z.preprocess((val) => (val === '' ? undefined : val), schema.optional());
 
+export const ListProductsQuerySchema = z.object({
+  categories: csvOrRepeated(z.enum(['chilled', 'dry', 'tech', 'style'])),
+  search: optionalQueryString(z.string().trim().max(80)),
+});
+export type ListProductsQuery = z.infer<typeof ListProductsQuerySchema>;
+
 export const ListOrdersQuerySchema = z
   .object({
     outlet_id: optionalQueryString(outletId),

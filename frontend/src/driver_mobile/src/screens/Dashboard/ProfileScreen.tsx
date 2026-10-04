@@ -7,6 +7,7 @@ import { RootStackParamList } from '../../navigation/AppNavigator';
 import { COLORS, SPACING, FONT_SIZE, FONT_WEIGHT, scale } from '../../utils/constants';
 import PrimaryButton from '../../components/PrimaryButton';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import { getDriver, logout } from '../../api/auth';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Profile'>;
@@ -23,17 +24,18 @@ export default function ProfileScreen({ navigation }: Props) {
 
   const fetchProfileData = async () => {
     setLoading(true);
+    const signedIn = await getDriver();
     setTimeout(() => {
-      // Mock API call to get profile data
+      // Who and which vehicle come from the session; the rest is still sample data.
       setProfileData({
         driver: {
-          name: "Nimal Perera",
-          id: "DRV-84920",
+          name: signedIn?.fullName ?? "Driver",
+          id: signedIn?.username ?? "-",
           phone: "+94 77 123 4567",
           licenseNo: "B28493021",
         },
         vehicle: {
-          number: "WP CAB 2934",
+          number: signedIn?.vehicleId ?? "-",
           type: "Freezer Truck",
           weight: "5000 kg",
           volume: "15 m³",
@@ -45,8 +47,8 @@ export default function ProfileScreen({ navigation }: Props) {
     }, 800);
   };
 
-  const handleLogout = () => {
-    // Navigate to login
+  const handleLogout = async () => {
+    await logout();
     navigation.reset({
       index: 0,
       routes: [{ name: 'Login' }],

@@ -12,6 +12,7 @@ import type {
   SimulateDeliveryInput,
   ConfirmOrderSchema,
   CreateOrderInput,
+  ListProductsQuery,
   DeferOrderSchema,
   DispatcherOverviewQuerySchema,
   ListOrdersQuery,
@@ -23,6 +24,7 @@ import type {
   SummaryQuerySchema,
 } from '../schemas/orders.schema.js';
 import { runCutoffSweep } from '../services/cutoffJob.js';
+import * as products from '../services/products.service.js';
 import { simulateDelivery as simulateDeliveryForDay } from '../services/demoHistory.service.js';
 import * as orders from '../services/orders.service.js';
 
@@ -61,6 +63,10 @@ export async function confirmOrder(req: Request, res: Response) {
 export async function cancelOrder(req: Request, res: Response) {
   const body = req.body as z.infer<typeof CancelOrderSchema>;
   ok(res, await orders.cancelOrder(actorFrom(req), orderRefParam(req), body.reason_note));
+}
+
+export async function listProducts(req: Request, res: Response) {
+  ok(res, await products.listProducts(actorFrom(req), req.query as unknown as ListProductsQuery));
 }
 
 export async function listOrders(req: Request, res: Response) {

@@ -25,9 +25,11 @@ type Claims struct {
 	Role     string  `json:"role"`
 	OutletID *string `json:"outlet_id"`
 	Depot    *string `json:"depot"`
-	Type     string  `json:"type"`
-	Exp      int64   `json:"exp"`
-	Nbf      int64   `json:"nbf,omitempty"`
+	// VehicleID is the vehicle a driver account drives (auth-rbac users.vehicle_id).
+	VehicleID *string `json:"vehicle_id,omitempty"`
+	Type      string  `json:"type"`
+	Exp       int64   `json:"exp"`
+	Nbf       int64   `json:"nbf,omitempty"`
 }
 
 var knownRoles = []string{"dispatcher", "loader", "driver", "store_manager", "system"}
@@ -109,6 +111,20 @@ func (a *API) auth(roles []string, h http.HandlerFunc) http.HandlerFunc {
 		}
 		h(w, r.WithContext(context.WithValue(r.Context(), claimsKey{}, c)))
 	}
+}
+
+// driverVehicle limits a driver to the vehicle in their token. It returns the vehicle to filter by
+// ("" for anyone else), or false after writing 403 for a driver account without a vehicle.
+func driverVehicle(w http.ResponseWriter, r *http.Request) (string, bool) {
+	c := claimsFrom(r)
+	if c == nil || c.Role != "driver" {
+		return "", true
+	}
+	if c.VehicleID == nil || *c.VehicleID == "" {
+		writeError(w, http.StatusForbidden, "driver account is not linked to a vehicle")
+		return "", false
+	}
+	return *c.VehicleID, true
 }
 
 // loaderDepot limits a loader to the depot in their token; everyone else may see every depot.

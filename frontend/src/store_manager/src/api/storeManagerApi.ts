@@ -7,12 +7,14 @@
  * functions and read the results from the store.
  */
 import { USE_MOCK } from './config';
+import { refreshProfile } from './authApi';
+import * as backend from './backend';
 import { ApiError, http } from './http';
 import * as mock from '@/mock/server';
 import { emptyData, getState, setState } from '@/state/store';
 import { loadDrafts, saveDraft, type ReceiptDraft } from '@/state/receipts';
 import type {
-  ConfirmationCode, Delivery, IssueReport, NewIssueInput, NewOrderInput, Order,
+  ConfirmationCode, Delivery, DraftOrder, IssueReport, NewIssueInput, NewOrderInput, Order,
   OrderSuggestions, OrderType, Product, TruckCapacity, Update,
 } from '@/types';
 
@@ -21,27 +23,29 @@ const categories = () => getState().outlet.categories;
 
 // ============================================================ reads
 
-/** GET /orders/products?categories=chilled,dry */
-const fetchProducts = () =>
-  USE_MOCK ? mock.getProducts(categories()) : http.get<Product[]>('/orders/products', { categories: categories().join(',') });
+// Real mode reads from the existing services through src/api/backend.ts (see BACKEND_INTEGRATION.md).
 
-/** GET /fleet/capacity?categories=chilled,dry */
-const fetchCapacity = () =>
-  USE_MOCK
-    ? mock.getTruckCapacity(categories())
-    : http.get<Partial<Record<OrderType, TruckCapacity>>>('/fleet/capacity', { categories: categories().join(',') });
+/** GET /orders/products */
+const fetchProducts = (): Promise<Product[]> => (USE_MOCK ? mock.getProducts(categories()) : backend.fetchProducts(categories()));
 
-/** GET /orders/outlets/:outletId/orders */
-const fetchOrders = () => (USE_MOCK ? mock.getOrders() : http.get<Order[]>(`/orders/outlets/${outletId()}/orders`));
+/** GET /fleet/vehicles, largest vehicle per temperature */
+const fetchCapacity = (): Promise<Partial<Record<OrderType, TruckCapacity>>> =>
+  USE_MOCK ? mock.getTruckCapacity(categories()) : backend.fetchCapacity(categories());
 
-/** GET /orders/outlets/:outletId/order-suggestions */
-const fetchSuggestions = () =>
-  USE_MOCK ? mock.getOrderSuggestions() : http.get<OrderSuggestions>(`/orders/outlets/${outletId()}/order-suggestions`);
+/** GET /orders/?outlet_id= plus /orders/:ref for lines and events */
+const fetchOrders = (): Promise<Order[]> => (USE_MOCK ? mock.getOrders() : backend.fetchOrders(getState().outlet.id));
 
-/** GET /execution/outlets/:outletId/deliveries, plus the item reports still held on this device. */
-const fetchDeliveries = async () => {
+/** Orders started but not confirmed; they pre-fill the cart */
+const fetchDrafts = (): Promise<DraftOrder[]> => (USE_MOCK ? Promise.resolve([]) : backend.fetchDrafts(getState().outlet.id));
+
+/** Derived from the outlet's previous orders */
+const fetchSuggestions = (): Promise<OrderSuggestions> =>
+  USE_MOCK ? mock.getOrderSuggestions() : backend.fetchSuggestions(getState().outlet.id);
+
+/** Derived from orders that are on the way or delivered, plus planning stops; item reports still held on this device are added. */
+const fetchDeliveries = async (): Promise<Delivery[]> => {
   if (USE_MOCK) return mock.getDeliveries();
-  const deliveries = await http.get<Delivery[]>(`/execution/outlets/${outletId()}/deliveries`);
+  const deliveries = await backend.fetchDeliveries(getState().outlet.id);
   const drafts = loadDrafts(getState().outlet.id);
   return deliveries.map((d) => withDraft(d, drafts[d.id]));
 };
@@ -52,8 +56,18 @@ function withDraft(d: Delivery, draft: ReceiptDraft | undefined): Delivery {
   return { ...d, reports: [...d.reports, ...draft.reports.filter((r) => !known.has(r.id))], receiptQueued: draft.queued };
 }
 
-/** GET /notifications/outlets/:outletId/updates  (notification-service) */
-const fetchUpdates = () => (USE_MOCK ? mock.getUpdates() : http.get<Update[]>(`/notifications/outlets/${outletId()}/updates`));
+/**
+ * The notification service's alerts (GET /notifications/outlets/:outletId/updates) together with the
+ * routine order steps derived from the order's events, newest first.
+ */
+const fetchUpdates = async (): Promise<Update[]> => {
+  if (USE_MOCK) return mock.getUpdates();
+  const [alerts, steps] = await Promise.all([
+    http.get<Update[]>(`/notifications/outlets/${outletId()}/updates`).catch(() => [] as Update[]),
+    backend.fetchLifecycleUpdates(getState().outlet.id),
+  ]);
+  return [...alerts, ...steps].sort((x, y) => y.at.localeCompare(x.at));
+};
 
 let loading: Promise<void> | null = null;
 
@@ -66,12 +80,14 @@ export function loadStoreData(): Promise<void> {
 async function doLoadStoreData() {
   setState((s) => ({ ...s, load: { status: 'loading', error: null } }));
   try {
-    const [products, capacity, orders, deliveries, updates, suggestions] = await Promise.all([
-      fetchProducts(), fetchCapacity(), fetchOrders(), fetchDeliveries(), fetchUpdates(), fetchSuggestions(),
+    // Profile and outlet first: the products and capacity below depend on the outlet's categories.
+    await refreshProfile().catch(() => undefined);
+    const [products, capacity, orders, drafts, deliveries, updates, suggestions] = await Promise.all([
+      fetchProducts(), fetchCapacity(), fetchOrders(), fetchDrafts(), fetchDeliveries(), fetchUpdates(), fetchSuggestions(),
     ]);
     setState((s) => ({
       ...s,
-      products, capacity, orders, deliveries, updates,
+      products, capacity, orders, drafts, deliveries, updates,
       lastOrderQty: suggestions.lastOrderQty,
       missingFromLast: { ...emptyData().missingFromLast, ...suggestions.missingFromLast },
       load: { status: 'ready', error: null },
@@ -89,8 +105,8 @@ export async function refreshLiveData() {
 }
 
 async function refreshOrders() {
-  const [orders, suggestions] = await Promise.all([fetchOrders(), fetchSuggestions()]);
-  setState((s) => ({ ...s, orders, lastOrderQty: suggestions.lastOrderQty, missingFromLast: { ...s.missingFromLast, ...suggestions.missingFromLast } }));
+  const [orders, drafts, suggestions] = await Promise.all([fetchOrders(), fetchDrafts(), fetchSuggestions()]);
+  setState((s) => ({ ...s, orders, drafts, lastOrderQty: suggestions.lastOrderQty, missingFromLast: { ...s.missingFromLast, ...suggestions.missingFromLast } }));
 }
 
 const upsertDelivery = (d: Delivery) =>
@@ -98,13 +114,18 @@ const upsertDelivery = (d: Delivery) =>
 
 // ============================================================ orders
 
-/** POST /orders/outlets/:outletId/orders  (creates, or replaces the order for that day + category) */
+/** POST /orders (creates, or replaces the lines of the order for that day + category), then confirm */
 export async function placeOrder(input: NewOrderInput): Promise<Order> {
   const body = { ...input, lines: input.lines.filter((l) => l.quantity + (l.carriedOver ?? 0) > 0) };
-  const order = USE_MOCK ? await mock.placeOrder(body) : await http.post<Order>(`/orders/outlets/${outletId()}/orders`, body);
+  const sameDay = <T extends { type: OrderType; deliveryDate: string }>(o: T) => o.type === body.type && o.deliveryDate === body.deliveryDate;
+  const placed = getState().orders.find(sameDay);
+  const draft = getState().drafts.find(sameDay);
+  const known = placed ? { id: placed.id, draft: false } : draft ? { id: draft.id, draft: true } : undefined;
+  const order = USE_MOCK ? await mock.placeOrder(body) : await backend.placeOrder(body, getState().outlet.id, getState().products, known);
   setState((s) => ({
     ...s,
     orders: [...s.orders.filter((o) => !(o.type === order.type && o.deliveryDate === order.deliveryDate)), order],
+    drafts: s.drafts.filter((d) => !(d.type === order.type && d.deliveryDate === order.deliveryDate)),
     missingFromLast: { ...s.missingFromLast, [order.type]: [] },
   }));
   return order;
@@ -126,9 +147,17 @@ export async function dismissMissingItem(type: OrderType, productId: string) {
 
 // ============================================================ deliveries
 
-/** POST /execution/deliveries/:deliveryId/unloading */
+/** POST /execution/orders/:orderRef/unloading (real mode) */
 export async function startUnloading(deliveryId: string) {
-  const d = USE_MOCK ? await mock.startUnloading(deliveryId) : await http.post<Delivery>(`/execution/deliveries/${deliveryId}/unloading`);
+  if (USE_MOCK) {
+    const d = await mock.startUnloading(deliveryId);
+    upsertDelivery(d);
+    return d;
+  }
+  const current = getState().deliveries.find((x) => x.id === deliveryId);
+  if (!current) throw new Error('Delivery not found.');
+  await backend.startUnloading(current.orderId);
+  const d: Delivery = { ...current, status: 'unloading' };
   upsertDelivery(d);
   return d;
 }
@@ -222,7 +251,7 @@ async function sendQueuedReceipts() {
   if (USE_MOCK) return;
   const drafts = loadDrafts(getState().outlet.id);
   const ready = getState().deliveries.filter((d) => d.status === 'delivered' && drafts[d.id]?.queued);
-  for (const d of ready) await sendReceipt(d).catch(() => undefined);
+  for (const d of ready) await sendReceiptOnce(d).catch(() => undefined);
 }
 
 /** POST /execution/deliveries/:deliveryId/problems   Report button while the vehicle is on the way. */
@@ -234,28 +263,57 @@ export async function reportDeliveryProblem(deliveryId: string, problems: string
 }
 
 /**
- * POST /execution/orders/:orderRef/confirm   (exists in execution-sync; should return the handover code)
+ * POST /execution/orders/:orderRef/confirm   (issues the handover code; real mode)
  * The store manager reads the code to the driver, who types it into the driver app.
  */
 export async function requestConfirmationCode(deliveryId: string): Promise<ConfirmationCode> {
   const delivery = getState().deliveries.find((d) => d.id === deliveryId);
-  return USE_MOCK
-    ? mock.createHandoverCode(deliveryId)
-    : http.post<ConfirmationCode>(`/execution/orders/${encodeURIComponent(delivery?.orderId ?? '')}/confirm`, { deliveryId });
+  return USE_MOCK ? mock.createHandoverCode(deliveryId) : backend.requestHandoverCode(delivery?.orderId ?? '');
+}
+
+const sending = new Map<string, Promise<void>>();
+
+/** One receipt send per delivery at a time: the code modal and the poll can both reach it. */
+function sendReceiptOnce(delivery: Delivery): Promise<void> {
+  const running = sending.get(delivery.id);
+  if (running) return running;
+  const promise = sendReceipt(delivery).finally(() => sending.delete(delivery.id));
+  sending.set(delivery.id, promise);
+  return promise;
+}
+
+/** The driver already finished the handover, so no code is needed: send the receipt now. */
+export async function confirmReceipt(deliveryId: string) {
+  const delivery = getState().deliveries.find((d) => d.id === deliveryId);
+  if (!delivery) throw new Error('Delivery not found.');
+  await sendReceiptOnce(delivery);
+  await Promise.all([refreshOrders(), refreshLiveData()]);
 }
 
 /**
- * GET /execution/deliveries/:deliveryId   Polled while the code is shown.
- * Returns true once the driver has entered the code (status "delivered").
+ * Polled while the code is shown: true once the driver has entered it (the order is delivered).
+ * Real mode reads the order's status, then sends the receipt. A network failure leaves the
+ * receipt queued for the next poll; a refusal from the server is raised so the modal can say why.
  */
 export async function checkHandover(deliveryId: string): Promise<boolean> {
-  const d = USE_MOCK ? await mock.getDelivery(deliveryId) : await http.get<Delivery>(`/execution/deliveries/${deliveryId}`);
-  upsertDelivery(d);
-  if (d.status !== 'delivered') return false;
-  if (!USE_MOCK) {
-    // Delivered: the receipt can be recorded now. If that fails it stays queued for the next poll.
+  if (USE_MOCK) {
+    const d = await mock.getDelivery(deliveryId);
+    upsertDelivery(d);
+    if (d.status !== 'delivered') return false;
+    await Promise.all([refreshOrders(), refreshLiveData()]).catch(() => undefined);
+    return true;
+  }
+  const delivery = getState().deliveries.find((x) => x.id === deliveryId);
+  if (!delivery) throw new Error('Delivery not found.');
+  const status = await backend.fetchOrderStatus(delivery.orderId);
+  if (status === 'out_for_delivery') return false;
+  if (status === 'delivered') {
     setDraft(deliveryId, { ...draftFor(deliveryId), queued: true });
-    await sendReceipt(d).catch(() => undefined);
+    try {
+      await sendReceiptOnce(delivery);
+    } catch (e) {
+      if (e instanceof ApiError && e.status >= 400 && e.status < 500) throw e;
+    }
   }
   await Promise.all([refreshOrders(), refreshLiveData()]).catch(() => undefined);
   return true;
@@ -263,12 +321,17 @@ export async function checkHandover(deliveryId: string): Promise<boolean> {
 
 // ============================================================ updates
 
-/** POST /notifications/read   { ids }  (notification-service) */
+/** Alerts are marked read on the notification service; derived order steps are remembered on this device. */
 export async function markUpdatesRead(ids: string[]) {
   if (!ids.length) return;
   setState((s) => ({ ...s, updates: s.updates.map((u) => (ids.includes(u.id) ? { ...u, read: true } : u)) }));
   if (USE_MOCK) await mock.markUpdatesRead(ids);
-  else await http.post<void>('/notifications/read', { ids });
+  else {
+    const derived = ids.filter((id) => /^ORD-\d{8}-\d+:/.test(id));
+    const alerts = ids.filter((id) => !derived.includes(id));
+    backend.rememberRead(derived);
+    if (alerts.length) await http.post<void>('/notifications/read', { ids: alerts });
+  }
 }
 
 /** Live updates pushed by notification-service; newest wins on id clashes. */

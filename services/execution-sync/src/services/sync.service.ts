@@ -1,8 +1,10 @@
 import jwt from 'jsonwebtoken';
+import { createHmac, randomUUID, timingSafeEqual } from 'crypto';
 import { pool } from '../db/pool';
-import { BulkSyncInput, DeliveryProblemInput, DriverIncidentInput, PodInput, ShortfallInput } from '../schemas/execution.schema';
+import { BulkSyncInput, DeliveryProblemInput, DriverIncidentInput, PodInput } from '../schemas/execution.schema';
 import { AccessTokenPayload } from '../middleware/auth';
 import { enqueueAlert, relayPendingAlerts } from './alertOutbox';
+import { LoadingService } from './loading.service';
 
 const PLANNING_SERVICE_URL = process.env.PLANNING_SERVICE_URL || 'http://planning-allocation:5003';
 const ORDER_SERVICE_URL = process.env.ORDER_SERVICE_URL || 'http://order-management:5002';
@@ -50,6 +52,43 @@ async function safeFetch(url: string, options: RequestInit = {}, timeoutMs = 500
   }
 }
 
+const HANDOVER_TTL_SECONDS = 120;
+const HANDOVER_MAX_ATTEMPTS = 5;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** A failure the controller answers with this status instead of 500. */
+export class HttpError extends Error {
+  constructor(public status: number, message: string, public details?: unknown) {
+    super(message);
+  }
+}
+
+/** An error that also carries a machine-readable code; answered like any HttpError, but with the code. */
+export class ExecutionError extends HttpError {
+  constructor(status: number, public code: string, message: string, details?: unknown) {
+    super(status, message, details);
+  }
+}
+
+/** Reads the order from Order Management with the caller's token, so outlet scope is enforced there. */
+async function fetchOrder(orderRef: string, authorization: string | undefined) {
+  const res = await safeFetch(`${ORDER_SERVICE_URL}/api/orders/${encodeURIComponent(orderRef)}`, {
+    headers: { Accept: 'application/json', ...(authorization ? { Authorization: authorization } : {}) },
+  });
+  if (!res) throw new ExecutionError(502, 'ORDER_SERVICE_UNAVAILABLE', 'Order Management is unreachable');
+  const body: any = await res.json().catch(() => null);
+  if (!res.ok) {
+    throw new ExecutionError(res.status, body?.error?.code || 'ORDER_LOOKUP_FAILED', body?.error?.message || `Order lookup failed (${res.status})`, body?.error?.details);
+  }
+  return body?.data;
+}
+
+/** The 6-digit handover code is derived from a per-issue random value, so it never has to be stored. */
+function handoverCode(orderRef: string, nonce: string): string {
+  const digest = createHmac('sha256', JWT_SECRET).update(`${orderRef}|${nonce}`).digest();
+  return String(digest.readUInt32BE(0) % 1_000_000).padStart(6, '0');
+}
+
 /**
  * Order Management only knows order statuses. A full or partial drop-off is a delivered order;
  * a rejected stop leaves the order where it is (the dispatcher decides what happens next).
@@ -60,12 +99,13 @@ const ORDER_STATUS_FOR: Record<string, 'delivered' | undefined> = {
   completed: 'delivered',
 };
 
-function notifyOrderStatus(orderRef: string, executionStatus: string) {
+/** The caller's own token is used, so Order Management accepts the change and the audit trail names the driver. */
+function notifyOrderStatus(orderRef: string, executionStatus: string, authorization?: string) {
   const status = ORDER_STATUS_FOR[executionStatus];
   if (!status) return;
   safeFetch(`${ORDER_SERVICE_URL}/api/orders/${encodeURIComponent(orderRef)}/status`, {
     method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...(authorization ? { Authorization: authorization } : {}) },
     body: JSON.stringify({ status }),
   }).then((res) => {
     if (res && !res.ok) console.warn(`[sync.service] Order Management refused ${orderRef} -> ${status} (${res.status})`);
@@ -104,128 +144,189 @@ function actorOf(user?: AccessTokenPayload) {
   return { actorId: user?.userId || null, actorName: user?.username || null, depot: user?.depot || null };
 }
 
+/** Planning's TripDetail (GET /api/planning/trips/{tripId}); only the fields read here. */
+export interface PlannedTrip {
+  tripId: string;
+  tripNumber: number;
+  planDate: string;
+  depot: string;
+  vehicleId: string;
+  vehicleType: string;
+  vehicleTemperature: string;
+  departureTime: string;
+  loaderId?: string;
+  loaderName?: string;
+  stops: Array<{ orderRef: string; outletId: string; items: Array<{ sku: string; description: string; qty: number }> }>;
+}
+
+/** Calls Planning with a service token; its 404/403 pass through, anything else is a 502. */
+async function planningJson<T>(path: string): Promise<T> {
+  const res = await safeFetch(`${PLANNING_SERVICE_URL}${path}`);
+  if (!res) throw new HttpError(502, 'Planning & Allocation is unreachable');
+  const body = await res.json().catch(() => null);
+  if (res.status === 404 || res.status === 403) throw new HttpError(res.status, body?.error || `Planning answered ${res.status}`);
+  if (!res.ok) throw new HttpError(502, `Planning & Allocation answered ${res.status}: ${body?.error ?? ''}`.trim());
+  return body as T;
+}
+
+/** Today in Colombo (YYYY-MM-DD): the plan date loaders work on. */
+function colomboToday(now = new Date()) {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Colombo' }).format(now);
+}
+
+/** loading_manifests.status -> the loader app's queue: no row yet is ready to load. */
+function loadingStatus(manifest?: string) {
+  if (manifest === 'completed') return 'completed';
+  if (manifest === 'in_progress') return 'loading';
+  return 'ready_to_load';
+}
+
 export class ExecutionSyncService {
   /**
-   * Get active trips for a depot — filtered by loading status
+   * Store manager starts unloading: the vehicle is at the outlet. Only valid while the order is
+   * out for delivery. The caller's token is forwarded, so Order Management enforces outlet scope.
    */
-  static async getActiveTrips(depot: string, status?: string) {
-    // Fetch vehicles from fleet-directory for this depot
-    const fleetUrl = `${FLEET_SERVICE_URL}/api/fleet/vehicles?depot=${encodeURIComponent(depot)}`;
-    const fleetResponse = await safeFetch(fleetUrl);
-
-    let vehicles: any[] = [];
-    if (fleetResponse && fleetResponse.ok) {
-      const fleetData = await fleetResponse.json();
-      vehicles = fleetData.data || [];
+  static async startUnloading(orderRef: string, authorization: string | undefined, userId?: string) {
+    const order = await fetchOrder(orderRef, authorization);
+    if (order?.status !== 'out_for_delivery') {
+      throw new ExecutionError(409, 'INVALID_STATE', `Unloading can only start while the order is out for delivery; ${orderRef} is '${order?.status}'`, { status: order?.status });
     }
 
-    // Determine how many vehicles to allocate per status
-    const totalAvailable = vehicles.filter((v: any) => v.status === 'available').length;
-    const perStatus = Math.max(1, Math.floor(totalAvailable / 3));
+    const startedBy = userId && UUID_PATTERN.test(userId) ? userId : null;
+    const inserted = await pool.query(
+      `INSERT INTO store_unloadings (order_ref, outlet_id, started_by) VALUES ($1, $2, $3)
+       ON CONFLICT (order_ref) DO NOTHING RETURNING *`,
+      [orderRef, order.outlet_id, startedBy],
+    );
+    const created = inserted.rows.length > 0;
+    const row = created ? inserted.rows[0] : (await pool.query('SELECT * FROM store_unloadings WHERE order_ref = $1', [orderRef])).rows[0];
+    return {
+      created,
+      unloading: { order_ref: row.order_ref, outlet_id: row.outlet_id, status: 'unloading', started_at: row.started_at, started_by: row.started_by },
+    };
+  }
 
-    // Map to active trips format for the loader app
-    const allTrips = vehicles
-      .filter((v: any) => v.status === 'available')
-      .map((v: any) => ({
-        tripId: `TRIP-${v.vehicle_id}`,
-        vehicleId: v.vehicle_id,
-        vehicleType: v.type,
-        temperature: v.temp === 'reefer' ? 'frozen' : 'ambient',
-        arrivalTime: '04:00 AM',
-        stops: 0,
-        status: 'ready_to_load',
-        dock: v.depot,
-      }));
+  /** Orders of an outlet whose unloading has started. */
+  static async listUnloadings(outletId: string) {
+    const result = await pool.query(
+      'SELECT order_ref, started_at FROM store_unloadings WHERE outlet_id = $1 ORDER BY started_at DESC',
+      [outletId],
+    );
+    return result.rows;
+  }
 
-    // Filter by status
-    if (status === 'ready_to_load') {
-      return allTrips.slice(0, perStatus);
-    } else if (status === 'loading') {
-      return allTrips.slice(perStatus, perStatus * 2).map((t) => ({ ...t, status: 'loading' }));
-    } else if (status === 'completed') {
-      return allTrips.slice(perStatus * 2, perStatus * 3).map((t) => ({ ...t, status: 'completed' }));
+
+  /**
+   * The loader's queue: the trips of the vehicles Planning assigned to this loader for the day (a
+   * dispatcher sees the whole depot), each with its loading status from loading_manifests.
+   */
+  static async getActiveTrips(depot: string, user: AccessTokenPayload | undefined, status?: string, date?: string) {
+    if (user?.role === 'loader' && (!user.depot || user.depot.toLowerCase() !== depot.toLowerCase())) {
+      throw new HttpError(403, `A loader for ${user.depot ?? 'no depot'} may not see ${depot}`);
     }
+    const params = new URLSearchParams({ date: date || colomboToday(), depot });
+    if (user?.role === 'loader') params.set('loaderId', user.userId || '');
+    const trips: PlannedTrip[] = await planningJson(`/api/planning/trips?${params}`);
 
-    return allTrips.slice(0, 10);
+    const states = new Map<string, string>();
+    if (trips.length > 0) {
+      const { rows } = await pool.query<{ trip_id: string; status: string }>(
+        'SELECT trip_id, status FROM loading_manifests WHERE trip_id = ANY($1)',
+        [trips.map((t) => t.tripId)]
+      );
+      for (const r of rows) states.set(r.trip_id, r.status);
+    }
+    const queue = trips
+      .map((t) => ({
+        tripId: t.tripId,
+        tripNumber: t.tripNumber,
+        vehicleId: t.vehicleId,
+        vehicleType: t.vehicleType,
+        temperature: t.vehicleTemperature === 'reefer' ? 'frozen' : 'ambient',
+        departureTime: t.departureTime,
+        stops: t.stops.length,
+        status: loadingStatus(states.get(t.tripId)),
+        dock: t.depot,
+        loaderId: t.loaderId ?? null,
+        loaderName: t.loaderName ?? null,
+      }))
+      .sort((a, b) => a.departureTime.localeCompare(b.departureTime) || a.vehicleId.localeCompare(b.vehicleId));
+    return status ? queue.filter((t) => t.status === status) : queue;
   }
 
   /**
-   * Fetches assigned trip from planning-allocation microservice and reverses stop order for LIFO loading
+   * A driver's day: the planned trips of the vehicle in their token for the date (today in Colombo
+   * by default), in trip order, each with whether the loaders have released it. A dispatcher names
+   * the vehicle.
    */
-  static async getLIFOManifest(tripId: string) {
-    const url = `${PLANNING_SERVICE_URL}/api/planning/trips/${tripId}`;
-    const response = await safeFetch(url);
-
-    let tripData: any = null;
-    if (response && response.ok) {
-      tripData = await response.json();
-    } else {
-      // Fallback mock structure if planning-allocation service is unreachable or in stub mode
-      tripData = {
-        tripId,
-        vehicleId: 'VEH-101',
-        depot: 'Colombo Central Depot',
-        stops: [
-          { stopNumber: 1, outletId: 'OUTLET-001', orderRef: 'ORD-1001', items: [{ sku: 'SKU-A', qty: 10 }] },
-          { stopNumber: 2, outletId: 'OUTLET-002', orderRef: 'ORD-1002', items: [{ sku: 'SKU-B', qty: 15 }] },
-          { stopNumber: 3, outletId: 'OUTLET-003', orderRef: 'ORD-1003', items: [{ sku: 'SKU-C', qty: 5 }] },
-        ],
-      };
+  static async getDriverTrips(user: AccessTokenPayload | undefined, date?: string, vehicleId?: string) {
+    const vehicle = user?.role === 'driver' ? user.vehicle_id : vehicleId;
+    if (!vehicle) {
+      throw new HttpError(user?.role === 'driver' ? 403 : 400,
+        user?.role === 'driver' ? 'This driver account is not linked to a vehicle' : 'vehicleId is required');
     }
-
-    // Reverse the stop list for Last-In, First-Out (LIFO) loading sequence
-    const rawStops = tripData.stops || tripData.data?.stops || [];
-    const lifoStops = [...rawStops].reverse().map((stop, index) => ({
-      loadingSequence: index + 1,
-      unloadingSequence: rawStops.length - index,
-      ...stop,
-    }));
-
+    const day = date || colomboToday();
+    const params = new URLSearchParams({ date: day, vehicleId: vehicle });
+    const trips: PlannedTrip[] = await planningJson(`/api/planning/trips?${params}`);
+    const { rows } = trips.length
+      ? await pool.query<{ trip_id: string; status: string }>('SELECT trip_id, status FROM loading_manifests WHERE trip_id = ANY($1)', [
+          trips.map((t) => t.tripId),
+        ])
+      : { rows: [] };
+    const states = new Map(rows.map((r) => [r.trip_id, r.status]));
     return {
-      tripId: tripData.tripId || tripId,
-      vehicleId: tripData.vehicleId,
-      depot: tripData.depot,
-      loadingStrategy: 'LIFO',
-      totalStops: rawStops.length,
-      stops: lifoStops,
+      date: day,
+      vehicleId: vehicle,
+      trips: trips
+        .sort((a, b) => a.tripNumber - b.tripNumber)
+        .map((t) => ({ ...t, loadingStatus: loadingStatus(states.get(t.tripId)) })),
     };
   }
 
   /**
-   * Records a loading shortfall/damage entry
+   * The planned trip, if the caller may work on it: a loader only on the vehicles assigned to them.
    */
-  static async recordShortfall(tripId: string, shortfall: ShortfallInput) {
-    const query = `
-      INSERT INTO loading_shortfalls (trip_id, order_ref, sku, missing_qty, damage_flag, notes)
-      VALUES ($1, $2, $3, $4, $5, $6)
-      RETURNING *;
-    `;
-    const values = [
-      tripId,
-      shortfall.orderRef,
-      shortfall.sku,
-      shortfall.missingQty,
-      shortfall.damageFlag,
-      shortfall.notes || null,
-    ];
-
-    const result = await pool.query(query, values);
-    return result.rows[0];
+  static async assignedTrip(tripId: string, user: AccessTokenPayload | undefined): Promise<PlannedTrip> {
+    const trip: PlannedTrip = await planningJson(`/api/planning/trips/${encodeURIComponent(tripId)}`);
+    if (user?.role === 'loader' && trip.loaderId !== user.userId) {
+      throw new HttpError(403, `Trip ${tripId} is not assigned to you`);
+    }
+    return trip;
   }
 
   /**
-   * Completes warehouse loading manifest dispatch
+   * The trip's stops reversed for Last-In, First-Out loading: the last delivery is loaded first.
    */
-  static async completeDispatch(tripId: string, loaderId?: string) {
-    const query = `
-      INSERT INTO loading_manifests (trip_id, loader_id, status, completed_at)
-      VALUES ($1, $2, 'completed', CURRENT_TIMESTAMP)
-      ON CONFLICT (trip_id) DO UPDATE 
-        SET status = 'completed', completed_at = CURRENT_TIMESTAMP, loader_id = EXCLUDED.loader_id
-      RETURNING *;
-    `;
-    const result = await pool.query(query, [tripId, loaderId || null]);
-    return result.rows[0];
+  static async getLIFOManifest(tripId: string, user: AccessTokenPayload | undefined) {
+    const trip = await ExecutionSyncService.assignedTrip(tripId, user);
+    const progress = new Map((await LoadingService.progress(trip)).map((o) => [o.orderRef, o]));
+    const rawStops = trip.stops;
+    const lifoStops = [...rawStops].reverse().map((stop, index) => {
+      const p = progress.get(stop.orderRef)!;
+      return {
+        loadingSequence: index + 1,
+        unloadingSequence: rawStops.length - index,
+        ...stop,
+        // Each line with its scanned / missing / damaged / remaining units.
+        items: p.lines,
+        complete: p.complete,
+        loaded: p.loaded,
+      };
+    });
+
+    const { rows } = await pool.query<{ status: string }>('SELECT status FROM loading_manifests WHERE trip_id = $1', [trip.tripId]);
+    return {
+      tripId: trip.tripId,
+      vehicleId: trip.vehicleId,
+      depot: trip.depot,
+      departureTime: trip.departureTime,
+      status: loadingStatus(rows[0]?.status),
+      loaderId: trip.loaderId ?? null,
+      loaderName: trip.loaderName ?? null,
+      loadingStrategy: 'LIFO',
+      totalStops: rawStops.length,
+      stops: lifoStops,
+    };
   }
 
   /**
@@ -245,7 +346,7 @@ export class ExecutionSyncService {
   /**
    * Records Proof of Delivery (POD)
    */
-  static async recordPod(stopId: string, podData: PodInput, driverId?: string) {
+  static async recordPod(stopId: string, podData: PodInput, driverId?: string, authorization?: string) {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
@@ -287,7 +388,7 @@ export class ExecutionSyncService {
 
       await client.query('COMMIT');
 
-      notifyOrderStatus(podData.orderRef, podData.status);
+      notifyOrderStatus(podData.orderRef, podData.status, authorization);
 
       return { stopExecution: stopRes.rows[0], deliveryEvent: eventRes.rows[0] };
     } catch (err) {
@@ -301,7 +402,7 @@ export class ExecutionSyncService {
   /**
    * Offline Bulk Sync Engine with Timestamp-based Conflict Resolution
    */
-  static async processBulkSync(bulkData: BulkSyncInput, user?: AccessTokenPayload) {
+  static async processBulkSync(bulkData: BulkSyncInput, user?: AccessTokenPayload, authorization?: string) {
     const driverId = user?.userId;
     const syncedEvents: any[] = [];
     const syncedTelemetryCount: number = bulkData.telemetry?.length || 0;
@@ -377,7 +478,7 @@ export class ExecutionSyncService {
         }
         if (row) {
           syncedEvents.push(row);
-          notifyOrderStatus(event.orderRef, event.status);
+          notifyOrderStatus(event.orderRef, event.status, authorization);
         }
       }
     }
@@ -402,22 +503,83 @@ export class ExecutionSyncService {
   }
 
   /**
-   * Store Manager Order Receipt Confirmation
+   * Store manager taps Confirm Receipt: issue the handover code the driver must enter.
+   * Needs unloading to have started and the order to still be out for delivery. A repeat call
+   * while the code is valid returns the same code; an expired or locked code is replaced.
    */
-  static async confirmOrder(orderRef: string, storeManagerId?: string, notes?: string) {
-    // Notify Order Management microservice
-    const res = await safeFetch(`${ORDER_SERVICE_URL}/api/orders/${orderRef}/status`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: 'confirmed', confirmedBy: storeManagerId, notes }),
-    });
+  static async confirmOrder(orderRef: string, authorization: string | undefined) {
+    const order = await fetchOrder(orderRef, authorization);
+    if (order?.status === 'delivered') {
+      throw new ExecutionError(409, 'ALREADY_DELIVERED', `The driver has already completed ${orderRef}; record the receipt directly`, { status: order.status });
+    }
+    if (order?.status !== 'out_for_delivery') {
+      throw new ExecutionError(409, 'INVALID_STATE', `A handover code can only be issued while the order is out for delivery; ${orderRef} is '${order?.status}'`, { status: order?.status });
+    }
+    const unloading = await pool.query('SELECT 1 FROM store_unloadings WHERE order_ref = $1', [orderRef]);
+    if (unloading.rows.length === 0) {
+      throw new ExecutionError(409, 'UNLOADING_NOT_STARTED', 'Start unloading before confirming receipt');
+    }
 
-    return {
-      orderRef,
-      status: 'confirmed',
-      confirmedBy: storeManagerId || null,
-      orderManagementNotified: res ? res.ok : false,
-    };
+    const existing = (await pool.query('SELECT * FROM handover_codes WHERE order_ref = $1', [orderRef])).rows[0];
+    const reusable = existing && !existing.used_at && new Date(existing.expires_at) > new Date() && existing.attempts < HANDOVER_MAX_ATTEMPTS;
+    let row = existing;
+    if (!reusable) {
+      row = (await pool.query(
+        `INSERT INTO handover_codes (order_ref, outlet_id, nonce, expires_at, attempts, used_at)
+         VALUES ($1, $2, $3, now() + ($4 || ' seconds')::interval, 0, NULL)
+         ON CONFLICT (order_ref) DO UPDATE
+           SET nonce = EXCLUDED.nonce, expires_at = EXCLUDED.expires_at, attempts = 0, used_at = NULL
+         RETURNING *`,
+        [orderRef, order.outlet_id, randomUUID(), String(HANDOVER_TTL_SECONDS)],
+      )).rows[0];
+    }
+    return { orderRef, deliveryId: orderRef, code: handoverCode(orderRef, row.nonce), expiresAt: row.expires_at };
+  }
+
+  /**
+   * Driver enters the code at the outlet. A correct code marks the order delivered using the
+   * driver's own token. Every try counts, and the code locks after too many wrong ones.
+   */
+  static async completeHandover(orderRef: string, code: string, authorization: string | undefined) {
+    const attempt = await pool.query(
+      `UPDATE handover_codes SET attempts = attempts + 1
+        WHERE order_ref = $1 AND used_at IS NULL AND expires_at > now() AND attempts < $2
+        RETURNING nonce, outlet_id, attempts`,
+      [orderRef, HANDOVER_MAX_ATTEMPTS],
+    );
+    if (attempt.rows.length === 0) {
+      const row = (await pool.query('SELECT used_at, expires_at, attempts FROM handover_codes WHERE order_ref = $1', [orderRef])).rows[0];
+      if (!row || row.used_at) throw new ExecutionError(404, 'NO_ACTIVE_CODE', 'There is no active handover code for this order');
+      if (new Date(row.expires_at) <= new Date()) throw new ExecutionError(410, 'CODE_EXPIRED', 'The handover code has expired; ask the store for a new one');
+      throw new ExecutionError(429, 'CODE_LOCKED', 'Too many wrong codes; ask the store for a new one');
+    }
+
+    const { nonce, outlet_id: outletId, attempts } = attempt.rows[0];
+    const expected = Buffer.from(handoverCode(orderRef, nonce));
+    const given = Buffer.from(code);
+    if (given.length !== expected.length || !timingSafeEqual(given, expected)) {
+      throw new ExecutionError(400, 'INVALID_CODE', 'That code is not correct', { attemptsLeft: HANDOVER_MAX_ATTEMPTS - attempts });
+    }
+
+    const res = await safeFetch(`${ORDER_SERVICE_URL}/api/orders/${encodeURIComponent(orderRef)}/status`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', ...(authorization ? { Authorization: authorization } : {}) },
+      body: JSON.stringify({ status: 'delivered' }),
+    });
+    if (!res) throw new ExecutionError(502, 'ORDER_SERVICE_UNAVAILABLE', 'Order Management is unreachable');
+    if (!res.ok) {
+      const body: any = await res.json().catch(() => null);
+      throw new ExecutionError(res.status, body?.error?.code || 'ORDER_UPDATE_FAILED', body?.error?.message || `Order update failed (${res.status})`, body?.error?.details);
+    }
+
+    await pool.query('UPDATE handover_codes SET used_at = now() WHERE order_ref = $1', [orderRef]);
+    await pool.query(
+      `INSERT INTO delivery_events (order_ref, outlet_id, status, pod_signature, offline_captured_at)
+       VALUES ($1, $2, 'delivered', 'handover-code', now())
+       ON CONFLICT (order_ref) DO UPDATE SET status = 'delivered', pod_signature = 'handover-code', synced_at = now()`,
+      [orderRef, outletId],
+    );
+    return { orderRef, status: 'delivered', deliveredAt: new Date().toISOString() };
   }
 
   /**

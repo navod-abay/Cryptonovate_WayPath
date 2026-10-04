@@ -18,7 +18,12 @@ type ScheduleStore interface {
 	DepotSchedule(ctx context.Context, date time.Time, depot string) (DepotSchedule, error)
 	DeferredOrders(ctx context.Context, date time.Time, depot string) ([]DeferredOrder, error) // depot "" = all
 	Trip(ctx context.Context, tripID string) (*TripDetail, error)                              // nil = not found
-	Trips(ctx context.Context, date time.Time, depot, vehicleID string) ([]TripDetail, error)  // "" = any
+	Trips(ctx context.Context, date time.Time, f TripFilter) ([]TripDetail, error)
+}
+
+// TripFilter narrows a date's trips; an empty field matches any.
+type TripFilter struct {
+	Depot, VehicleID, LoaderID string
 }
 
 // planningTables are created by infrastructure/postgres-init/03-planning.sql.
@@ -40,19 +45,29 @@ func (s *pgStore) AssertSchema(ctx context.Context) error {
 		}
 	}
 	if len(missing) > 0 {
-		return fmt.Errorf("missing table(s): %s. The planning migration has not been applied to this database; "+
-			"apply it with: docker compose exec -T postgres psql -U postgres -d delivery_db < infrastructure/postgres-init/03-planning.sql",
-			strings.Join(missing, ", "))
+		return fmt.Errorf("missing table(s): %s. %s", strings.Join(missing, ", "), applyPlanningSQL)
+	}
+	var hasLoader bool
+	if err := s.db.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM information_schema.columns
+		WHERE table_schema = current_schema() AND table_name = 'planned_trips' AND column_name = 'loader_id')`).Scan(&hasLoader); err != nil {
+		return err
+	}
+	if !hasLoader {
+		return fmt.Errorf("planned_trips has no loader_id column. %s", applyPlanningSQL)
 	}
 	return nil
 }
+
+const applyPlanningSQL = "The planning migration has not been applied to this database; apply it with: " +
+	"docker compose exec -T postgres psql -U postgres -d delivery_db < infrastructure/postgres-init/03-planning.sql"
 
 // ---------------------------------------------------------------- schedule reads
 
 const tripColumns = `t.trip_id, t.run_id, to_char(t.plan_date, 'YYYY-MM-DD'), t.depot, t.vehicle_id, t.vehicle_type,
 	t.vehicle_temp, t.weight_cap_kg::float8, t.volume_cap_m3::float8, t.trip_number, t.brand, t.district,
 	t.departure_time, t.return_time, t.duration_min, t.distance_km::float8, t.fuel_litres::float8,
-	t.weight_kg::float8, t.volume_m3::float8, t.weight_utilization::float8, t.volume_utilization::float8`
+	t.weight_kg::float8, t.volume_m3::float8, t.weight_utilization::float8, t.volume_utilization::float8,
+	COALESCE(t.loader_id, ''), COALESCE(t.loader_name, '')`
 
 // queryTrips loads trips of completed runs matching where (with args), plus their stops and,
 // optionally, the stop items.
@@ -68,7 +83,7 @@ func (s *pgStore) queryTrips(ctx context.Context, withItems bool, where string, 
 		err := row.Scan(&t.TripID, &t.PlanRunID, &t.PlanDate, &t.Depot, &t.VehicleID, &t.VehicleType, &t.VehicleTemp,
 			&t.WeightCapacityKg, &t.VolumeCapacityM3, &t.TripNumber, &t.Brand, &t.District, &t.DepartureTime,
 			&t.ReturnTime, &t.DurationMin, &t.DistanceKm, &t.FuelLitres, &t.WeightKg, &t.VolumeM3,
-			&t.WeightUtilization, &t.VolumeUtilization)
+			&t.WeightUtilization, &t.VolumeUtilization, &t.LoaderID, &t.LoaderName)
 		t.Stops = []Stop{}
 		return t, err
 	})
@@ -164,7 +179,8 @@ func (s *pgStore) DepotSchedule(ctx context.Context, date time.Time, depot strin
 		n := len(out.Vehicles)
 		if n == 0 || out.Vehicles[n-1].VehicleID != t.VehicleID {
 			out.Vehicles = append(out.Vehicles, VehicleSchedule{VehicleID: t.VehicleID, Type: t.VehicleType,
-				Temperature: t.VehicleTemp, WeightCapacityKg: t.WeightCapacityKg, VolumeCapacityM3: t.VolumeCapacityM3})
+				Temperature: t.VehicleTemp, WeightCapacityKg: t.WeightCapacityKg, VolumeCapacityM3: t.VolumeCapacityM3,
+				LoaderID: t.LoaderID, LoaderName: t.LoaderName})
 			n++
 		}
 		out.Vehicles[n-1].Trips = append(out.Vehicles[n-1].Trips, t.Trip)
@@ -205,9 +221,9 @@ func (s *pgStore) Trip(ctx context.Context, tripID string) (*TripDetail, error) 
 	return &trips[0], nil
 }
 
-func (s *pgStore) Trips(ctx context.Context, date time.Time, depot, vehicleID string) ([]TripDetail, error) {
-	trips, err := s.queryTrips(ctx, true, "t.plan_date = $1 AND ($2 = '' OR t.depot = $2) AND ($3 = '' OR t.vehicle_id = $3)",
-		date.Format(dateLayout), depot, vehicleID)
+func (s *pgStore) Trips(ctx context.Context, date time.Time, f TripFilter) ([]TripDetail, error) {
+	trips, err := s.queryTrips(ctx, true, `t.plan_date = $1 AND ($2 = '' OR t.depot = $2) AND ($3 = '' OR t.vehicle_id = $3)
+		AND ($4 = '' OR t.loader_id = $4)`, date.Format(dateLayout), f.Depot, f.VehicleID, f.LoaderID)
 	if trips == nil {
 		trips = []TripDetail{}
 	}
@@ -337,7 +353,8 @@ func (s *pgStore) SavePlan(ctx context.Context, runID string, planDate time.Time
 		for _, t := range plan.Trips {
 			trips = append(trips, []any{t.TripID, runID, planDate, t.Depot, t.VehicleID, t.VehicleType, t.VehicleTemp,
 				t.WeightCapacityKg, t.VolumeCapacityM3, t.TripNumber, t.Brand, t.District, t.DepartureTime, t.ReturnTime,
-				t.DurationMin, t.DistanceKm, t.FuelLitres, t.WeightKg, t.VolumeM3, t.WeightUtilization, t.VolumeUtilization})
+				t.DurationMin, t.DistanceKm, t.FuelLitres, t.WeightKg, t.VolumeM3, t.WeightUtilization, t.VolumeUtilization,
+				nullIfEmpty(t.LoaderID), nullIfEmpty(t.LoaderName)})
 			for _, st := range t.Stops {
 				stops = append(stops, []any{st.StopID, t.TripID, st.Sequence, st.OrderRef, st.OutletID, st.Brand,
 					st.Temperature, st.WeightKg, st.VolumeM3, st.ETA, st.WindowOpen, st.WindowClose, st.LateMin})
@@ -361,7 +378,8 @@ func (s *pgStore) SavePlan(ctx context.Context, runID string, planDate time.Time
 		}{
 			{"planned_trips", []string{"trip_id", "run_id", "plan_date", "depot", "vehicle_id", "vehicle_type", "vehicle_temp",
 				"weight_cap_kg", "volume_cap_m3", "trip_number", "brand", "district", "departure_time", "return_time",
-				"duration_min", "distance_km", "fuel_litres", "weight_kg", "volume_m3", "weight_utilization", "volume_utilization"}, trips},
+				"duration_min", "distance_km", "fuel_litres", "weight_kg", "volume_m3", "weight_utilization", "volume_utilization",
+				"loader_id", "loader_name"}, trips},
 			{"planned_stops", []string{"stop_id", "trip_id", "sequence", "order_ref", "outlet_id", "brand", "temperature",
 				"weight_kg", "volume_m3", "eta", "window_open", "window_close", "late_min"}, stops},
 			{"planned_stop_items", []string{"stop_id", "line_no", "sku", "description", "quantity"}, items},
@@ -378,6 +396,13 @@ func (s *pgStore) SavePlan(ctx context.Context, runID string, planDate time.Time
 		}
 		return nil
 	})
+}
+
+func nullIfEmpty(v string) any {
+	if v == "" {
+		return nil
+	}
+	return v
 }
 
 func (s *pgStore) DiscardPlan(ctx context.Context, runID string) error {
