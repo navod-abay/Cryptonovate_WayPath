@@ -1,9 +1,11 @@
-import React from 'react';
 import { ChilledIcon, CarrotIcon, TechIcon, TruckIcon, VanIcon } from './icons';
 
+/** One planned trip of a vehicle in the loader's queue. */
 export interface Vehicle {
-  id: string;
-  arrivalTime: string;
+  id: string; // vehicle id
+  tripId: string;
+  tripNumber: number;
+  departureTime: string; // HH:MM, Colombo time
   stops: number;
   temperature: 'frozen' | 'chilled' | 'ambient';
   vehicleType: 'truck' | 'van';
@@ -11,7 +13,7 @@ export interface Vehicle {
 
 interface VehicleCardProps {
   vehicle: Vehicle;
-  onStartLoading: (vehicleId: string) => void;
+  onStartLoading: (tripId: string) => void;
   actionLabel?: string;
 }
 
@@ -37,11 +39,12 @@ export function VehicleCard({ vehicle, onStartLoading, actionLabel = 'Start Load
           <TemperatureIcon type={vehicle.temperature} />
         </div>
         <span className="text-base font-bold text-[#1a3a5c]">{vehicle.id}</span>
+        {vehicle.tripNumber > 1 && <span className="text-xs text-slate-500">Trip {vehicle.tripNumber}</span>}
       </div>
 
-      {/* Arrival Time */}
+      {/* Departure Time */}
       <div className="min-w-[100px]">
-        <span className="text-base font-medium text-slate-700">{vehicle.arrivalTime}</span>
+        <span className="text-base font-medium text-slate-700">Departs {vehicle.departureTime}</span>
       </div>
 
       {/* Middle: Temperature Icon */}
@@ -56,7 +59,7 @@ export function VehicleCard({ vehicle, onStartLoading, actionLabel = 'Start Load
 
       {/* Start Loading Button */}
       <button
-        onClick={() => onStartLoading(vehicle.id)}
+        onClick={() => onStartLoading(vehicle.tripId)}
         className="px-6 py-3 bg-[#1a3a5c] text-white text-sm font-semibold rounded-xl
                    hover:bg-[#0f2a44] active:bg-[#0a1f33]
                    transition-colors cursor-pointer min-w-[140px]"

@@ -13,7 +13,9 @@ info:
     Authentication: every endpoint except /health needs an auth-rbac access token
     (`Authorization: Bearer <JWT>`, HS256, signed with JWT_ACCESS_SECRET and verified locally) or a
     service token with role `system`. Roles: dispatchers read schedules, deferrals, trips and planning
-    runs; loaders read trips of their own depot; drivers read any trip; store managers have no access.
+    runs; loaders read only the trips of the vehicles assigned to them (each plan shares a depot's
+    vehicles among its loaders); drivers read only the trips of the vehicle in their token; store
+    managers have no access.
     Starting a planning run by hand needs a service token: the 16:00 run starts itself.
 security:
   - BearerAuth: []
@@ -130,7 +132,8 @@ paths:
       summary: Planned trips with stops and items to load
       description: >-
         Trips of the date's completed plan, ordered by vehicle and trip number. Used by Execution & Sync.
-        A loader only gets their own depot's trips (another depot is 403).
+        A loader only gets the trips assigned to them, whatever loaderId says (another depot is 403);
+        a driver only gets their own vehicle's trips, whatever vehicleId says.
       parameters:
         - $ref: '#/components/parameters/Date'
         - name: depot
@@ -145,6 +148,13 @@ paths:
           schema:
             type: string
             example: VEH003
+        - name: loaderId
+          in: query
+          required: false
+          description: Only the trips assigned to this loader (auth-rbac user id)
+          schema:
+            type: string
+            format: uuid
       responses:
         '401':
           $ref: '#/components/responses/Unauthorized'
@@ -324,7 +334,7 @@ components:
           example:
             error: access token has expired
     Forbidden:
-      description: The token's role may not use this endpoint, or a loader asked for another depot
+      description: The token's role may not use this endpoint, or a loader asked for another depot or for a trip assigned to someone else
       content:
         application/json:
           schema:
@@ -496,6 +506,12 @@ components:
               type: number
             planRunId:
               type: string
+            loaderId:
+              type: string
+              format: uuid
+              description: The loader who loads this vehicle (all its trips); absent when the depot had no loader at planning time
+            loaderName:
+              type: string
     VehicleSchedule:
       type: object
       properties:
@@ -511,6 +527,12 @@ components:
           type: number
         volumeCapacityM3:
           type: number
+        loaderId:
+          type: string
+          format: uuid
+          description: The loader who loads this vehicle; absent when the depot had no loader at planning time
+        loaderName:
+          type: string
         trips:
           type: array
           items:
@@ -632,10 +654,10 @@ components:
           type: integer
         iterations:
           type: integer
-          description: ALNS iterations per seed
+          description: ALNS iterations per seed (0 when a catch-up run replayed a seeded plan)
         seeds:
           type: integer
-          description: ALNS runs with different seeds, best kept (PLANNING_SEEDS, default 5; PLANNING_CATCHUP_SEEDS, default 1, for catch-up runs)
+          description: ALNS runs with different seeds, best kept (PLANNING_SEEDS, default 5; PLANNING_CATCHUP_SEEDS, default 1, for catch-up runs; 0 when a catch-up run replayed a seeded plan)
         bestSeed:
           type: integer
         objective:

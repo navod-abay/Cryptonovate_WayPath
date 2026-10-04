@@ -27,10 +27,19 @@ export interface TripNode {
   inventory: InventoryItem[];
   reportCount?: number;
   estimatedArrival?: string;
+  /** Outlet stops: the planned stop and the order delivered there. */
+  stopId?: string;
+  orderRef?: string;
 }
 
 export interface TripPayload {
-  activeTripId: string;
+  /** Planning's trip id, e.g. 20261005-VEH001-T1. */
+  tripId: string;
+  vehicleId: string;
+  planDate: string;
+  /** ready_to_load | loading | completed: whether the loaders have released the truck. */
+  loadingStatus: string;
+  activeTripId: string; // the tab label, e.g. "Trip 1"
   isStarted: boolean; // Tracks if "Start Trip" was pressed
   nodes: TripNode[];
 }

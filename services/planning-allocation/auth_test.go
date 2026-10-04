@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -23,12 +24,23 @@ func signToken(t *testing.T, secret string, header, claims map[string]any) strin
 
 var hs256Header = map[string]any{"alg": "HS256", "typ": "JWT"}
 
+// testUserID is the sub of userToken's tokens; samplePlan assigns some vehicles to it as a loader.
+const testUserID = "9595b3cf-eec1-4559-9fcc-889ef5a9280c"
+
 func userClaims(role string, depot any) map[string]any {
 	return map[string]any{
-		"sub": "9595b3cf-eec1-4559-9fcc-889ef5a9280c", "username": role + "_user", "role": role,
-		"outlet_id": nil, "depot": depot, "type": "access",
+		"sub": testUserID, "username": role + "_user", "role": role,
+		"outlet_id": nil, "depot": depot, "vehicle_id": testDriverVehicle(role), "type": "access",
 		"iat": time.Now().Unix(), "exp": time.Now().Add(15 * time.Minute).Unix(),
 	}
+}
+
+// testDriverVehicle is the vehicle in a driver's test token: VEH003, which samplePlan plans.
+func testDriverVehicle(role string) any {
+	if role == "driver" {
+		return "VEH003"
+	}
+	return nil
 }
 
 func userToken(t *testing.T, role string, depot any) string {
@@ -180,8 +192,62 @@ func TestLoadersOnlySeeTheirOwnDepot(t *testing.T) {
 	if rec := call(h, "GET", "/trips?date=2026-10-05", userToken(t, "loader", nil)); rec.Code != http.StatusForbidden {
 		t.Errorf("loader without a depot: status %d, want 403", rec.Code)
 	}
-	// Drivers are not scoped yet: any trip.
-	if rec := call(h, "GET", "/trips/20261005-VEH003-T1", userToken(t, "driver", "Kandy")); rec.Code != http.StatusOK {
-		t.Errorf("driver: status %d, want 200", rec.Code)
+}
+
+func TestDriversOnlySeeTheirOwnVehicle(t *testing.T) {
+	store := newMemStore()
+	store.seed("2026-10-05", samplePlan("2026-10-05"))
+	h := newTestServer(store, noopPlanner)
+	driver := userToken(t, "driver", "Peliyagoda") // drives VEH003
+
+	for _, path := range []string{"/trips?date=2026-10-05", "/trips?date=2026-10-05&vehicleId=VEH018"} {
+		rec := call(h, "GET", path, driver)
+		var list []map[string]any
+		_ = json.Unmarshal(rec.Body.Bytes(), &list)
+		if rec.Code != http.StatusOK || len(list) != 1 || list[0]["vehicleId"] != "VEH003" {
+			t.Errorf("driver GET %s: status %d, trips %v; want only VEH003's", path, rec.Code, list)
+		}
+	}
+	if rec := call(h, "GET", "/trips/20261005-VEH003-T1", driver); rec.Code != http.StatusOK {
+		t.Errorf("driver opening their own trip: status %d, want 200", rec.Code)
+	}
+	if rec := call(h, "GET", "/trips/20261005-VEH018-T1", driver); rec.Code != http.StatusForbidden {
+		t.Errorf("driver opening another vehicle's trip: status %d, want 403", rec.Code)
+	}
+	claims := userClaims("driver", "Peliyagoda")
+	claims["vehicle_id"] = nil
+	if rec := call(h, "GET", "/trips?date=2026-10-05", signToken(t, testSecret, hs256Header, claims)); rec.Code != http.StatusForbidden {
+		t.Errorf("driver without a vehicle: status %d, want 403", rec.Code)
+	}
+}
+
+func TestLoadersOnlySeeTheirAssignedVehicles(t *testing.T) {
+	store := newMemStore()
+	store.seed("2026-10-05", samplePlan("2026-10-05"))
+	h := newTestServer(store, noopPlanner)
+	loader := userToken(t, "loader", "Peliyagoda")
+
+	tripIDs := func(rec *httptest.ResponseRecorder) []any {
+		var list []map[string]any
+		_ = json.Unmarshal(rec.Body.Bytes(), &list)
+		var ids []any
+		for _, trip := range list {
+			ids = append(ids, trip["tripId"])
+		}
+		return ids
+	}
+	// VEH003 is assigned to this loader, VEH018 to another Peliyagoda loader.
+	for _, path := range []string{"/trips?date=2026-10-05", "/trips?date=2026-10-05&loaderId=loader-2"} {
+		rec := call(h, "GET", path, loader)
+		if ids := tripIDs(rec); rec.Code != http.StatusOK || fmt.Sprint(ids) != "[20261005-VEH003-T1]" {
+			t.Errorf("loader GET %s: status %d, trips %v; want only their own VEH003", path, rec.Code, ids)
+		}
+	}
+	if rec := call(h, "GET", "/trips/20261005-VEH018-T1", loader); rec.Code != http.StatusForbidden {
+		t.Errorf("loader opening another loader's trip: status %d, want 403", rec.Code)
+	}
+	rec := call(h, "GET", "/trips?date=2026-10-05&loaderId=loader-2", userToken(t, "dispatcher", nil))
+	if ids := tripIDs(rec); rec.Code != http.StatusOK || fmt.Sprint(ids) != "[20261005-VEH018-T1]" {
+		t.Errorf("dispatcher filtering by loader: status %d, trips %v; want VEH018", rec.Code, ids)
 	}
 }

@@ -23,8 +23,12 @@ CREATE TABLE IF NOT EXISTS users (
   role user_role_enum NOT NULL,
   outlet_id VARCHAR(20) NULL,
   depot VARCHAR(50) NULL,
+  vehicle_id VARCHAR(20) NULL,  -- drivers: the vehicle they drive
+  pin_lookup VARCHAR(64) NULL,  -- keyed hash of a loader's / driver's 4-digit PIN (POST /pin-login)
   is_active BOOLEAN DEFAULT true,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
+-- A PIN identifies one person among the same role at a depot.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_users_pin ON users (role, lower(depot), pin_lookup) WHERE pin_lookup IS NOT NULL;

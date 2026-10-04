@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -204,5 +205,77 @@ func TestCatchUpRunsUseFewerSeeds(t *testing.T) {
 		if stats.Seeds != want {
 			t.Errorf("%s run used %d seed(s), want %d", trigger, stats.Seeds, want)
 		}
+	}
+}
+
+// seededCSV writes a stored plan the way scripts/export-seed-plans.sh does.
+func seededCSV(day string, plan *Plan) string {
+	var b strings.Builder
+	b.WriteString("day,vehicle_id,trip_number,sequence,outlet_id,temperature,weight_kg,volume_m3\n")
+	for _, t := range plan.Trips {
+		for _, s := range t.Stops {
+			fmt.Fprintf(&b, "%s,%s,%d,%d,%s,%s,%g,%g\n", day, t.VehicleID, t.TripNumber, s.Sequence, s.OutletID, s.Temperature, s.WeightKg, s.VolumeM3)
+		}
+	}
+	for _, d := range plan.Deferrals {
+		fmt.Fprintf(&b, "%s,,,,%s,%s,%g,%g\n", day, d.OutletID, d.Temperature, d.WeightKg, d.VolumeM3)
+	}
+	return b.String()
+}
+
+func TestCatchUpReplaysSeededPlan(t *testing.T) {
+	orders, fleet := task2bAPIs(t)
+	params := DefaultALNSParams()
+	params.Iterations = 50
+	day := time.Date(2026, 10, 5, 0, 0, 0, 0, sriLanka)
+	solved := newMemStore()
+	p := &ALNSPlanner{orders: orders, fleet: fleet, store: solved, params: params, seeds: 1}
+	if _, err := p.Plan(context.Background(), "run_solved", "manual", day); err != nil {
+		t.Fatal(err)
+	}
+	want := solved.plans["run_solved"]
+	seeded, err := parseSeededPlans(seededCSV("7", want))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	replay := func(trigger string) (*RunStats, *Plan) {
+		store := newMemStore()
+		p := &ALNSPlanner{orders: orders, fleet: fleet, store: store, params: params, seeds: 1, catchupSeeds: 1, seeded: seeded}
+		stats, err := p.Plan(context.Background(), "run_r", trigger, day)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return stats, store.plans["run_r"]
+	}
+	stats, got := replay("catchup")
+	if stats.Seeds != 0 {
+		t.Errorf("catch-up solved (%d seeds) instead of replaying the seeded plan", stats.Seeds)
+	}
+	for n := range got.Trips {
+		got.Trips[n].PlanRunID = want.Trips[n].PlanRunID
+	}
+	if fmt.Sprint(got.Trips) != fmt.Sprint(want.Trips) || fmt.Sprint(got.Deferrals) != fmt.Sprint(want.Deferrals) {
+		t.Error("replayed plan differs from the stored one")
+	}
+	if stats, _ := replay("cron"); stats.Seeds != 1 {
+		t.Errorf("a nightly run must solve; used %d seeds", stats.Seeds)
+	}
+
+	// A pool the stored days do not hold, or a stored vehicle that is not available, is solved.
+	orders.pool = orders.pool[1:]
+	if stats, _ := replay("catchup"); stats.Seeds != 1 {
+		t.Errorf("an unmatched pool must be solved; used %d seeds", stats.Seeds)
+	}
+	orders, fleet = task2bAPIs(t)
+	gone := want.Trips[0].VehicleID
+	for n, v := range fleet.vehicles {
+		if v.VehicleID == gone {
+			fleet.vehicles = append(fleet.vehicles[:n], fleet.vehicles[n+1:]...)
+			break
+		}
+	}
+	if stats, _ := replay("catchup"); stats.Seeds != 1 {
+		t.Errorf("a plan using unavailable %s must be solved again; used %d seeds", gone, stats.Seeds)
 	}
 }

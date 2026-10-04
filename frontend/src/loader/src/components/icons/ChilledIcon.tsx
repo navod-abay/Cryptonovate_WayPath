@@ -1,4 +1,3 @@
-import React from 'react';
 
 export function ChilledIcon({ size = 32 }: { size?: number }) {
   return (

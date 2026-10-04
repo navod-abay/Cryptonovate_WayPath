@@ -1,8 +1,9 @@
 import jwt from 'jsonwebtoken';
 import { pool } from '../db/pool';
-import { BulkSyncInput, DeliveryProblemInput, DriverIncidentInput, PodInput, ShortfallInput } from '../schemas/execution.schema';
+import { BulkSyncInput, DeliveryProblemInput, DriverIncidentInput, PodInput } from '../schemas/execution.schema';
 import { AccessTokenPayload } from '../middleware/auth';
 import { enqueueAlert, relayPendingAlerts } from './alertOutbox';
+import { LoadingService } from './loading.service';
 
 const PLANNING_SERVICE_URL = process.env.PLANNING_SERVICE_URL || 'http://planning-allocation:5003';
 const ORDER_SERVICE_URL = process.env.ORDER_SERVICE_URL || 'http://order-management:5002';
@@ -104,128 +105,162 @@ function actorOf(user?: AccessTokenPayload) {
   return { actorId: user?.userId || null, actorName: user?.username || null, depot: user?.depot || null };
 }
 
+/** A failure the controller answers with this status instead of 500. */
+export class HttpError extends Error {
+  constructor(public status: number, message: string, public details?: unknown) {
+    super(message);
+  }
+}
+
+/** Planning's TripDetail (GET /api/planning/trips/{tripId}); only the fields read here. */
+export interface PlannedTrip {
+  tripId: string;
+  tripNumber: number;
+  planDate: string;
+  depot: string;
+  vehicleId: string;
+  vehicleType: string;
+  vehicleTemperature: string;
+  departureTime: string;
+  loaderId?: string;
+  loaderName?: string;
+  stops: Array<{ orderRef: string; outletId: string; items: Array<{ sku: string; description: string; qty: number }> }>;
+}
+
+/** Calls Planning with a service token; its 404/403 pass through, anything else is a 502. */
+async function planningJson<T>(path: string): Promise<T> {
+  const res = await safeFetch(`${PLANNING_SERVICE_URL}${path}`);
+  if (!res) throw new HttpError(502, 'Planning & Allocation is unreachable');
+  const body = await res.json().catch(() => null);
+  if (res.status === 404 || res.status === 403) throw new HttpError(res.status, body?.error || `Planning answered ${res.status}`);
+  if (!res.ok) throw new HttpError(502, `Planning & Allocation answered ${res.status}: ${body?.error ?? ''}`.trim());
+  return body as T;
+}
+
+/** Today in Colombo (YYYY-MM-DD): the plan date loaders work on. */
+function colomboToday(now = new Date()) {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Colombo' }).format(now);
+}
+
+/** loading_manifests.status -> the loader app's queue: no row yet is ready to load. */
+function loadingStatus(manifest?: string) {
+  if (manifest === 'completed') return 'completed';
+  if (manifest === 'in_progress') return 'loading';
+  return 'ready_to_load';
+}
+
 export class ExecutionSyncService {
   /**
-   * Get active trips for a depot — filtered by loading status
+   * The loader's queue: the trips of the vehicles Planning assigned to this loader for the day (a
+   * dispatcher sees the whole depot), each with its loading status from loading_manifests.
    */
-  static async getActiveTrips(depot: string, status?: string) {
-    // Fetch vehicles from fleet-directory for this depot
-    const fleetUrl = `${FLEET_SERVICE_URL}/api/fleet/vehicles?depot=${encodeURIComponent(depot)}`;
-    const fleetResponse = await safeFetch(fleetUrl);
-
-    let vehicles: any[] = [];
-    if (fleetResponse && fleetResponse.ok) {
-      const fleetData = await fleetResponse.json();
-      vehicles = fleetData.data || [];
+  static async getActiveTrips(depot: string, user: AccessTokenPayload | undefined, status?: string, date?: string) {
+    if (user?.role === 'loader' && (!user.depot || user.depot.toLowerCase() !== depot.toLowerCase())) {
+      throw new HttpError(403, `A loader for ${user.depot ?? 'no depot'} may not see ${depot}`);
     }
+    const params = new URLSearchParams({ date: date || colomboToday(), depot });
+    if (user?.role === 'loader') params.set('loaderId', user.userId || '');
+    const trips: PlannedTrip[] = await planningJson(`/api/planning/trips?${params}`);
 
-    // Determine how many vehicles to allocate per status
-    const totalAvailable = vehicles.filter((v: any) => v.status === 'available').length;
-    const perStatus = Math.max(1, Math.floor(totalAvailable / 3));
-
-    // Map to active trips format for the loader app
-    const allTrips = vehicles
-      .filter((v: any) => v.status === 'available')
-      .map((v: any) => ({
-        tripId: `TRIP-${v.vehicle_id}`,
-        vehicleId: v.vehicle_id,
-        vehicleType: v.type,
-        temperature: v.temp === 'reefer' ? 'frozen' : 'ambient',
-        arrivalTime: '04:00 AM',
-        stops: 0,
-        status: 'ready_to_load',
-        dock: v.depot,
-      }));
-
-    // Filter by status
-    if (status === 'ready_to_load') {
-      return allTrips.slice(0, perStatus);
-    } else if (status === 'loading') {
-      return allTrips.slice(perStatus, perStatus * 2).map((t) => ({ ...t, status: 'loading' }));
-    } else if (status === 'completed') {
-      return allTrips.slice(perStatus * 2, perStatus * 3).map((t) => ({ ...t, status: 'completed' }));
+    const states = new Map<string, string>();
+    if (trips.length > 0) {
+      const { rows } = await pool.query<{ trip_id: string; status: string }>(
+        'SELECT trip_id, status FROM loading_manifests WHERE trip_id = ANY($1)',
+        [trips.map((t) => t.tripId)]
+      );
+      for (const r of rows) states.set(r.trip_id, r.status);
     }
-
-    return allTrips.slice(0, 10);
+    const queue = trips
+      .map((t) => ({
+        tripId: t.tripId,
+        tripNumber: t.tripNumber,
+        vehicleId: t.vehicleId,
+        vehicleType: t.vehicleType,
+        temperature: t.vehicleTemperature === 'reefer' ? 'frozen' : 'ambient',
+        departureTime: t.departureTime,
+        stops: t.stops.length,
+        status: loadingStatus(states.get(t.tripId)),
+        dock: t.depot,
+        loaderId: t.loaderId ?? null,
+        loaderName: t.loaderName ?? null,
+      }))
+      .sort((a, b) => a.departureTime.localeCompare(b.departureTime) || a.vehicleId.localeCompare(b.vehicleId));
+    return status ? queue.filter((t) => t.status === status) : queue;
   }
 
   /**
-   * Fetches assigned trip from planning-allocation microservice and reverses stop order for LIFO loading
+   * A driver's day: the planned trips of the vehicle in their token for the date (today in Colombo
+   * by default), in trip order, each with whether the loaders have released it. A dispatcher names
+   * the vehicle.
    */
-  static async getLIFOManifest(tripId: string) {
-    const url = `${PLANNING_SERVICE_URL}/api/planning/trips/${tripId}`;
-    const response = await safeFetch(url);
-
-    let tripData: any = null;
-    if (response && response.ok) {
-      tripData = await response.json();
-    } else {
-      // Fallback mock structure if planning-allocation service is unreachable or in stub mode
-      tripData = {
-        tripId,
-        vehicleId: 'VEH-101',
-        depot: 'Colombo Central Depot',
-        stops: [
-          { stopNumber: 1, outletId: 'OUTLET-001', orderRef: 'ORD-1001', items: [{ sku: 'SKU-A', qty: 10 }] },
-          { stopNumber: 2, outletId: 'OUTLET-002', orderRef: 'ORD-1002', items: [{ sku: 'SKU-B', qty: 15 }] },
-          { stopNumber: 3, outletId: 'OUTLET-003', orderRef: 'ORD-1003', items: [{ sku: 'SKU-C', qty: 5 }] },
-        ],
-      };
+  static async getDriverTrips(user: AccessTokenPayload | undefined, date?: string, vehicleId?: string) {
+    const vehicle = user?.role === 'driver' ? user.vehicle_id : vehicleId;
+    if (!vehicle) {
+      throw new HttpError(user?.role === 'driver' ? 403 : 400,
+        user?.role === 'driver' ? 'This driver account is not linked to a vehicle' : 'vehicleId is required');
     }
-
-    // Reverse the stop list for Last-In, First-Out (LIFO) loading sequence
-    const rawStops = tripData.stops || tripData.data?.stops || [];
-    const lifoStops = [...rawStops].reverse().map((stop, index) => ({
-      loadingSequence: index + 1,
-      unloadingSequence: rawStops.length - index,
-      ...stop,
-    }));
-
+    const day = date || colomboToday();
+    const params = new URLSearchParams({ date: day, vehicleId: vehicle });
+    const trips: PlannedTrip[] = await planningJson(`/api/planning/trips?${params}`);
+    const { rows } = trips.length
+      ? await pool.query<{ trip_id: string; status: string }>('SELECT trip_id, status FROM loading_manifests WHERE trip_id = ANY($1)', [
+          trips.map((t) => t.tripId),
+        ])
+      : { rows: [] };
+    const states = new Map(rows.map((r) => [r.trip_id, r.status]));
     return {
-      tripId: tripData.tripId || tripId,
-      vehicleId: tripData.vehicleId,
-      depot: tripData.depot,
-      loadingStrategy: 'LIFO',
-      totalStops: rawStops.length,
-      stops: lifoStops,
+      date: day,
+      vehicleId: vehicle,
+      trips: trips
+        .sort((a, b) => a.tripNumber - b.tripNumber)
+        .map((t) => ({ ...t, loadingStatus: loadingStatus(states.get(t.tripId)) })),
     };
   }
 
   /**
-   * Records a loading shortfall/damage entry
+   * The planned trip, if the caller may work on it: a loader only on the vehicles assigned to them.
    */
-  static async recordShortfall(tripId: string, shortfall: ShortfallInput) {
-    const query = `
-      INSERT INTO loading_shortfalls (trip_id, order_ref, sku, missing_qty, damage_flag, notes)
-      VALUES ($1, $2, $3, $4, $5, $6)
-      RETURNING *;
-    `;
-    const values = [
-      tripId,
-      shortfall.orderRef,
-      shortfall.sku,
-      shortfall.missingQty,
-      shortfall.damageFlag,
-      shortfall.notes || null,
-    ];
-
-    const result = await pool.query(query, values);
-    return result.rows[0];
+  static async assignedTrip(tripId: string, user: AccessTokenPayload | undefined): Promise<PlannedTrip> {
+    const trip: PlannedTrip = await planningJson(`/api/planning/trips/${encodeURIComponent(tripId)}`);
+    if (user?.role === 'loader' && trip.loaderId !== user.userId) {
+      throw new HttpError(403, `Trip ${tripId} is not assigned to you`);
+    }
+    return trip;
   }
 
   /**
-   * Completes warehouse loading manifest dispatch
+   * The trip's stops reversed for Last-In, First-Out loading: the last delivery is loaded first.
    */
-  static async completeDispatch(tripId: string, loaderId?: string) {
-    const query = `
-      INSERT INTO loading_manifests (trip_id, loader_id, status, completed_at)
-      VALUES ($1, $2, 'completed', CURRENT_TIMESTAMP)
-      ON CONFLICT (trip_id) DO UPDATE 
-        SET status = 'completed', completed_at = CURRENT_TIMESTAMP, loader_id = EXCLUDED.loader_id
-      RETURNING *;
-    `;
-    const result = await pool.query(query, [tripId, loaderId || null]);
-    return result.rows[0];
+  static async getLIFOManifest(tripId: string, user: AccessTokenPayload | undefined) {
+    const trip = await ExecutionSyncService.assignedTrip(tripId, user);
+    const progress = new Map((await LoadingService.progress(trip)).map((o) => [o.orderRef, o]));
+    const rawStops = trip.stops;
+    const lifoStops = [...rawStops].reverse().map((stop, index) => {
+      const p = progress.get(stop.orderRef)!;
+      return {
+        loadingSequence: index + 1,
+        unloadingSequence: rawStops.length - index,
+        ...stop,
+        // Each line with its scanned / missing / damaged / remaining units.
+        items: p.lines,
+        complete: p.complete,
+        loaded: p.loaded,
+      };
+    });
+
+    const { rows } = await pool.query<{ status: string }>('SELECT status FROM loading_manifests WHERE trip_id = $1', [trip.tripId]);
+    return {
+      tripId: trip.tripId,
+      vehicleId: trip.vehicleId,
+      depot: trip.depot,
+      departureTime: trip.departureTime,
+      status: loadingStatus(rows[0]?.status),
+      loaderId: trip.loaderId ?? null,
+      loaderName: trip.loaderName ?? null,
+      loadingStrategy: 'LIFO',
+      totalStops: rawStops.length,
+      stops: lifoStops,
+    };
   }
 
   /**

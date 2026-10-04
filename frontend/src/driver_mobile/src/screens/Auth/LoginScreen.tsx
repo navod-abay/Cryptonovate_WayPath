@@ -28,7 +28,7 @@ export default function LoginScreen({ navigation }: Props) {
         <PrimaryButton 
           title="Sign In" 
           variant="cyan" 
-          onPress={() => navigation.navigate('OTP')} 
+          onPress={() => navigation.navigate('PinLogin')} 
         />
       </View>
     </SafeAreaView>

@@ -57,6 +57,36 @@ export async function initDb() {
       );
     `);
 
+    // Scan-to-load (see LoadingService): when loading started, who reported a shortfall, every unit
+    // label scanned (one row per unit, so a second scan of the same label is recognised), and the
+    // orders whose units are all accounted for, with whether Order Management has been told.
+    await client.query(`
+      ALTER TABLE loading_manifests ADD COLUMN IF NOT EXISTS started_at TIMESTAMP WITH TIME ZONE;
+      ALTER TABLE loading_shortfalls ADD COLUMN IF NOT EXISTS loader_id UUID;
+      CREATE INDEX IF NOT EXISTS ix_loading_shortfalls_trip ON loading_shortfalls (trip_id);
+
+      CREATE TABLE IF NOT EXISTS loading_scans (
+        order_ref VARCHAR(50) NOT NULL,
+        sku VARCHAR(50) NOT NULL,
+        unit_no INT NOT NULL,
+        trip_id VARCHAR(50) NOT NULL,
+        loader_id UUID,
+        scanned_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (order_ref, sku, unit_no)
+      );
+      CREATE INDEX IF NOT EXISTS ix_loading_scans_trip ON loading_scans (trip_id);
+
+      CREATE TABLE IF NOT EXISTS loaded_orders (
+        order_ref VARCHAR(50) PRIMARY KEY,
+        trip_id VARCHAR(50) NOT NULL,
+        scanned_units INT NOT NULL,
+        missing_units INT NOT NULL,
+        damaged_units INT NOT NULL,
+        loaded_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        synced_at TIMESTAMP WITH TIME ZONE  -- when Order Management accepted 'loaded'
+      );
+    `);
+
     // Delivery Events (bulk sync target)
     await client.query(`
       CREATE TABLE IF NOT EXISTS delivery_events (

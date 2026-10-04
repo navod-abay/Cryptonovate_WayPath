@@ -8,6 +8,7 @@ export interface User {
   role: UserRole;
   outlet_id: string | null;
   depot: string | null;
+  vehicle_id: string | null; // drivers: the vehicle they drive
   is_active: boolean;
   created_at: Date;
 }
@@ -19,6 +20,7 @@ export interface UserResponse {
   fullName: string;
   outletId: string | null;
   depot: string | null;
+  vehicleId: string | null;
 }
 
 export interface AccessTokenPayload {
@@ -27,6 +29,7 @@ export interface AccessTokenPayload {
   role: UserRole;
   outlet_id: string | null;
   depot: string | null;
+  vehicle_id?: string | null; // drivers only
   type: 'access';
 }
 

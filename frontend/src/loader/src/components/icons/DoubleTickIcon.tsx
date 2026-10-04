@@ -1,4 +1,3 @@
-import React from 'react';
 
 export function DoubleTickIcon({ size = 24 }: { size?: number }) {
   return (

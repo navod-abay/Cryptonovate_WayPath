@@ -1,4 +1,3 @@
-import React from 'react';
 
 interface NumericKeypadProps {
   onKeyPress: (key: string) => void;

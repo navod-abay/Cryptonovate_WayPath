@@ -1,7 +1,9 @@
 import { Request, Response } from 'express';
-import { ExecutionSyncService } from '../services/sync.service';
+import { ExecutionSyncService, HttpError } from '../services/sync.service';
+import { LoadingService } from '../services/loading.service';
 import {
   ShortfallSchema,
+  ScanSchema,
   DispatchSchema,
   TelemetrySchema,
   PodSchema,
@@ -11,16 +13,28 @@ import {
   DeliveryProblemSchema,
 } from '../schemas/execution.schema';
 
+/** Validation -> 400, HttpError -> its status (with details), anything else -> 500. */
+function sendError(res: Response, err: any) {
+  if (err?.name === 'ZodError') {
+    return res.status(400).json({ success: false, error: 'Validation Error', details: err.errors });
+  }
+  if (err instanceof HttpError) {
+    return res.status(err.status).json({ success: false, error: err.message, ...(err.details ? { details: err.details } : {}) });
+  }
+  return res.status(500).json({ success: false, error: err?.message ?? 'Unexpected error' });
+}
+
 export class ExecutionController {
-  // A0. Get Active Trips for Dock
+  // A0. Get the loader's queue: their assigned trips at the depot
   static async getActiveTrips(req: Request, res: Response) {
     try {
       const { depot } = req.params;
-      const { status } = req.query;
-      const trips = await ExecutionSyncService.getActiveTrips(depot, status as string);
+      const status = typeof req.query.status === 'string' ? req.query.status : undefined;
+      const date = typeof req.query.date === 'string' ? req.query.date : undefined;
+      const trips = await ExecutionSyncService.getActiveTrips(depot, req.user, status, date);
       return res.json({ success: true, data: trips });
     } catch (err: any) {
-      return res.status(500).json({ success: false, error: err.message });
+      return res.status(err instanceof HttpError ? err.status : 500).json({ success: false, error: err.message });
     }
   }
 
@@ -28,57 +42,66 @@ export class ExecutionController {
   static async getManifest(req: Request, res: Response) {
     try {
       const { tripId } = req.params;
-      const manifest = await ExecutionSyncService.getLIFOManifest(tripId);
+      const manifest = await ExecutionSyncService.getLIFOManifest(tripId, req.user);
       return res.json({ success: true, data: manifest });
     } catch (err: any) {
-      return res.status(500).json({ success: false, error: err.message });
+      return res.status(err instanceof HttpError ? err.status : 500).json({ success: false, error: err.message });
     }
   }
 
-  // A2. Record Loading Shortfall
+  // A2. Start Loading: the trip moves to the loader's "loading" queue
+  static async startLoading(req: Request, res: Response) {
+    try {
+      return res.json({ success: true, data: await LoadingService.start(req.params.tripId, req.user) });
+    } catch (err: any) {
+      return sendError(res, err);
+    }
+  }
+
+  // A3. One unit label scanned at the truck
+  static async recordScan(req: Request, res: Response) {
+    try {
+      const { barcode } = ScanSchema.parse(req.body);
+      const scan = await LoadingService.scan(req.params.tripId, barcode, req.user, req.headers.authorization);
+      return res.status(scan.status === 'scanned' ? 201 : 200).json({ success: true, data: scan });
+    } catch (err: any) {
+      return sendError(res, err);
+    }
+  }
+
+  // A4. Record Loading Shortfall (missing or damaged units)
   static async recordShortfall(req: Request, res: Response) {
     try {
-      const { tripId } = req.params;
       const validatedData = ShortfallSchema.parse(req.body);
-      const shortfall = await ExecutionSyncService.recordShortfall(tripId, validatedData);
+      const shortfall = await LoadingService.reportShortfall(req.params.tripId, validatedData, req.user, req.headers.authorization);
       return res.status(201).json({ success: true, data: shortfall });
     } catch (err: any) {
-      if (err.name === 'ZodError') {
-        return res.status(400).json({ success: false, error: 'Validation Error', details: err.errors });
-      }
-      return res.status(500).json({ success: false, error: err.message });
+      return sendError(res, err);
     }
   }
 
-  // A3. Complete Dispatch
+  // A5. Complete Dispatch
   static async completeDispatch(req: Request, res: Response) {
     try {
       const { tripId } = req.params;
       const validatedData = DispatchSchema.parse(req.body);
-      const loaderId = validatedData.loaderId || req.user?.userId;
-      const manifest = await ExecutionSyncService.completeDispatch(tripId, loaderId);
+      // A loader always dispatches as themselves; a dispatcher may record the loader who did it.
+      const loaderId = req.user?.role === 'loader' ? req.user.userId : validatedData.loaderId || req.user?.userId;
+      const manifest = await LoadingService.dispatch(tripId, req.user, loaderId, req.headers.authorization);
       return res.json({ success: true, data: manifest });
     } catch (err: any) {
-      return res.status(500).json({ success: false, error: err.message });
+      return sendError(res, err);
     }
   }
 
-  // B1. Get Active Driver Route
+  // B1. The driver's trips for the day (their vehicle's plan)
   static async getActiveRoute(req: Request, res: Response) {
     try {
-      const driverId = req.user?.userId || 'drv_default';
-      const activeRoute = {
-        driverId,
-        routeId: 'ROUTE-2026-001',
-        status: 'in_transit',
-        stops: [
-          { stopId: 'STOP-1', outletId: 'OUTLET-001', orderRef: 'ORD-1001', address: '123 Main St, Colombo' },
-          { stopId: 'STOP-2', outletId: 'OUTLET-002', orderRef: 'ORD-1002', address: '45 Galle Rd, Dehiwala' },
-        ],
-      };
-      return res.json({ success: true, data: activeRoute });
+      const date = typeof req.query.date === 'string' ? req.query.date : undefined;
+      const vehicleId = typeof req.query.vehicleId === 'string' ? req.query.vehicleId : undefined;
+      return res.json({ success: true, data: await ExecutionSyncService.getDriverTrips(req.user, date, vehicleId) });
     } catch (err: any) {
-      return res.status(500).json({ success: false, error: err.message });
+      return sendError(res, err);
     }
   }
 

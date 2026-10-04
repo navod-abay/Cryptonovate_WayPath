@@ -1,4 +1,3 @@
-import React from 'react';
 
 export function AlertIcon({ size = 24 }: { size?: number }) {
   return (

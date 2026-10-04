@@ -3,10 +3,11 @@
 -- Owner: Planning & Allocation service (port 5003). SOLE owner of the tables below.
 --
 -- One planning run per plan date produces the day's trips (vehicle schedule), their stops and the
--- items to load, plus the orders it deferred. Readers only see the plan of a COMPLETED run.
+-- items to load, plus the orders it deferred. Each vehicle is assigned to one of its depot's
+-- loaders. Readers only see the plan of a COMPLETED run.
 -- Order refs and vehicle ids belong to Order Management and Fleet; they are copied here without
 -- foreign keys because each service owns its own tables.
--- Additive by contract: CREATE ... IF NOT EXISTS only.
+-- Additive by contract: CREATE ... IF NOT EXISTS / ADD COLUMN IF NOT EXISTS only.
 -- ==============================================================================
 
 CREATE TABLE IF NOT EXISTS planning_runs (
@@ -48,9 +49,15 @@ CREATE TABLE IF NOT EXISTS planned_trips (
   volume_m3           NUMERIC      NOT NULL,
   weight_utilization  NUMERIC      NOT NULL,
   volume_utilization  NUMERIC      NOT NULL,
+  loader_id           VARCHAR(40)  NULL,  -- auth-rbac user who loads this vehicle (same for all its trips)
+  loader_name         VARCHAR(100) NULL,
   UNIQUE (run_id, vehicle_id, trip_number)
 );
+-- Databases created before loaders were assigned get the columns when this file is re-applied.
+ALTER TABLE planned_trips ADD COLUMN IF NOT EXISTS loader_id   VARCHAR(40)  NULL;
+ALTER TABLE planned_trips ADD COLUMN IF NOT EXISTS loader_name VARCHAR(100) NULL;
 CREATE INDEX IF NOT EXISTS idx_planned_trips_date ON planned_trips (plan_date, depot);
+CREATE INDEX IF NOT EXISTS idx_planned_trips_loader ON planned_trips (plan_date, loader_id);
 
 CREATE TABLE IF NOT EXISTS planned_stops (
   stop_id       VARCHAR(48)  PRIMARY KEY,  -- <trip_id>-S<sequence>
