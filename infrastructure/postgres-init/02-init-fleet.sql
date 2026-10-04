@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS vehicles (
     km_per_l NUMERIC,
     weekly_fuel_quota_l NUMERIC,
     depot VARCHAR(50) NOT NULL,
+    weekly_range_km NUMERIC,
     status VARCHAR(50) DEFAULT 'available'
 );
 
@@ -54,21 +55,35 @@ CREATE TABLE IF NOT EXISTS service_allowance (
 CREATE TABLE IF NOT EXISTS fuel_logs (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     vehicle_id VARCHAR(20) REFERENCES vehicles(vehicle_id),
-    week_number INTEGER NOT NULL,
+    iso_year INTEGER NOT NULL,
+    week_number INTEGER NOT NULL CHECK (week_number BETWEEN 1 AND 53),
     distance_run_km NUMERIC NOT NULL,
     liters_consumed NUMERIC NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS vehicle_downtime (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    vehicle_id VARCHAR(20) NOT NULL REFERENCES vehicles(vehicle_id) ON DELETE CASCADE,
+    date_from DATE NOT NULL,
+    date_to DATE NOT NULL,
+    reason VARCHAR(255),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT chk_downtime_dates CHECK (date_to >= date_from)
+);
+
+CREATE INDEX IF NOT EXISTS idx_vehicle_downtime_vehicle ON vehicle_downtime(vehicle_id);
+CREATE INDEX IF NOT EXISTS idx_vehicle_downtime_dates  ON vehicle_downtime(date_from, date_to);
+
 -- 2. Natively Seed Data from the mounted CSV files
 COPY outlets (outlet_id, brand, district, depot, dock_type, parking_constraint, mall_window, window_open_time, window_close_time) 
-FROM '/data/outlets.csv' DELIMITER ',' CSV HEADER NULL '';
+FROM '/data/General Data/outlets.csv' DELIMITER ',' CSV HEADER NULL '';
 
-COPY vehicles (vehicle_id, type, temp, weight_cap_kg, volume_cap_m3, fuel_type, km_per_l, weekly_fuel_quota_l, depot) 
-FROM '/data/vehicles.csv' DELIMITER ',' CSV HEADER NULL '';
+COPY vehicles (vehicle_id, type, temp, weight_cap_kg, volume_cap_m3, fuel_type, km_per_l, weekly_fuel_quota_l, depot, weekly_range_km) 
+FROM '/data/General Data/vehicles.csv' DELIMITER ',' CSV HEADER NULL '';
 
 COPY district_travel (district, depot, road_class, free_flow_kmh, depot_to_district_km, depot_to_district_freeflow_min, inter_stop_km, inter_stop_freeflow_min) 
-FROM '/data/district_travel.csv' DELIMITER ',' CSV HEADER NULL '';
+FROM '/data/General Data/district_travel.csv' DELIMITER ',' CSV HEADER NULL '';
 
 COPY service_allowance (brand, dock_type, service_allowance_min) 
-FROM '/data/service_allowance.csv' DELIMITER ',' CSV HEADER NULL '';
+FROM '/data/General Data/service_allowance.csv' DELIMITER ',' CSV HEADER NULL '';
