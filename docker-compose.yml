@@ -147,28 +147,40 @@ services:
         condition: service_healthy
 
   # ============================================================================
-  # FRONTEND (Next.js SaaS Web App)
+  # FRONTEND WEB APPS (Vite + React, one container per app)
+  #   Build context is ./frontend so each app can reach packages/ui.
+  #   VITE_* values are baked in at build time; the browser calls the gateway.
   # ============================================================================
-  frontend:
+  dispatcher:
     build:
       context: ./frontend
-      dockerfile: Dockerfile
-    container_name: app_frontend
+      dockerfile: src/dispatcher/Dockerfile
+      args:
+        # Dispatcher appends /api/<service> itself, so this is the gateway origin.
+        VITE_API_BASE_URL: ${DISPATCHER_API_BASE_URL:-http://localhost}
+    container_name: app_dispatcher
     restart: unless-stopped
-    env_file:
-      - .env
-    environment:
-      PORT: 3000
-      NEXT_PUBLIC_API_GATEWAY_URL: http://localhost:80
     ports:
-      - "3000:3000"
-    volumes:
-      - ./frontend/src:/app/src
-      - /app/node_modules
-      - /app/.next
+      - "4173:4173"
     depends_on:
-      - auth-rbac
-      - order-management
+      - gateway
+
+  store-manager:
+    build:
+      context: ./frontend
+      dockerfile: src/store_manager/Dockerfile
+      args:
+        VITE_API_BASE_URL: ${STORE_MANAGER_API_BASE_URL:-http://localhost/api}
+        VITE_USE_MOCK_API: ${STORE_MANAGER_USE_MOCK_API:-true}
+    container_name: app_store_manager
+    restart: unless-stopped
+    ports:
+      - "4174:4173"
+    depends_on:
+      - gateway
+
+  # loader: add once the loader web app is merged — same shape as store-manager,
+  # dockerfile src/loader/Dockerfile, host port 4175.
 
   # ============================================================================
   # API GATEWAY (NGINX Reverse Proxy)
@@ -184,7 +196,6 @@ services:
     ports:
       - "80:80"
     depends_on:
-      - frontend
       - auth-rbac
       - order-management
       - planning-allocation
