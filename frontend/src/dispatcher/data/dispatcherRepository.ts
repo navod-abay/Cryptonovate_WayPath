@@ -71,7 +71,7 @@ async function getSchedule(date:string,depot:Warehouse,signal?:AbortSignal) {
   ]);
   return { date,vehicles:mapSchedule(schedule),summaries:summary.depots,fuel:fuel.data?.utilization ?? null,fuelError:fuel.error,
     // Planning only reports a run id once a completed run exists for the date.
-    prepared:!!schedule.planRunId,sample:schedule.planRunId==='stub',deferred:deferrals.orders.map((o):Order=>({ id:o.orderRef,outletId:o.outletId,date,warehouse:o.depot,destination:o.district,
+    prepared:!!schedule.planRunId,deferred:deferrals.orders.map((o):Order=>({ id:o.orderRef,outletId:o.outletId,date,warehouse:o.depot,destination:o.district,
       category:categoryOf(o.brand,o.temperature),status:'Deferred',reason:o.reasonDetail,items:[],itemsLoaded:false })) };
 }
 /** notification-service alert; createdAt is when it happened, receivedAt when the server got it. */

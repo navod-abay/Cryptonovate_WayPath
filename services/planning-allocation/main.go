@@ -128,7 +128,7 @@ func main() {
 		})
 	})
 
-	api := &API{store: store, runs: runs, now: time.Now,
+	api := &API{store: store, runs: runs, now: time.Now, secret: secret,
 		nextRunDate: func(ctx context.Context) (time.Time, error) {
 			day, err := orders.CloseWindow(ctx, "")
 			if err != nil {

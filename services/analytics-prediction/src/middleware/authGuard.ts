@@ -21,13 +21,16 @@ declare global {
   }
 }
 
-const DEFAULT_SECRET = 'waypoint_default_jwt_access_secret_key_2026_change_in_prod';
-
 /**
  * Middleware: Verifies the Access JWT token signature statelessly
  */
 export const verifyToken = (jwtSecret?: string) => {
-  const secret = jwtSecret || process.env.JWT_ACCESS_SECRET || DEFAULT_SECRET;
+  // No fallback secret: a baked-in default would let anyone who has read the repo mint tokens.
+  const configured = jwtSecret || process.env.JWT_ACCESS_SECRET;
+  if (!configured) {
+    throw new Error('verifyToken requires the JWT access secret (set JWT_ACCESS_SECRET)');
+  }
+  const secret = configured;
 
   return (req: Request, res: Response, next: NextFunction): void => {
     const authHeader = req.headers.authorization;
