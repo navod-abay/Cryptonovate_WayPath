@@ -11,8 +11,8 @@ This guide lists every call the app makes: the endpoint it expects, the JSON it 
 1. Copy `.env.example` to `.env.local` in `frontend/src/store_manager/`:
    ```bash
    VITE_USE_MOCK_API=false
-   VITE_API_BASE_URL=http://localhost/api   # npm run dev against docker compose
-   # VITE_API_BASE_URL=/api                 # when the app is served behind the NGINX gateway
+   VITE_API_BASE_URL=http://localhost       # npm run dev against docker compose (gateway origin, no /api)
+   # VITE_API_BASE_URL=                     # empty = same origin, when served behind the NGINX gateway
    ```
 2. Restart `npm run dev`. Vite reads env vars only at start-up.
 3. Sign in with a real store manager account, e.g. `manager_out001` / `Password123!` from `services/auth-rbac` seed data.
@@ -264,12 +264,12 @@ Request `{ "ids": ["7f0c…"] }` → `204`. Called when the user opens an update
 - **Outlet details:** login only returns `outletId`. #5 is needed for the store name, type, categories and city.
 - **Confirm shape:** see #18.
 - **Dates:** return delivery dates in Asia/Colombo local time (see section 3).
-- **CORS:** when running `npm run dev` (port 5173) against the gateway (port 80), the services or NGINX must allow that origin, or set `VITE_API_BASE_URL=/api` and serve the app behind the gateway.
+- **CORS:** when running `npm run dev` (port 5173) against the gateway (port 80), the services or NGINX must allow that origin, or leave `VITE_API_BASE_URL` empty and serve the app behind the gateway.
 
 ## 6. Checking an endpoint
 
 1. Run the backend with `docker compose up`.
-2. In `frontend/src/store_manager`, set `.env.local` to `VITE_USE_MOCK_API=false` and `VITE_API_BASE_URL=http://localhost/api`, then run `npm run dev`.
+2. In `frontend/src/store_manager`, set `.env.local` to `VITE_USE_MOCK_API=false` and `VITE_API_BASE_URL=http://localhost`, then run `npm run dev`.
 3. Open DevTools → Network and filter by `api`. Every request listed in section 4 shows up with its path, body and the `Authorization` header.
 4. Walk through: login → Home → place an order → Deliveries → Start Unloading → report an item → Confirm Receipt (enter the code in the driver app) → Profile → change password → log out.
 5. Compare any failing response with the examples above. A mismatch is fixed either on the server or in the matching function in `src/api/`.

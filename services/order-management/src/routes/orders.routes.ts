@@ -18,6 +18,7 @@ import {
   DeferOrderSchema,
   DispatcherOverviewQuerySchema,
   ListOrdersQuerySchema,
+  ListProductsQuerySchema,
   OrderWindowsQuerySchema,
   ReceiptSchema,
   ReplaceItemsSchema,
@@ -57,6 +58,7 @@ const dispatcherOrPlanning = requireRole(['dispatcher', 'system']);
 router.get('/confirmed', requireRole(['dispatcher', 'loader', 'system']), validateQuery(ConfirmedQuerySchema), asyncHandler(ctrl.getConfirmed));
 router.get('/at-risk', dispatcher, validateQuery(AtRiskQuerySchema), asyncHandler(ctrl.getAtRisk));
 router.get('/summary', dispatcher, validateQuery(SummaryQuerySchema), asyncHandler(ctrl.getSummary));
+router.get('/products', requireRole(['store_manager', 'dispatcher']), validateQuery(ListProductsQuerySchema), asyncHandler(ctrl.listProducts));
 router.get('/dispatcher/overview', dispatcher, validateQuery(DispatcherOverviewQuerySchema), asyncHandler(ctrl.getDispatcherOverview));
 router.get('/dispatcher/windows', dispatcher, validateQuery(OrderWindowsQuerySchema), asyncHandler(ctrl.getOrderWindows));
 router.patch('/status-batch', dispatcherOrPlanning, validateRequest(StatusBatchSchema), asyncHandler(ctrl.statusBatch));

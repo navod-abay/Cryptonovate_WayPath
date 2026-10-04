@@ -270,6 +270,7 @@ const OPERATION_IDS: Readonly<Record<string, string>> = {
   'get /confirmed': 'getConfirmedOrders',
   'get /at-risk': 'getAtRiskOutlets',
   'get /summary': 'getSummary',
+  'get /products': 'listProducts',
   'get /dispatcher/overview': 'getDispatcherOverview',
   'get /dispatcher/windows': 'getOrderWindows',
   'patch /status-batch': 'applyStatusBatch',
@@ -349,6 +350,7 @@ function buildSpec(options: OpenApiOptions): Json {
       { name: 'Execution', description: 'Status updates from the dock and the road' },
       { name: 'Dispatch', description: 'Deferral, risk and dashboard views' },
       { name: 'Store', description: 'Receipt at the outlet' },
+      { name: 'Catalogue', description: 'Products a store can order' },
     ],
     components: {
       securitySchemes: {
@@ -788,6 +790,58 @@ function buildSpec(options: OpenApiOptions): Json {
             ),
             '400': err(['VALIDATION_ERROR', 'Invalid request query parameters', [{ field: 'min_days', message: 'Number must be greater than or equal to 1' }]]),
             '403': forbidden(false),
+            ...commonErrors,
+          },
+        },
+      },
+      '/products': {
+        get: {
+          tags: ['Catalogue'],
+          summary: 'Products a store can order',
+          description:
+            'Roles: store_manager, dispatcher. A store manager only sees the brand of their own outlet. ' +
+            '`categories` is a comma-separated list of `chilled`, `dry`, `tech`, `style` (Fresh splits into chilled and dry). ' +
+            '`search` matches the description or the SKU, case-insensitively. Each product carries the per-unit weight and ' +
+            'volume and the `is_chilled` flag an order line needs.',
+          security: secured,
+          parameters: [
+            q('categories', { type: 'string' }, 'Comma-separated: chilled, dry, tech, style. Default: all the caller may see', 'chilled,dry'),
+            q('search', { type: 'string', maxLength: 80 }, 'Matches description or SKU', 'milk'),
+          ],
+          responses: {
+            '200': ok(
+              'Products, grouped by brand then temperature',
+              {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    sku: { type: 'string' },
+                    description: { type: 'string' },
+                    brand: { type: 'string', enum: ['Fresh', 'Style', 'Tech'] },
+                    temp_requirement: { type: 'string', enum: ['ambient', 'chilled'] },
+                    category: { type: 'string', enum: ['chilled', 'dry', 'tech', 'style'] },
+                    unit_weight_kg: { type: 'number' },
+                    unit_volume_m3: { type: 'number' },
+                    is_chilled: { type: 'boolean' },
+                  },
+                },
+              },
+              [
+                {
+                  sku: 'MLK-1L',
+                  description: 'Fresh milk 1L',
+                  brand: 'Fresh',
+                  temp_requirement: 'chilled',
+                  category: 'chilled',
+                  unit_weight_kg: 1.03,
+                  unit_volume_m3: 0.0011,
+                  is_chilled: true,
+                },
+              ],
+            ),
+            '400': validation,
+            '403': forbidden(),
             ...commonErrors,
           },
         },

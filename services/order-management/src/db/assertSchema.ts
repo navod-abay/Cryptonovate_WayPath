@@ -33,6 +33,7 @@ export const REQUIRED_SCHEMA: Readonly<Record<string, readonly string[]>> = {
     'id', 'order_ref', 'received_units', 'missing_units', 'rejected_units', 'note', 'received_by', 'received_at',
     'lines',
   ],
+  products: ['sku', 'description', 'brand', 'temp_requirement', 'unit_weight_kg', 'unit_volume_m3', 'active', 'created_at'],
   order_alert_outbox: ['id', 'subject', 'envelope', 'created_at', 'published_at'],
   service_jobs: ['job_name', 'job_key', 'ran_at', 'result'],
 };

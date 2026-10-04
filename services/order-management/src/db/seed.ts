@@ -15,6 +15,7 @@ import type { OrderItemInput, TempRequirement } from '../schemas/orders.schema.j
 import { listOutlets, type OutletMaster } from '../repositories/outlets.repo.js';
 import { intBetween, mulberry32, type Rng } from '../seed/prng.js';
 import { syncOutlets } from '../services/referenceData.js';
+import { PRODUCT_CATALOGUE } from './productCatalogue.js';
 import { pool, withTransaction } from './pool.js';
 
 /**
@@ -399,8 +400,24 @@ export async function seedDemoOrders(): Promise<DemoSeedOutcome> {
   });
 }
 
+/** Writes the catalogue to the products table: insert new SKUs, refresh the rest. Runs on every boot. */
+export async function seedProducts(): Promise<number> {
+  for (const p of PRODUCT_CATALOGUE) {
+    await pool.query(
+      `INSERT INTO products (sku, description, brand, temp_requirement, unit_weight_kg, unit_volume_m3)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT (sku) DO UPDATE
+         SET description = EXCLUDED.description, brand = EXCLUDED.brand, temp_requirement = EXCLUDED.temp_requirement,
+             unit_weight_kg = EXCLUDED.unit_weight_kg, unit_volume_m3 = EXCLUDED.unit_volume_m3`,
+      [p.sku, p.description, p.brand, p.temp, p.weightKg, p.volumeM3],
+    );
+  }
+  return PRODUCT_CATALOGUE.length;
+}
+
 /** Boot-time data preparation. Returns true when the demo seed is still pending. */
 export async function seedData(opts: { demoOrders: boolean }): Promise<boolean> {
+  console.log(`✅ Product catalogue ready: ${await seedProducts()} product(s).`);
   const { changed, total, skipped } = await syncOutlets();
   console.log(`✅ outlets_ref synced from Fleet's outlets table: ${total - skipped} outlet(s), ${changed} inserted or corrected.`);
   if (skipped > 0) {

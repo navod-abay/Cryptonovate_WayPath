@@ -39,6 +39,7 @@ export default function PlaceOrderPage() {
   const navigate = useNavigate();
   const now = useNow();
   const orders = useAppStore((s) => s.orders);
+  const drafts = useAppStore((s) => s.drafts);
   const lastQty = useAppStore((s) => s.lastOrderQty);
   const missingAll = useAppStore((s) => s.missingFromLast);
   const categories = useAppStore((s) => s.outlet.categories);
@@ -54,6 +55,8 @@ export default function PlaceOrderPage() {
   );
   const iso = toISODate(deliveryDate);
   const existing = orders.find((o) => o.type === type && o.deliveryDate === iso);
+  // A draft was started but never confirmed: it fills the cart, but placing it is still "Place Order".
+  const prefill = existing ?? drafts.find((d) => d.type === type && d.deliveryDate === iso);
 
   const [rows, setRows] = useState<Row[]>([]);
   /** Missing items the manager already answered "Yes, add" to on this screen. */
@@ -64,8 +67,8 @@ export default function PlaceOrderPage() {
   // Load the existing order for this day (editing) or start empty.
   useEffect(() => {
     setRows(
-      existing
-        ? existing.lines.map((l) => ({ key: newKey(), productId: l.productId, name: l.name, quantity: l.quantity, carriedOver: l.carriedOver ?? 0 }))
+      prefill
+        ? prefill.lines.map((l) => ({ key: newKey(), productId: l.productId, name: l.name, quantity: l.quantity, carriedOver: l.carriedOver ?? 0 }))
         : [],
     );
     setAccepted([]);

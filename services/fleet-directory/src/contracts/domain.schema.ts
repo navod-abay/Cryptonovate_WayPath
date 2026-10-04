@@ -50,6 +50,8 @@ export const OutletSchema = z.object({
   mall_window: z.string().nullable().optional(), // Fixed: Changed from boolean to string
   window_open_time: z.string().regex(timeFormatRegex, 'window_open_time must be HH:mm format').nullable().optional(),
   window_close_time: z.string().regex(timeFormatRegex, 'window_close_time must be HH:mm format').nullable().optional(),
+  name: z.string().nullable().optional(),
+  address: z.string().nullable().optional(),
 });
 
 export type Outlet = z.infer<typeof OutletSchema>;

@@ -14,6 +14,7 @@ tags:
   - name: Driver Execution
   - name: Offline Sync
   - name: Store Manager Confirmation
+  - name: Store Unloading
 
 paths:
   /health:
@@ -522,10 +523,133 @@ paths:
         '200':
           description: Bulk sync completed with timestamp conflict resolution
 
+  /orders/{orderRef}/unloading:
+    post:
+      tags: [Store Unloading]
+      summary: Vehicle arrived, start unloading
+      description: |
+        Store manager (own outlet) or dispatcher. Valid only while the order is `out_for_delivery`
+        in Order Management. Idempotent: a repeat call returns the existing record with 200.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: orderRef
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Unloading had already started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnloadingResponse'
+        '201':
+          description: Unloading started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnloadingResponse'
+        '403':
+          description: Not allowed for this outlet or role
+        '404':
+          description: Order not found
+        '409':
+          description: Order is not out for delivery (`INVALID_STATE`)
+        '502':
+          description: Order Management unreachable
+
+  /outlets/{outletId}/unloadings:
+    get:
+      tags: [Store Unloading]
+      summary: Orders of an outlet whose unloading has started
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: outletId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Unloading records, newest first
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        order_ref:
+                          type: string
+                        started_at:
+                          type: string
+                          format: date-time
+        '403':
+          description: Store manager asked for another outlet
+
   /orders/{orderRef}/confirm:
     post:
       tags: [Store Manager Confirmation]
-      summary: Store Manager Order Goods Confirmation
+      summary: Issue the handover code for the driver
+      description: |
+        Store manager (own outlet) only. Requires unloading to have started and the order to be
+        `out_for_delivery`. Returns a 6-digit code valid for 2 minutes; a repeat call while it is
+        valid returns the same code. The driver enters it with `POST /orders/{orderRef}/handover`,
+        and the store then records the receipt in Order Management (`POST /orders/{ref}/receipt`).
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: orderRef
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Handover code
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      orderRef:
+                        type: string
+                      deliveryId:
+                        type: string
+                      code:
+                        type: string
+                        example: '482913'
+                      expiresAt:
+                        type: string
+                        format: date-time
+        '403':
+          description: Not a store manager, or another outlet's order
+        '404':
+          description: Order not found
+        '409':
+          description: Order not out for delivery (`INVALID_STATE`, `ALREADY_DELIVERED`) or unloading not started (`UNLOADING_NOT_STARTED`)
+
+  /orders/{orderRef}/handover:
+    post:
+      tags: [Store Manager Confirmation]
+      summary: Driver enters the handover code
+      description: |
+        Driver only. A correct code marks the order `delivered` in Order Management using the
+        driver's own token. Each try counts; after 5 wrong tries the code locks and the store must
+        issue a new one.
       security:
         - BearerAuth: []
       parameters:
@@ -535,17 +659,27 @@ paths:
           schema:
             type: string
       requestBody:
-        required: false
+        required: true
         content:
           application/json:
             schema:
               type: object
+              required: [code]
               properties:
-                notes:
+                code:
                   type: string
+                  pattern: '^[0-9]{6}$'
       responses:
         '200':
-          description: Order receipt confirmed
+          description: Order delivered
+        '400':
+          description: Wrong code (`INVALID_CODE`, with `attemptsLeft`) or malformed body
+        '404':
+          description: No active code (`NO_ACTIVE_CODE`)
+        '410':
+          description: Code expired (`CODE_EXPIRED`)
+        '429':
+          description: Too many wrong codes (`CODE_LOCKED`)
 
   /deliveries/{deliveryId}/problems:
     post:
@@ -690,3 +824,25 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+  schemas:
+    UnloadingResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            order_ref:
+              type: string
+            outlet_id:
+              type: string
+            status:
+              type: string
+              example: unloading
+            started_at:
+              type: string
+              format: date-time
+            started_by:
+              type: string
+              nullable: true

@@ -10,7 +10,7 @@ import { API_BASE_URL, AUTH_API_BASE_URL, REQUEST_TIMEOUT_MS } from './config';
 import { getState, saveSession, setState } from '@/state/store';
 
 export class ApiError extends Error {
-  constructor(message: string, readonly status: number, readonly details?: unknown) {
+  constructor(message: string, readonly status: number, readonly details?: unknown, readonly code?: string) {
     super(message);
   }
 }
@@ -93,7 +93,7 @@ export async function request<T>(method: Method, path: string, opts: Options = {
   if (!res.ok) {
     if (res.status === 401 && opts.auth !== false) onUnauthorized();
     const message = json?.message ?? json?.error?.message ?? json?.error ?? `Request failed (${res.status}).`;
-    throw new ApiError(message, res.status, json?.details);
+    throw new ApiError(message, res.status, json?.details ?? json?.error?.details, json?.error?.code);
   }
   // Backend services reply { success: true, data: ... }; fall back to the raw body.
   return (json && typeof json === 'object' && 'data' in json ? json.data : json) as T;

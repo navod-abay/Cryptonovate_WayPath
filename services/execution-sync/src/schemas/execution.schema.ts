@@ -69,6 +69,10 @@ export const ConfirmOrderSchema = z.object({
   notes: z.string().optional(),
 });
 
+export const HandoverSchema = z.object({
+  code: z.string().regex(/^\d{6}$/, 'The handover code is 6 digits'),
+});
+
 export const DRIVER_ISSUES = ['no_receive', 'closed', 'refused', 'blocked'] as const;
 
 export const DriverIncidentSchema = z.object({

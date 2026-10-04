@@ -23,6 +23,8 @@ CREATE TABLE IF NOT EXISTS users (
   role user_role_enum NOT NULL,
   outlet_id VARCHAR(20) NULL,
   depot VARCHAR(50) NULL,
+  email VARCHAR(100) NULL,
+  phone VARCHAR(30) NULL,
   vehicle_id VARCHAR(20) NULL,  -- drivers: the vehicle they drive
   pin_lookup VARCHAR(64) NULL,  -- keyed hash of a loader's / driver's 4-digit PIN (POST /pin-login)
   is_active BOOLEAN DEFAULT true,
