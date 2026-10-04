@@ -67,8 +67,8 @@ async function bootstrap() {
   }
 }
 
-// The demo seed needs vehicles from Fleet & Directory. If Fleet was not up at boot, keep
-// trying in the background instead of seeding from invented data.
+// The dataset seed needs the outlets copied from Fleet & Directory's table. If they were not
+// there at boot, keep trying in the background.
 const DEMO_SEED_RETRY_MS = 15_000;
 let demoSeedTimer: NodeJS.Timeout | undefined;
 function retryDemoSeed() {

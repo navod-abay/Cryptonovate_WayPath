@@ -1,0 +1,15 @@
+/home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/android/app/C:/tmp/driver_mobile_cxx/Debug/5oe3485u/x86/CMakeFiles/appmodules.dir
+/home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/android/app/C:/tmp/driver_mobile_cxx/Debug/5oe3485u/x86/CMakeFiles/edit_cache.dir
+/home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/android/app/C:/tmp/driver_mobile_cxx/Debug/5oe3485u/x86/CMakeFiles/rebuild_cache.dir
+/home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/android/app/C:/tmp/driver_mobile_cxx/Debug/5oe3485u/x86/safeareacontext_autolinked_build/CMakeFiles/react_codegen_safeareacontext.dir
+/home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/android/app/C:/tmp/driver_mobile_cxx/Debug/5oe3485u/x86/safeareacontext_autolinked_build/CMakeFiles/edit_cache.dir
+/home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/android/app/C:/tmp/driver_mobile_cxx/Debug/5oe3485u/x86/safeareacontext_autolinked_build/CMakeFiles/rebuild_cache.dir
+/home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/android/app/C:/tmp/driver_mobile_cxx/Debug/5oe3485u/x86/rnscreens_autolinked_build/CMakeFiles/react_codegen_rnscreens.dir
+/home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/android/app/C:/tmp/driver_mobile_cxx/Debug/5oe3485u/x86/rnscreens_autolinked_build/CMakeFiles/edit_cache.dir
+/home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/android/app/C:/tmp/driver_mobile_cxx/Debug/5oe3485u/x86/rnscreens_autolinked_build/CMakeFiles/rebuild_cache.dir
+/home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/android/app/C:/tmp/driver_mobile_cxx/Debug/5oe3485u/x86/rnsvg_autolinked_build/CMakeFiles/react_codegen_rnsvg.dir
+/home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/android/app/C:/tmp/driver_mobile_cxx/Debug/5oe3485u/x86/rnsvg_autolinked_build/CMakeFiles/edit_cache.dir
+/home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/android/app/C:/tmp/driver_mobile_cxx/Debug/5oe3485u/x86/rnsvg_autolinked_build/CMakeFiles/rebuild_cache.dir
+/home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/android/app/C:/tmp/driver_mobile_cxx/Debug/5oe3485u/x86/RNVectorIconsSpec_autolinked_build/CMakeFiles/react_codegen_RNVectorIconsSpec.dir
+/home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/android/app/C:/tmp/driver_mobile_cxx/Debug/5oe3485u/x86/RNVectorIconsSpec_autolinked_build/CMakeFiles/edit_cache.dir
+/home/emil-navod/Repos/TechTriathlon2026/Cryptonovate_TBD/frontend/src/driver_mobile/android/app/C:/tmp/driver_mobile_cxx/Debug/5oe3485u/x86/RNVectorIconsSpec_autolinked_build/CMakeFiles/rebuild_cache.dir

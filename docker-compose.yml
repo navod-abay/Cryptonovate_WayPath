@@ -102,8 +102,14 @@ services:
     healthcheck:
       <<: *healthcheck
       test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:5003/health"]
+    # Planning reads orders and the fleet as soon as it starts (catch-up), so it waits until both are
+    # healthy. order-management only reports healthy after its seed step has run.
     depends_on:
       postgres:
+        condition: service_healthy
+      order-management:
+        condition: service_healthy
+      fleet-directory:
         condition: service_healthy
 
   fleet-directory:

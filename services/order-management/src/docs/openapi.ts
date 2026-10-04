@@ -5,6 +5,7 @@ import { CALLER_REASON_CODES } from '../domain/reasonCodes.js';
 import {
   CancelOrderSchema,
   CloseWindowSchema,
+  SimulateDeliverySchema,
   ConfirmOrderSchema,
   CreateOrderSchema,
   DeferOrderSchema,
@@ -271,6 +272,7 @@ const OPERATION_IDS: Readonly<Record<string, string>> = {
   'get /summary': 'getSummary',
   'patch /status-batch': 'applyStatusBatch',
   'post /close-window': 'closeWindow',
+  'post /simulate-delivery': 'simulateDelivery',
   'get /{order_ref}': 'getOrder',
   'delete /{order_ref}': 'cancelOrder',
   'put /{order_ref}/items': 'replaceOrderItems',
@@ -983,6 +985,35 @@ function buildSpec(options: OpenApiOptions): Json {
             ),
             '400': err(['VALIDATION_ERROR', 'Invalid request payload format', [{ field: 'date', message: 'Must be a valid date in YYYY-MM-DD format' }]]),
             '403': forbidden(false),
+            '422': err(['NON_OPERATING_DATE', '2026-10-04 is not an operating day', { date: '2026-10-04', next_operating_day: '2026-10-05' }]),
+            ...commonErrors,
+          },
+        },
+      },
+      '/simulate-delivery': {
+        post: {
+          tags: ['Dispatch'],
+          summary: 'Demo history: mark a past day delivered and received',
+          description:
+            'Role: system (Planning & Allocation). Only when SEED_DEMO_DATA=true, only for past dates. Every allocated ' +
+            'order of the date goes loaded → out_for_delivery → delivered → received with a full receipt; events carry ' +
+            'the loader, driver and store-manager roles and times from the plan (deliveries[]), and the outlet is marked ' +
+            'served. Planning calls this for the seeded past days it plans at startup, before planning the next day.',
+          security: secured,
+          requestBody: body(SimulateDeliverySchema, {
+            pastDay: {
+              summary: 'A past day with planned times',
+              value: { date: '2026-10-01', deliveries: [{ order_ref: 'ORD-20261001-00042', departure_time: '03:30', arrival_time: '04:12' }] },
+            },
+          }),
+          responses: {
+            '200': ok(
+              'Orders marked received',
+              { type: 'object', properties: { date: { type: 'string', format: 'date' }, received: { type: 'integer' } } },
+              { date: '2026-10-01', received: 142 },
+            ),
+            '400': err(['VALIDATION_ERROR', 'Only past days can be marked delivered', [{ field: 'date', message: 'must be before 2026-10-04' }]]),
+            '403': err(['FORBIDDEN', 'Delivery simulation is only available when demo data is enabled (SEED_DEMO_DATA=true)']),
             ...commonErrors,
           },
         },

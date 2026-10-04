@@ -9,10 +9,11 @@ import (
 )
 
 type fakeOrders struct {
-	pool     []ConfirmedOrder
-	closed   []string
-	batches  [][]StatusUpdate
-	batchErr error
+	pool      []ConfirmedOrder
+	closed    []string
+	batches   [][]StatusUpdate
+	batchErr  error
+	delivered []string // dates passed to SimulateDelivery
 }
 
 func (f *fakeOrders) CloseWindow(_ context.Context, date string) (string, error) {
@@ -22,6 +23,10 @@ func (f *fakeOrders) CloseWindow(_ context.Context, date string) (string, error)
 func (f *fakeOrders) Confirmed(context.Context, string) ([]ConfirmedOrder, error) { return f.pool, nil }
 func (f *fakeOrders) Items(_ context.Context, ref string) ([]OrderItem, error) {
 	return []OrderItem{{SKU: "SKU-" + ref, Description: "line", Quantity: 3}}, nil
+}
+func (f *fakeOrders) SimulateDelivery(_ context.Context, date string, d []PlannedDelivery) (int, error) {
+	f.delivered = append(f.delivered, date)
+	return len(d), nil
 }
 func (f *fakeOrders) StatusBatch(_ context.Context, u []StatusUpdate) error {
 	if f.batchErr != nil {
@@ -107,7 +112,7 @@ func TestPlannerPublishesTask2BPlan(t *testing.T) {
 	p := &ALNSPlanner{orders: orders, fleet: fleet, store: store, params: params, seeds: 2}
 	day := time.Date(2026, 10, 5, 0, 0, 0, 0, sriLanka)
 
-	stats, err := p.Plan(context.Background(), "run_test", day)
+	stats, err := p.Plan(context.Background(), "run_test", "manual", day)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,7 +174,7 @@ func TestPlannerFailsWhenWriteBackIsRejected(t *testing.T) {
 	params := DefaultALNSParams()
 	params.Iterations = 20
 	p := &ALNSPlanner{orders: orders, fleet: fleet, store: newMemStore(), params: params, seeds: 1}
-	if _, err := p.Plan(context.Background(), "run_x", time.Date(2026, 10, 5, 0, 0, 0, 0, sriLanka)); err == nil {
+	if _, err := p.Plan(context.Background(), "run_x", "manual", time.Date(2026, 10, 5, 0, 0, 0, 0, sriLanka)); err == nil {
 		t.Fatal("a rejected status batch must fail the run")
 	}
 }
@@ -178,8 +183,26 @@ func TestPlannerRejectsOrdersWithoutTravelData(t *testing.T) {
 	orders, fleet := task2bAPIs(t)
 	orders.pool[0].District = "Atlantis"
 	p := &ALNSPlanner{orders: orders, fleet: fleet, store: newMemStore(), params: DefaultALNSParams(), seeds: 1}
-	_, err := p.Plan(context.Background(), "run_y", time.Date(2026, 10, 5, 0, 0, 0, 0, sriLanka))
+	_, err := p.Plan(context.Background(), "run_y", "manual", time.Date(2026, 10, 5, 0, 0, 0, 0, sriLanka))
 	if err == nil || !strings.Contains(err.Error(), "Atlantis") {
 		t.Fatalf("err = %v, want missing travel metrics for Atlantis", err)
+	}
+}
+
+func TestCatchUpRunsUseFewerSeeds(t *testing.T) {
+	orders, fleet := task2bAPIs(t)
+	params := DefaultALNSParams()
+	params.Iterations = 20
+	p := &ALNSPlanner{orders: orders, fleet: fleet, store: newMemStore(), params: params, seeds: 5, catchupSeeds: 1}
+	day := time.Date(2026, 10, 5, 0, 0, 0, 0, sriLanka)
+	for trigger, want := range map[string]int{"catchup": 1, "cron": 5, "manual": 5} {
+		orders.batches = nil
+		stats, err := p.Plan(context.Background(), "run_"+trigger, trigger, day)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if stats.Seeds != want {
+			t.Errorf("%s run used %d seed(s), want %d", trigger, stats.Seeds, want)
+		}
 	}
 }
