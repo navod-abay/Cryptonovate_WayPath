@@ -8,6 +8,13 @@ const router = Router();
 // A. WAREHOUSE LOADING ROUTES (Role: loader, dispatcher)
 // ============================================================================
 router.get(
+  '/docks/:depot/active-trips',
+  authenticateJwt,
+  requireRole('loader', 'dispatcher'),
+  ExecutionController.getActiveTrips
+);
+
+router.get(
   '/trips/:tripId/manifest',
   authenticateJwt,
   requireRole('loader', 'dispatcher'),
