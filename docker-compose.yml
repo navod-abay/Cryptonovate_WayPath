@@ -35,6 +35,26 @@ services:
       retries: 5
 
   # ============================================================================
+  # MESSAGE BROKER (NATS JetStream) — dashboard alerts stream ALERTS
+  #   Producers (order-management, execution-sync) relay from their own outbox tables;
+  #   notification-service consumes and pushes to browsers. Monitoring: http://localhost:8222
+  # ============================================================================
+  nats:
+    image: nats:2.10-alpine
+    container_name: delivery_nats
+    restart: always
+    command: ["-js", "-sd", "/data", "-m", "8222"]
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+    volumes:
+      - nats_data:/data
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8222/healthz?js-enabled-only=true"]
+      start_period: 10s
+
+  # ============================================================================
   # BACKEND MICROSERVICES
   # ============================================================================
   auth-rbac:
@@ -73,6 +93,7 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres_password}@postgres:5432/${POSTGRES_DB:-delivery_db}
       # Where Order Management reaches Fleet & Directory. Override per environment.
       FLEET_SERVICE_URL: ${FLEET_SERVICE_URL:-http://fleet-directory:5004}
+      NATS_URL: ${NATS_URL:-nats://nats:4222}
     ports:
       - "5002:5002"
     healthcheck:
@@ -102,8 +123,14 @@ services:
     healthcheck:
       <<: *healthcheck
       test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:5003/health"]
+    # Planning reads orders and the fleet as soon as it starts (catch-up), so it waits until both are
+    # healthy. order-management only reports healthy after its seed step has run.
     depends_on:
       postgres:
+        condition: service_healthy
+      order-management:
+        condition: service_healthy
+      fleet-directory:
         condition: service_healthy
 
   fleet-directory:
@@ -140,6 +167,7 @@ services:
     environment:
       PORT: 5005
       DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres_password}@postgres:5432/${POSTGRES_DB:-delivery_db}
+      NATS_URL: ${NATS_URL:-nats://nats:4222}
     ports:
       - "5005:5005"
     healthcheck:
@@ -150,6 +178,32 @@ services:
     command: npx tsx watch src/index.ts
     depends_on:
       postgres:
+        condition: service_healthy
+
+  notification-service:
+    build:
+      context: ./services/notification-service
+      dockerfile: Dockerfile
+    container_name: service_notification
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      PORT: 5007
+      DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres_password}@postgres:5432/${POSTGRES_DB:-delivery_db}
+      NATS_URL: ${NATS_URL:-nats://nats:4222}
+    ports:
+      - "5007:5007"
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:5007/health"]
+    volumes:
+      - ./services/notification-service/src:/app/src
+      - /app/node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
         condition: service_healthy
 
   analytics-prediction:
@@ -186,6 +240,8 @@ services:
       args:
         # Dispatcher appends /api/<service> itself, so this is the gateway origin.
         VITE_API_BASE_URL: ${DISPATCHER_API_BASE_URL:-http://localhost}
+        # api = real auth-rbac login, needed for live alerts; demo = built-in test account.
+        VITE_LOGIN_MODE: ${DISPATCHER_LOGIN_MODE:-api}
     container_name: app_dispatcher
     restart: unless-stopped
     ports:
@@ -240,6 +296,7 @@ services:
       - fleet-directory
       - execution-sync
       - analytics-prediction
+      - notification-service
 
   # ============================================================================
   # DEV ONLY: API DOCS (Swagger UI for every microservice) -> http://localhost:8080
@@ -259,7 +316,8 @@ services:
           { name: "planning-allocation", url: "specs/planning-allocation.yaml" },
           { name: "fleet-directory", url: "specs/fleet-directory.yaml" },
           { name: "execution-sync", url: "specs/execution-sync.yaml" },
-          { name: "analytics-prediction", url: "specs/analytics-prediction.yaml" }
+          { name: "analytics-prediction", url: "specs/analytics-prediction.yaml" },
+          { name: "notification-service", url: "specs/notification-service.yaml" }
         ]
       URLS_PRIMARY_NAME: auth-rbac
       PERSIST_AUTHORIZATION: "true"
@@ -273,6 +331,7 @@ services:
       - ./services/fleet-directory/openapi.yaml:/usr/share/nginx/html/specs/fleet-directory.yaml:ro
       - ./services/execution-sync/openapi.yaml:/usr/share/nginx/html/specs/execution-sync.yaml:ro
       - ./services/analytics-prediction/openapi.yaml:/usr/share/nginx/html/specs/analytics-prediction.yaml:ro
+      - ./services/notification-service/openapi.yaml:/usr/share/nginx/html/specs/notification-service.yaml:ro
 
   # ============================================================================
   # DEV ONLY: SPEC LINTER (on demand, no Node needed on the host)
@@ -288,3 +347,4 @@ services:
 
 volumes:
   postgres_data:
+  nats_data:

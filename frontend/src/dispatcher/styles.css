@@ -22,8 +22,6 @@ svg { flex-shrink: 0; }
 .request-state { padding: 12px 0; color: var(--wp-color-text-secondary); }
 .request-state.error { color: #a22937; }
 .request-state button { margin-left: 8px; background: white; border: 1px solid currentColor; border-radius: 6px; padding: 4px 10px; }
-.data-notice { padding: 12px 16px; margin-bottom: 14px; background: #fff7da; border-radius: 8px; }
-.file-data-notice { padding: 7px 16px; text-align: center; background: #fff7da; font-size: 14px; }
 .chart-caption { font-size: 13px; color: var(--wp-color-text-secondary); }
 .navbar { background: var(--wp-color-primary-dark); color: white; height: 106px; }
 .navbar-inner { max-width: 1440px; margin: auto; height: 100%; padding: 0 42px; display: flex; align-items: center; position: relative; }
@@ -86,6 +84,9 @@ svg { flex-shrink: 0; }
 .alert-row strong { display: block; font-size: 18px; margin-bottom: 3px; }
 .alert-summary { display: block; color: #454f54; font-size: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 160px; }
 .alert-row time { font-size: 14px; color: #5c6970; white-space: nowrap; margin-left: auto; }
+.alert-when { margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+.alert-when time { margin-left: 0; }
+.alert-late { font-size: 12px; color: #b45309; white-space: nowrap; }
 .schedule-page { padding-top: 14px; }
 .warehouse-summaries { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
 .warehouse-summary { display: grid; grid-template-columns: repeat(3, 1fr); padding: 22px; min-height: 104px; }
@@ -274,13 +275,13 @@ th { font-weight: 500; }
 .schedule-unavailable p { line-height: 1.6; }
 .schedule-unavailable h2 { margin: 0; }
 .schedule-unavailable .text-link { min-height: 44px; display: inline-flex; align-items: center; }
+.schedule-closed > svg { color: #b4570a; }
+.closed-day-links { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 28px; }
 .login-screen { min-height: 100svh; }
 .login-nav-link { background: transparent; color: white; min-height: 44px; }
 .icon-button, .login-input .icon-button { min-width: 44px; min-height: 44px; }
 .availability-indicator { border: 0; background: transparent; padding: 0; min-height: 44px; align-items: center; cursor: pointer; }
 .availability-indicator.tooltip-open .availability-tooltip { visibility: visible; opacity: 1; }
-.test-login-hint { display: grid; gap: 6px; padding: 16px; border: 1px solid #ccd9e2; border-radius: 10px; background: #f6fbfd; color: #455d69; font-size: 15px; }
-.test-login-hint code { font: inherit; font-weight: 600; color: #00416c; overflow-wrap: anywhere; }
 .table-scroll { max-width: 100%; overscroll-behavior-x: contain; }
 .back-button, .add-period, .request-state button { min-height: 44px; }
 .deferred-row .text-link, .section-title .text-link { display: inline-flex; align-items: center; min-height: 44px; }

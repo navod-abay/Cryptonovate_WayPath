@@ -8,6 +8,13 @@ const router = Router();
 // A. WAREHOUSE LOADING ROUTES (Role: loader, dispatcher)
 // ============================================================================
 router.get(
+  '/docks/:depot/active-trips',
+  authenticateJwt,
+  requireRole('loader', 'dispatcher'),
+  ExecutionController.getActiveTrips
+);
+
+router.get(
   '/trips/:tripId/manifest',
   authenticateJwt,
   requireRole('loader', 'dispatcher'),
@@ -29,7 +36,7 @@ router.post(
 );
 
 // ============================================================================
-// B. DRIVER EXECUTION & TELEMETRY ROUTES (Role: driver, dispatcher)
+// B. DRIVER EXECUTION, TELEMETRY & INCIDENT ROUTES (Role: driver, dispatcher)
 // ============================================================================
 router.get(
   '/driver/active-route',
@@ -51,6 +58,13 @@ router.post(
   ExecutionController.recordPod
 );
 
+router.post(
+  '/driver/incidents',
+  authenticateJwt,
+  requireRole('driver'),
+  ExecutionController.reportDriverIncidents
+);
+
 // ============================================================================
 // C. OFFLINE BULK SYNCHRONIZATION ROUTE (Role: driver, dispatcher)
 // ============================================================================
@@ -62,7 +76,7 @@ router.post(
 );
 
 // ============================================================================
-// D. STORE MANAGER CONFIRMATION & DISPUTE ROUTES (Role: store_manager, dispatcher)
+// D. STORE MANAGER CONFIRMATION & DELIVERY PROBLEM ROUTES (Role: store_manager, dispatcher)
 // ============================================================================
 router.post(
   '/orders/:orderRef/unloading',
@@ -94,10 +108,10 @@ router.post(
 );
 
 router.post(
-  '/orders/:orderRef/dispute',
+  '/deliveries/:deliveryId/problems',
   authenticateJwt,
-  requireRole('store_manager', 'dispatcher'),
-  ExecutionController.disputeOrder
+  requireRole('store_manager'),
+  ExecutionController.reportDeliveryProblem
 );
 
 export default router;

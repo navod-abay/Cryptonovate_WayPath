@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, SafeAreaView, StatusBar } from 'react-native';
+import {View, StyleSheet, SafeAreaView, StatusBar} from 'react-native';
+import CustomText from '../../components/CustomText';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../navigation/AppNavigator';
 import { COLORS, SPACING, FONT_SIZE, FONT_WEIGHT } from '../../utils/constants';
@@ -31,20 +32,20 @@ export default function OTPScreen({ navigation }: Props) {
       
       {/* Header Section */}
       <View style={[styles.header, { paddingTop: insets.top + SPACING.xl }]}>
-        <Text style={styles.logoText}>Waypoint Logistics</Text>
+        <CustomText style={styles.logoText}>Waypoint Logistics</CustomText>
       </View>
 
       {/* Main Content */}
       <View style={styles.content}>
-        <Text style={styles.title}>Enter the code we sent you</Text>
-        <Text style={styles.subtitle}>Sent to +94 70 xxx xx41</Text>
+        <CustomText style={styles.title}>Enter the code we sent you</CustomText>
+        <CustomText style={styles.subtitle}>Sent to +94 70 xxx xx41</CustomText>
         
         <OTPInput code={otpCode} setCode={setOtpCode} length={6} />
       </View>
 
       {/* Footer Section */}
       <View style={styles.footer}>
-        <Text style={styles.resendText}>Resend code in 1:52 mins</Text>
+        <CustomText style={styles.resendText}>Resend code in 1:52 mins</CustomText>
         <PrimaryButton 
           title="Sign In" 
           variant="solid" 

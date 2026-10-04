@@ -16,10 +16,12 @@ interface Props {
   onClose: () => void;
   /** Driver typed the code into their app. */
   onVerified: () => void;
+  /** The driver left without entering the code (no network); omit to hide the option. */
+  onDriverLeft?: () => void;
 }
 
 /** Shows the 6-digit handover code the store manager reads out to the driver. */
-export default function ConfirmationCodeModal({ deliveryId, open, onClose, onVerified }: Props) {
+export default function ConfirmationCodeModal({ deliveryId, open, onClose, onVerified, onDriverLeft }: Props) {
   const [code, setCode] = useState<ConfirmationCode | null>(null);
   const [verified, setVerified] = useState(false);
   const now = useNow(500);
@@ -81,6 +83,11 @@ export default function ConfirmationCodeModal({ deliveryId, open, onClose, onVer
           <p className="sm-code__foot">Code expired · <button type="button" className="sm-link-button" onClick={fetchCode}>Get a new code</button></p>
         ) : (
           <p className="sm-code__foot">Code expires in {left ? `${left.m}:${pad2(left.s)}` : '–'} mins</p>
+        )}
+        {!verified && onDriverLeft && (
+          <p className="sm-code__foot">
+            Driver couldn’t enter it (no network)? <button type="button" className="sm-link-button" onClick={onDriverLeft}>Send my receipt later</button>
+          </p>
         )}
       </div>
     </Modal>

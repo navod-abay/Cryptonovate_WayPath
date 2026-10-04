@@ -1,13 +1,14 @@
 import { useEffect, type ReactNode } from 'react';
 import { PrimaryButton } from '@waypoint/ui';
-import { loadStoreData, refreshLiveData } from '@/api/storeManagerApi';
+import { loadStoreData, mergeUpdates, refreshLiveData } from '@/api/storeManagerApi';
+import { subscribeUpdates } from '@/api/updateStream';
 import { POLL_INTERVAL_MS } from '@/api/config';
 import { useAppStore } from '@/state/store';
 import './StoreDataGate.css';
 
 /**
  * Loads the store's data once after sign-in, shows a loading / error screen until it is ready,
- * then keeps deliveries and updates fresh by polling.
+ * then keeps deliveries and updates fresh by polling, with updates also pushed live.
  */
 export default function StoreDataGate({ children }: { children: ReactNode }) {
   const { status, error } = useAppStore((s) => s.load);
@@ -20,7 +21,11 @@ export default function StoreDataGate({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (status !== 'ready') return;
     const id = setInterval(() => { refreshLiveData().catch(() => undefined); }, POLL_INTERVAL_MS);
-    return () => clearInterval(id);
+    const unsubscribe = subscribeUpdates({
+      onUpdates: mergeUpdates,
+      onReady: () => { refreshLiveData().catch(() => undefined); },
+    });
+    return () => { clearInterval(id); unsubscribe(); };
   }, [status]);
 
   if (status === 'ready') return <>{children}</>;

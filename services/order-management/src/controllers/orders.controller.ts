@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { z } from 'zod';
+import { isOperatingDay, nextOperatingDay } from '../domain/calendar.js';
 import { nextRunDate } from '../domain/cutoff.js';
 import { appError } from '../domain/errors.js';
 import { actorFrom } from '../middleware/outletScope.js';
@@ -8,11 +9,14 @@ import type {
   CancelOrderSchema,
   CloseWindowSchema,
   ConfirmedQuerySchema,
+  SimulateDeliveryInput,
   ConfirmOrderSchema,
   CreateOrderInput,
   ListProductsQuery,
   DeferOrderSchema,
+  DispatcherOverviewQuerySchema,
   ListOrdersQuery,
+  OrderWindowsQuerySchema,
   ReceiptInput,
   StatusChangeInput,
   ReplaceItemsSchema,
@@ -21,6 +25,7 @@ import type {
 } from '../schemas/orders.schema.js';
 import { runCutoffSweep } from '../services/cutoffJob.js';
 import * as products from '../services/products.service.js';
+import { simulateDelivery as simulateDeliveryForDay } from '../services/demoHistory.service.js';
 import * as orders from '../services/orders.service.js';
 
 const IDEMPOTENCY_KEY = /^[\x21-\x7E]{1,100}$/;
@@ -86,6 +91,16 @@ export async function getSummary(req: Request, res: Response) {
   ok(res, await orders.getSummary(q.date, q.depot));
 }
 
+export async function getDispatcherOverview(req: Request, res: Response) {
+  const q = req.query as unknown as z.infer<typeof DispatcherOverviewQuerySchema>;
+  ok(res, await orders.getDispatcherOverview(q.date, q.depot));
+}
+
+export async function getOrderWindows(req: Request, res: Response) {
+  const q = req.query as unknown as z.infer<typeof OrderWindowsQuerySchema>;
+  ok(res, orders.getOrderWindows(q.from, q.to));
+}
+
 export async function getAtRisk(req: Request, res: Response) {
   const q = req.query as unknown as z.infer<typeof AtRiskQuerySchema>;
   ok(res, await orders.getAtRisk({ depot: q.depot, minDeferrals: q.min_deferrals, minDays: q.min_days }));
@@ -111,5 +126,16 @@ export async function recordReceipt(req: Request, res: Response) {
 
 export async function closeWindow(req: Request, res: Response) {
   const body = req.body as z.infer<typeof CloseWindowSchema>;
+  // A closed day has no run to close; sweeping it would count the previous day's deliveries twice.
+  if (body.date && !isOperatingDay(body.date)) {
+    throw appError('NON_OPERATING_DATE', `${body.date} is not an operating day`, {
+      date: body.date,
+      next_operating_day: nextOperatingDay(body.date),
+    });
+  }
   ok(res, await runCutoffSweep(body.date ?? nextRunDate(), 'manual'));
+}
+
+export async function simulateDelivery(req: Request, res: Response) {
+  ok(res, await simulateDeliveryForDay(req.body as SimulateDeliveryInput));
 }

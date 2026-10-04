@@ -249,8 +249,8 @@ export async function startUnloading(orderRef: string): Promise<void> {
   snapshot = null;
 }
 
-/** Order status changes (scheduled, loaded, on the way, delivered), newest first. */
-export async function fetchUpdates(outletId: string): Promise<Update[]> {
+/** Routine order steps (scheduled, loaded, on the way, delivered), newest first. The notification service only raises exceptions. */
+export async function fetchLifecycleUpdates(outletId: string): Promise<Update[]> {
   const { orders } = await loadSnapshot(outletId);
   const read = readIds();
   return orders
@@ -289,14 +289,6 @@ export const requestHandoverCode = (orderRef: string) =>
 export async function fetchOrderStatus(orderRef: string): Promise<string> {
   const order = await http.get<{ status: string }>(`/orders/${encodeURIComponent(orderRef)}`);
   return order.status;
-}
-
-export interface ReceiptTotals { received_units: number; missing_units: number; rejected_units: number; note?: string }
-
-/** POST /orders/:ref/receipt. Needs the order to be delivered; all received means received, anything short means disputed. */
-export async function recordReceipt(orderRef: string, totals: ReceiptTotals): Promise<void> {
-  await http.post(`/orders/${encodeURIComponent(orderRef)}/receipt`, totals);
-  snapshot = null;
 }
 
 // ------------------------------------------------------------ placing an order

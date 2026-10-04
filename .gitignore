@@ -33,7 +33,7 @@ npm-debug.log*
 # OS artifacts
 .DS_Store
 Thumbs.db
-*.png
+# *.png
 
 
 .vscode
@@ -45,3 +45,4 @@ infrastructure/terraform/terraform.tfstate.backup
 infrastructure/terraform/*.tfplan
 infrastructure/terraform/crash.log
 infrastructure/terraform/.terraform.tfstate.lock.info
+infrastructure/terraform/Tech3.pem

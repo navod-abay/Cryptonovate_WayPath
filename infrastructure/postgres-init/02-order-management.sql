@@ -138,6 +138,22 @@ CREATE TABLE IF NOT EXISTS order_receipts (
   received_at     TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
 
+-- Per-item detail of what was missing or damaged; totals match missing_units / rejected_units.
+-- [{ "sku": "CH-YOG", "kind": "damaged", "quantity": 1, "reasons": ["Crushed"] }]
+ALTER TABLE order_receipts ADD COLUMN IF NOT EXISTS lines JSONB NOT NULL DEFAULT '[]'::jsonb;
+
+-- --------------------------------------------------------------- order_alert_outbox
+-- Alerts written in the same transaction as the change they describe, then relayed to the
+-- NATS ALERTS stream. published_at stays NULL until the broker has acknowledged the message.
+CREATE TABLE IF NOT EXISTS order_alert_outbox (
+  id            UUID         PRIMARY KEY,
+  subject       VARCHAR(100) NOT NULL,
+  envelope      JSONB        NOT NULL,
+  created_at    TIMESTAMPTZ  NOT NULL DEFAULT now(),
+  published_at  TIMESTAMPTZ  NULL
+);
+CREATE INDEX IF NOT EXISTS ix_order_alert_outbox_pending ON order_alert_outbox (created_at) WHERE published_at IS NULL;
+
 -- --------------------------------------------------------------- service_jobs
 -- Makes the 16:00 cutoff sweep (and demo seeding) idempotent across restarts and replicas.
 CREATE TABLE IF NOT EXISTS service_jobs (

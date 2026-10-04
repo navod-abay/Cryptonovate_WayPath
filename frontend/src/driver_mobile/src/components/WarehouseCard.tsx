@@ -1,39 +1,40 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import {View, StyleSheet} from 'react-native';
+import CustomText from './CustomText';
 import { COLORS, SPACING, FONT_SIZE, FONT_WEIGHT, scale } from '../utils/constants';
 import Badge from './Badge';
-import CarrotIcon from './CarrotIcon';
+import TypeBadge from './TypeBadge';
+import { GoodsType } from '../types/trip';
 
 interface Props {
   title: string;
   badgeText: string;
   arriveTime: string;
   departTime: string;
+  goodsType?: GoodsType;
 }
 
-export default function WarehouseCard({ title, badgeText, arriveTime, departTime }: Props) {
+export default function WarehouseCard({ title, badgeText, arriveTime, departTime, goodsType }: Props) {
   return (
     <View style={styles.card}>
       <View style={styles.cardHeader}>
         <View style={styles.row}>
           <Badge label={badgeText} />
           <View style={{ width: SPACING.sm }} />
-          <Badge backgroundColor={COLORS.badgeYellow} 
-          icon={<CarrotIcon width={scale(14)} height={scale(14)} color={COLORS.iconYellow} />}
-          /> 
+          <TypeBadge type={goodsType} showText={true} /> 
         </View>
-        <Text style={styles.warehouseTitle}>{title}</Text>
+        <CustomText style={styles.warehouseTitle}>{title}</CustomText>
       </View>
       
       <View style={styles.timeRow}>
         <View>
-          <Text style={styles.timeLabel}>Arrive</Text>
-          <Text style={styles.arriveTime}>{arriveTime}</Text>
+          <CustomText style={styles.timeLabel}>Arrive</CustomText>
+          <CustomText style={styles.arriveTime}>{arriveTime}</CustomText>
         </View>
         <View style={styles.divider} />
         <View>
-          <Text style={styles.timeLabel}>Depart</Text>
-          <Text style={styles.departTime}>{departTime}</Text>
+          <CustomText style={styles.timeLabel}>Depart</CustomText>
+          <CustomText style={styles.departTime}>{departTime}</CustomText>
         </View>
       </View>
     </View>
@@ -43,11 +44,11 @@ export default function WarehouseCard({ title, badgeText, arriveTime, departTime
 const styles = StyleSheet.create({
   card: {
     backgroundColor: COLORS.shade,
-    borderRadius: scale(12),
+    borderRadius: scale(16),
     padding: SPACING.md,
     borderWidth: 1,
     borderColor: COLORS.shade,
-    marginBottom: SPACING.lg,
+    marginBottom: SPACING.xsm,
     // elevation: 2, // Android shadow
   },
   cardHeader: { marginBottom: SPACING.md },

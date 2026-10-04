@@ -1,5 +1,6 @@
 import React from 'react';
-import { TouchableOpacity, Text, StyleSheet, View } from 'react-native';
+import {TouchableOpacity, StyleSheet, View} from 'react-native';
+import CustomText from './CustomText';
 import { COLORS, SPACING, FONT_SIZE, scale } from '../utils/constants';
 
 interface Props {
@@ -15,8 +16,8 @@ export default function SelectableChip({ title, isSelected, onPress }: Props) {
       onPress={onPress}
       activeOpacity={0.8}
     >
-      {isSelected && <Text style={styles.checkIcon}>✓</Text>}
-      <Text style={[styles.title, isSelected && styles.titleSelected]}>{title}</Text>
+      {isSelected && <CustomText style={styles.checkIcon}>✓</CustomText>}
+      <CustomText style={[styles.title, isSelected && styles.titleSelected]}>{title}</CustomText>
     </TouchableOpacity>
   );
 }

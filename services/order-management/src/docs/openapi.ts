@@ -5,6 +5,7 @@ import { CALLER_REASON_CODES } from '../domain/reasonCodes.js';
 import {
   CancelOrderSchema,
   CloseWindowSchema,
+  SimulateDeliverySchema,
   ConfirmOrderSchema,
   CreateOrderSchema,
   DeferOrderSchema,
@@ -270,8 +271,11 @@ const OPERATION_IDS: Readonly<Record<string, string>> = {
   'get /at-risk': 'getAtRiskOutlets',
   'get /summary': 'getSummary',
   'get /products': 'listProducts',
+  'get /dispatcher/overview': 'getDispatcherOverview',
+  'get /dispatcher/windows': 'getOrderWindows',
   'patch /status-batch': 'applyStatusBatch',
   'post /close-window': 'closeWindow',
+  'post /simulate-delivery': 'simulateDelivery',
   'get /{order_ref}': 'getOrder',
   'delete /{order_ref}': 'cancelOrder',
   'put /{order_ref}/items': 'replaceOrderItems',
@@ -911,6 +915,101 @@ function buildSpec(options: OpenApiOptions): Json {
           },
         },
       },
+      '/dispatcher/overview': {
+        get: {
+          tags: ['Dispatch'],
+          summary: 'Delivered vs total orders per dashboard category for one date',
+          description:
+            'Role: dispatcher. Categories: `chilled` and `dry` (Fresh by temperature), `tech`, `style`; all four are always ' +
+            'returned. `total` leaves out draft, cancelled and not_run orders. `delivered` counts delivered, received and ' +
+            'disputed orders (all reached the outlet).',
+          security: secured,
+          parameters: [dateQ('date', true), depotQ],
+          responses: {
+            '200': ok(
+              'Category overview',
+              {
+                type: 'object',
+                properties: {
+                  date: { type: 'string', format: 'date' },
+                  depot: { type: 'string', nullable: true },
+                  categories: {
+                    type: 'array',
+                    items: {
+                      type: 'object',
+                      properties: {
+                        category: { type: 'string', enum: ['chilled', 'dry', 'tech', 'style'] },
+                        total: { type: 'integer' },
+                        delivered: { type: 'integer' },
+                      },
+                    },
+                  },
+                },
+              },
+              {
+                date: '2026-09-29',
+                depot: null,
+                categories: [
+                  { category: 'chilled', total: 56, delivered: 41 },
+                  { category: 'dry', total: 49, delivered: 30 },
+                  { category: 'tech', total: 10, delivered: 4 },
+                  { category: 'style', total: 16, delivered: 16 },
+                ],
+              },
+            ),
+            '400': err(['VALIDATION_ERROR', 'Invalid request query parameters', [{ field: 'date', message: 'Required' }]]),
+            '403': forbidden(false),
+            ...commonErrors,
+          },
+        },
+      },
+      '/dispatcher/windows': {
+        get: {
+          tags: ['Dispatch'],
+          summary: 'Ordering cutoff for each delivery date in a range',
+          description:
+            'Role: dispatcher. One entry per operating day in [from, to] (Sundays and holidays have no run and are omitted). ' +
+            '`cutoffAt` is the ordering cutoff hour, business time zone, on the previous operating day: when the cutoff sweep ' +
+            'closes that run. `open` is true while it has not passed. `serverTime` lets clients correct for clock skew. ' +
+            'The range may cover at most 62 days.',
+          security: secured,
+          parameters: [dateQ('from', true), dateQ('to', true)],
+          responses: {
+            '200': ok(
+              'Order windows',
+              {
+                type: 'object',
+                properties: {
+                  serverTime: { type: 'string', format: 'date-time' },
+                  timeZone: { type: 'string' },
+                  days: {
+                    type: 'array',
+                    items: {
+                      type: 'object',
+                      properties: {
+                        date: { type: 'string', format: 'date' },
+                        cutoffAt: { type: 'string', format: 'date-time' },
+                        open: { type: 'boolean' },
+                      },
+                    },
+                  },
+                },
+              },
+              {
+                serverTime: '2026-10-03T09:00:00.000Z',
+                timeZone: 'Asia/Colombo',
+                days: [
+                  { date: '2026-10-05', cutoffAt: '2026-10-03T10:30:00.000Z', open: true },
+                  { date: '2026-10-06', cutoffAt: '2026-10-05T10:30:00.000Z', open: true },
+                ],
+              },
+            ),
+            '400': err(['VALIDATION_ERROR', 'Invalid request query parameters', [{ field: 'from', message: "'from' must be on or before 'to'" }]]),
+            '403': forbidden(false),
+            ...commonErrors,
+          },
+        },
+      },
       '/status-batch': {
         patch: {
           tags: ['Planning'],
@@ -1037,6 +1136,35 @@ function buildSpec(options: OpenApiOptions): Json {
             ),
             '400': err(['VALIDATION_ERROR', 'Invalid request payload format', [{ field: 'date', message: 'Must be a valid date in YYYY-MM-DD format' }]]),
             '403': forbidden(false),
+            '422': err(['NON_OPERATING_DATE', '2026-10-04 is not an operating day', { date: '2026-10-04', next_operating_day: '2026-10-05' }]),
+            ...commonErrors,
+          },
+        },
+      },
+      '/simulate-delivery': {
+        post: {
+          tags: ['Dispatch'],
+          summary: 'Demo history: mark a past day delivered and received',
+          description:
+            'Role: system (Planning & Allocation). Only when SEED_DEMO_DATA=true, only for past dates. Every allocated ' +
+            'order of the date goes loaded → out_for_delivery → delivered → received with a full receipt; events carry ' +
+            'the loader, driver and store-manager roles and times from the plan (deliveries[]), and the outlet is marked ' +
+            'served. Planning calls this for the seeded past days it plans at startup, before planning the next day.',
+          security: secured,
+          requestBody: body(SimulateDeliverySchema, {
+            pastDay: {
+              summary: 'A past day with planned times',
+              value: { date: '2026-10-01', deliveries: [{ order_ref: 'ORD-20261001-00042', departure_time: '03:30', arrival_time: '04:12' }] },
+            },
+          }),
+          responses: {
+            '200': ok(
+              'Orders marked received',
+              { type: 'object', properties: { date: { type: 'string', format: 'date' }, received: { type: 'integer' } } },
+              { date: '2026-10-01', received: 142 },
+            ),
+            '400': err(['VALIDATION_ERROR', 'Only past days can be marked delivered', [{ field: 'date', message: 'must be before 2026-10-04' }]]),
+            '403': err(['FORBIDDEN', 'Delivery simulation is only available when demo data is enabled (SEED_DEMO_DATA=true)']),
             ...commonErrors,
           },
         },
@@ -1298,12 +1426,25 @@ function buildSpec(options: OpenApiOptions): Json {
           summary: 'Record goods receipt for a delivered order',
           description:
             'Role: store_manager (own outlet). `received + missing + rejected` must equal `order_units`. All received → `received`, ' +
-            'otherwise `disputed`. Either way the outlet counts as served.',
+            'otherwise `disputed`. Either way the outlet counts as served. Optional `lines` break the shortfall down per item ' +
+            '(damaged counts as rejected); their totals must match. A disputed receipt raises a `store.discrepancy` dashboard alert.',
           security: secured,
           parameters: [orderRefParam],
           requestBody: body(ReceiptSchema, {
             full: { summary: 'Everything received', value: { received_units: 120, missing_units: 0, rejected_units: 0 } },
             short: { summary: 'Short delivery → disputed', value: { received_units: 118, missing_units: 2, rejected_units: 0, note: '2 crates short' } },
+            itemised: {
+              summary: 'Per-item missing and damaged',
+              value: {
+                received_units: 117,
+                missing_units: 2,
+                rejected_units: 1,
+                lines: [
+                  { sku: 'CH-MILK', kind: 'missing', quantity: 2, reasons: [] },
+                  { sku: 'CH-YOG', kind: 'damaged', quantity: 1, reasons: ['Crushed', 'Leaking'] },
+                ],
+              },
+            },
           }),
           responses: {
             '200': ok(
@@ -1323,6 +1464,18 @@ function buildSpec(options: OpenApiOptions): Json {
                       note: { type: 'string', nullable: true },
                       received_by: { type: 'string', nullable: true },
                       received_at: { type: 'string', format: 'date-time' },
+                      lines: {
+                        type: 'array',
+                        items: {
+                          type: 'object',
+                          properties: {
+                            sku: { type: 'string' },
+                            kind: { type: 'string', enum: ['missing', 'damaged'] },
+                            quantity: { type: 'integer' },
+                            reasons: { type: 'array', items: { type: 'string' } },
+                          },
+                        },
+                      },
                     },
                   },
                 },
@@ -1340,6 +1493,7 @@ function buildSpec(options: OpenApiOptions): Json {
                   note: '2 crates short',
                   received_by: '9595b3cf-eec1-4559-9fcc-889ef5a9280c',
                   received_at: '2026-09-29T01:30:12.940Z',
+                  lines: [],
                 },
               },
             ),
@@ -1358,6 +1512,10 @@ function buildSpec(options: OpenApiOptions): Json {
               'RECEIPT_UNITS_MISMATCH',
               'received + missing + rejected (1) must equal the ordered units (120)',
               { order_units: 120, received_units: 1, missing_units: 0, rejected_units: 0 },
+            ], [
+              'RECEIPT_LINES_MISMATCH',
+              'Lines add up to 1 missing and 0 damaged, but the receipt says 2 missing and 0 rejected',
+              { lines_missing: 1, lines_damaged: 0, missing_units: 2, rejected_units: 0 },
             ]),
             ...commonErrors,
           },

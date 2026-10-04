@@ -35,15 +35,15 @@ variable "instance_type" {
 }
 
 variable "admin_ssh_cidr" {
-  description = "CIDR block permitted for SSH management (Replace YOUR_IP_ADDRESS with your public IP)"
+  description = "CIDR block permitted for SSH management"
   type        = string
-  default     = "112.134.148.12/32"
+  default     = "0.0.0.0/0"
 }
 
 variable "key_pair_name" {
-  description = "Name of existing EC2 Key Pair for SSH access (optional, leave empty if not using SSH key)"
+  description = "Name of existing EC2 Key Pair for SSH access"
   type        = string
-  default     = ""
+  default     = "Tech3"
 }
 
 variable "github_repo_url" {
@@ -114,6 +114,36 @@ resource "aws_security_group" "app_sg" {
     description      = "HTTP public gateway entrypoint"
     from_port        = 80
     to_port          = 80
+    protocol         = "tcp"
+    cidr_blocks      = ["0.0.0.0/0"]
+    ipv6_cidr_blocks = ["::/0"]
+  }
+
+  # Ingress: Secure HTTPS to NGINX Reverse Proxy
+  ingress {
+    description      = "HTTPS public gateway entrypoint"
+    from_port        = 443
+    to_port          = 443
+    protocol         = "tcp"
+    cidr_blocks      = ["0.0.0.0/0"]
+    ipv6_cidr_blocks = ["::/0"]
+  }
+
+  # Ingress: Dispatcher Web Application
+  ingress {
+    description      = "Dispatcher Web Application"
+    from_port        = 4173
+    to_port          = 4173
+    protocol         = "tcp"
+    cidr_blocks      = ["0.0.0.0/0"]
+    ipv6_cidr_blocks = ["::/0"]
+  }
+
+  # Ingress: Store Manager Web Application
+  ingress {
+    description      = "Store Manager Web Application"
+    from_port        = 4174
+    to_port          = 4174
     protocol         = "tcp"
     cidr_blocks      = ["0.0.0.0/0"]
     ipv6_cidr_blocks = ["::/0"]

@@ -98,7 +98,7 @@ export type TravelMetricsResponse = z.infer<typeof TravelMetricsResponseSchema>;
 
 export const LogDistanceRequestSchema = z.object({
   distance_km: z.number().positive('Distance must be a positive number'),
-  iso_year:    z.number().int().min(2020).max(2100, 'iso_year must be between 2020 and 2100'),
+  iso_year: z.number().int().min(2020).max(2100, 'iso_year must be between 2020 and 2100'),
   week_number: z.number().int().min(1).max(53, 'week_number must be a valid ISO week (1–53)'),
 });
 export type LogDistanceRequest = z.infer<typeof LogDistanceRequestSchema>;
@@ -110,8 +110,8 @@ export const FuelUsageQuerySchema = z.object({
 export type FuelUsageQuery = z.infer<typeof FuelUsageQuerySchema>;
 
 export const GetVehiclesQuerySchema = z.object({
-  depot:        z.string().optional(),
-  status:       z.enum(['available', 'in_workshop']).optional(),
+  depot: z.string().optional(),
+  status: z.enum(['available', 'in_workshop']).optional(),
   available_on: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, 'available_on must be in YYYY-MM-DD format')
@@ -122,8 +122,8 @@ export type GetVehiclesQuery = z.infer<typeof GetVehiclesQuerySchema>;
 export const VehicleDowntimeRequestSchema = z
   .object({
     date_from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'date_from must be in YYYY-MM-DD format'),
-    date_to:   z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'date_to must be in YYYY-MM-DD format'),
-    reason:    z.string().max(255).optional(),
+    date_to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'date_to must be in YYYY-MM-DD format'),
+    reason: z.string().max(255).optional(),
   })
   .refine((d) => d.date_to >= d.date_from, {
     message: 'date_to must be on or after date_from',
@@ -152,4 +152,4 @@ export interface ApiErrorResponse {
   error: ApiErrorDetail;
 }
 
-export type ApiResponse<T> = ApiSuccessResponse<T> | ApiErrorResponse;
+export type ApiResponse<T> = ApiSuccessResponse<T> | ApiErrorResponse;

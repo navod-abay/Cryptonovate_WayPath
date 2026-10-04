@@ -16,11 +16,3 @@ export function availabilityOn(status:string,periods:UnavailablePeriod[],date=to
   const active=normalizePeriods(periods).find(p=>p.from<=date && date<=p.to);
   return {available:status==='available' && !active,unavailableUntil:active?.to};
 }
-const key='waypath.dispatcher.test-availability';
-export function readLocalAvailability():Record<string,AvailabilityUpdate> {
-  try{return JSON.parse(localStorage.getItem(key) || '{}');}catch{return {};}
-}
-export function writeLocalAvailability(id:string,update:AvailabilityUpdate) {
-  const current=readLocalAvailability();current[id]=update;
-  localStorage.setItem(key,JSON.stringify(current));
-}

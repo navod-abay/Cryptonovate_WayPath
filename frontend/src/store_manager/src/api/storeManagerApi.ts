@@ -12,11 +12,11 @@ import * as backend from './backend';
 import { ApiError, http } from './http';
 import * as mock from '@/mock/server';
 import { emptyData, getState, setState } from '@/state/store';
+import { loadDrafts, saveDraft, type ReceiptDraft } from '@/state/receipts';
 import type {
   ConfirmationCode, Delivery, DraftOrder, IssueReport, NewIssueInput, NewOrderInput, Order,
   OrderSuggestions, OrderType, Product, TruckCapacity, Update,
 } from '@/types';
-import { describeReport } from '@/utils/text';
 
 const outletId = () => encodeURIComponent(getState().outlet.id);
 const categories = () => getState().outlet.categories;
@@ -42,11 +42,32 @@ const fetchDrafts = (): Promise<DraftOrder[]> => (USE_MOCK ? Promise.resolve([])
 const fetchSuggestions = (): Promise<OrderSuggestions> =>
   USE_MOCK ? mock.getOrderSuggestions() : backend.fetchSuggestions(getState().outlet.id);
 
-/** Derived from orders that are on the way or delivered, plus planning stops */
-const fetchDeliveries = (): Promise<Delivery[]> => (USE_MOCK ? mock.getDeliveries() : backend.fetchDeliveries(getState().outlet.id));
+/** Derived from orders that are on the way or delivered, plus planning stops; item reports still held on this device are added. */
+const fetchDeliveries = async (): Promise<Delivery[]> => {
+  if (USE_MOCK) return mock.getDeliveries();
+  const deliveries = await backend.fetchDeliveries(getState().outlet.id);
+  const drafts = loadDrafts(getState().outlet.id);
+  return deliveries.map((d) => withDraft(d, drafts[d.id]));
+};
 
-/** Derived from order status events */
-const fetchUpdates = (): Promise<Update[]> => (USE_MOCK ? mock.getUpdates() : backend.fetchUpdates(getState().outlet.id));
+function withDraft(d: Delivery, draft: ReceiptDraft | undefined): Delivery {
+  if (!draft) return d;
+  const known = new Set(d.reports.map((r) => r.id));
+  return { ...d, reports: [...d.reports, ...draft.reports.filter((r) => !known.has(r.id))], receiptQueued: draft.queued };
+}
+
+/**
+ * The notification service's alerts (GET /notifications/outlets/:outletId/updates) together with the
+ * routine order steps derived from the order's events, newest first.
+ */
+const fetchUpdates = async (): Promise<Update[]> => {
+  if (USE_MOCK) return mock.getUpdates();
+  const [alerts, steps] = await Promise.all([
+    http.get<Update[]>(`/notifications/outlets/${outletId()}/updates`).catch(() => [] as Update[]),
+    backend.fetchLifecycleUpdates(getState().outlet.id),
+  ]);
+  return [...alerts, ...steps].sort((x, y) => y.at.localeCompare(x.at));
+};
 
 let loading: Promise<void> | null = null;
 
@@ -80,6 +101,7 @@ async function doLoadStoreData() {
 export async function refreshLiveData() {
   const [deliveries, updates] = await Promise.all([fetchDeliveries(), fetchUpdates()]);
   setState((s) => ({ ...s, deliveries, updates }));
+  await sendQueuedReceipts();
 }
 
 async function refreshOrders() {
@@ -140,37 +162,104 @@ export async function startUnloading(deliveryId: string) {
   return d;
 }
 
+const setDraft = (deliveryId: string, draft: ReceiptDraft | null) => {
+  saveDraft(getState().outlet.id, deliveryId, draft);
+  setState((s) => ({
+    ...s,
+    deliveries: s.deliveries.map((d) => (d.id === deliveryId ? { ...d, reports: draft?.reports ?? d.reports, receiptQueued: draft?.queued } : d)),
+  }));
+};
+const draftFor = (deliveryId: string): ReceiptDraft => loadDrafts(getState().outlet.id)[deliveryId] ?? { reports: [], queued: false };
+
 /**
- * POST /execution/orders/:orderRef/dispute   (exists in execution-sync)
- * Sends the existing { discrepancyType, description } plus the structured fields the UI needs back.
+ * "What's Wrong ?" while unloading. Real API: kept on this device and sent with the receipt
+ * (POST /orders/:orderRef/receipt) once the order is delivered, so it can still be edited.
  */
 export async function reportIssue(deliveryId: string, input: NewIssueInput): Promise<IssueReport> {
-  const delivery = getState().deliveries.find((d) => d.id === deliveryId);
-  let report: IssueReport;
-  if (USE_MOCK) report = await mock.createDispute(deliveryId, input);
-  else {
-    const itemName = delivery?.items.find((i) => i.productId === input.productId)?.name ?? input.productId;
-    const description = describeReport({ ...input, id: '', deliveryId, itemName, createdAt: '' });
-    report = await http.post<IssueReport>(`/execution/orders/${encodeURIComponent(delivery?.orderId ?? '')}/dispute`, {
-      discrepancyType: input.kind, description, deliveryId, ...input,
-    });
+  if (USE_MOCK) {
+    const report = await mock.createDispute(deliveryId, input);
+    setState((s) => ({ ...s, deliveries: s.deliveries.map((d) => (d.id === deliveryId ? { ...d, reports: [...d.reports, report] } : d)) }));
+    return report;
   }
-  setState((s) => ({ ...s, deliveries: s.deliveries.map((d) => (d.id === deliveryId ? { ...d, reports: [...d.reports, report] } : d)) }));
+  const delivery = getState().deliveries.find((d) => d.id === deliveryId);
+  const report: IssueReport = {
+    ...input,
+    id: crypto.randomUUID(),
+    deliveryId,
+    itemName: delivery?.items.find((i) => i.productId === input.productId)?.name ?? input.productId,
+    createdAt: new Date().toISOString(),
+  };
+  const draft = draftFor(deliveryId);
+  setDraft(deliveryId, { ...draft, reports: [...draft.reports, report] });
   return report;
 }
 
-/** DELETE /execution/disputes/:reportId */
+/** Removes a report made by mistake, before the receipt is sent. */
 export async function removeReport(deliveryId: string, reportId: string) {
-  if (USE_MOCK) await mock.deleteDispute(deliveryId, reportId);
-  else await http.del<void>(`/execution/disputes/${reportId}`);
-  setState((s) => ({ ...s, deliveries: s.deliveries.map((d) => (d.id === deliveryId ? { ...d, reports: d.reports.filter((r) => r.id !== reportId) } : d)) }));
+  if (USE_MOCK) {
+    await mock.deleteDispute(deliveryId, reportId);
+    setState((s) => ({ ...s, deliveries: s.deliveries.map((d) => (d.id === deliveryId ? { ...d, reports: d.reports.filter((r) => r.id !== reportId) } : d)) }));
+    return;
+  }
+  const draft = draftFor(deliveryId);
+  setDraft(deliveryId, { ...draft, reports: draft.reports.filter((r) => r.id !== reportId) });
+}
+
+/**
+ * POST /orders/:orderRef/receipt   (order-management)
+ * Totals for the whole order plus one line per problem: the manager's reports, and items the
+ * loader removed (ordered − sent) as missing. Damaged counts as rejected.
+ */
+async function sendReceipt(delivery: Delivery) {
+  const draft = draftFor(delivery.id);
+  const lines = [
+    ...delivery.items
+      .filter((i) => i.sent < i.ordered)
+      .map((i) => ({ sku: i.productId, kind: 'missing' as const, quantity: i.ordered - i.sent, reasons: ['Removed at loading'] })),
+    ...draft.reports.map((r) => ({ sku: r.productId, kind: r.kind, quantity: r.quantity, reasons: r.reasons })),
+  ];
+  const units = (kind: 'missing' | 'damaged') => lines.filter((l) => l.kind === kind).reduce((n, l) => n + l.quantity, 0);
+  const ordered = delivery.items.reduce((n, i) => n + i.ordered, 0);
+  const missing = units('missing');
+  const rejected = units('damaged');
+  try {
+    await http.post(`/orders/${encodeURIComponent(delivery.orderId)}/receipt`, {
+      received_units: Math.max(0, ordered - missing - rejected),
+      missing_units: missing,
+      rejected_units: rejected,
+      lines,
+    });
+  } catch (e) {
+    // Sent before (e.g. the response was lost): nothing left to do.
+    if (!(e instanceof ApiError && e.status === 409 && /already been recorded/i.test(e.message))) throw e;
+  }
+  setDraft(delivery.id, null);
+}
+
+/**
+ * "Driver already left": the driver could not enter the code (no network at the outlet). The
+ * receipt is sent automatically once their offline delivery proof syncs and the order is delivered.
+ */
+export async function queueReceipt(deliveryId: string) {
+  if (USE_MOCK) return;
+  setDraft(deliveryId, { ...draftFor(deliveryId), queued: true });
+  await sendQueuedReceipts().catch(() => undefined);
+}
+
+/** Sends every queued receipt whose delivery is now delivered. Runs with each poll. */
+async function sendQueuedReceipts() {
+  if (USE_MOCK) return;
+  const drafts = loadDrafts(getState().outlet.id);
+  const ready = getState().deliveries.filter((d) => d.status === 'delivered' && drafts[d.id]?.queued);
+  for (const d of ready) await sendReceiptOnce(d).catch(() => undefined);
 }
 
 /** POST /execution/deliveries/:deliveryId/problems   Report button while the vehicle is on the way. */
 export async function reportDeliveryProblem(deliveryId: string, problems: string[]) {
+  const orderRef = getState().deliveries.find((d) => d.id === deliveryId)?.orderId;
   return USE_MOCK
     ? mock.reportDeliveryProblem(deliveryId, problems)
-    : http.post<{ id: string }>(`/execution/deliveries/${deliveryId}/problems`, { problems });
+    : http.post<{ id: string }>(`/execution/deliveries/${deliveryId}/problems`, { problems, orderRef });
 }
 
 /**
@@ -182,63 +271,73 @@ export async function requestConfirmationCode(deliveryId: string): Promise<Confi
   return USE_MOCK ? mock.createHandoverCode(deliveryId) : backend.requestHandoverCode(delivery?.orderId ?? '');
 }
 
-const recording = new Map<string, Promise<void>>();
+const sending = new Map<string, Promise<void>>();
 
-/** Sends the store's receipt: items reported missing or damaged, the rest received. One call per delivery at a time. */
-function recordReceipt(deliveryId: string): Promise<void> {
-  const running = recording.get(deliveryId);
+/** One receipt send per delivery at a time: the code modal and the poll can both reach it. */
+function sendReceiptOnce(delivery: Delivery): Promise<void> {
+  const running = sending.get(delivery.id);
   if (running) return running;
-  const delivery = getState().deliveries.find((d) => d.id === deliveryId);
-  if (!delivery) return Promise.reject(new Error('Delivery not found.'));
-  const total = delivery.items.reduce((n, i) => n + i.sent, 0);
-  const missing = delivery.reports.filter((r) => r.kind === 'missing').reduce((n, r) => n + r.quantity, 0);
-  const rejected = delivery.reports.filter((r) => r.kind === 'damaged').reduce((n, r) => n + r.quantity, 0);
-  if (missing + rejected > total) return Promise.reject(new Error('More items are reported than were sent.'));
-  const note = delivery.reports.map((r) => describeReport(r)).join('; ').slice(0, 1000);
-  const promise = backend
-    .recordReceipt(delivery.orderId, { received_units: total - missing - rejected, missing_units: missing, rejected_units: rejected, ...(note ? { note } : {}) })
-    .catch((e) => {
-      // Already recorded (for example by an earlier attempt) counts as done.
-      if (!(e instanceof ApiError && e.code === 'RECEIPT_ALREADY_RECORDED')) throw e;
-    })
-    .finally(() => recording.delete(deliveryId));
-  recording.set(deliveryId, promise);
+  const promise = sendReceipt(delivery).finally(() => sending.delete(delivery.id));
+  sending.set(delivery.id, promise);
   return promise;
 }
 
-/** The driver already finished the handover, so no code is needed: record the receipt now. */
+/** The driver already finished the handover, so no code is needed: send the receipt now. */
 export async function confirmReceipt(deliveryId: string) {
-  await recordReceipt(deliveryId);
+  const delivery = getState().deliveries.find((d) => d.id === deliveryId);
+  if (!delivery) throw new Error('Delivery not found.');
+  await sendReceiptOnce(delivery);
   await Promise.all([refreshOrders(), refreshLiveData()]);
 }
 
 /**
- * GET /execution/deliveries/:deliveryId   Polled while the code is shown.
- * Returns true once the driver has entered the code (status "delivered").
+ * Polled while the code is shown: true once the driver has entered it (the order is delivered).
+ * Real mode reads the order's status, then sends the receipt. A network failure leaves the
+ * receipt queued for the next poll; a refusal from the server is raised so the modal can say why.
  */
 export async function checkHandover(deliveryId: string): Promise<boolean> {
-  if (!USE_MOCK) {
-    const delivery = getState().deliveries.find((x) => x.id === deliveryId);
-    const status = await backend.fetchOrderStatus(delivery?.orderId ?? '');
-    if (status === 'out_for_delivery') return false;
-    // The driver entered the code, so the order is delivered; record the store's receipt now.
-    if (status === 'delivered') await recordReceipt(deliveryId);
+  if (USE_MOCK) {
+    const d = await mock.getDelivery(deliveryId);
+    upsertDelivery(d);
+    if (d.status !== 'delivered') return false;
     await Promise.all([refreshOrders(), refreshLiveData()]).catch(() => undefined);
     return true;
   }
-  const d = await mock.getDelivery(deliveryId);
-  upsertDelivery(d);
-  if (d.status !== 'delivered') return false;
+  const delivery = getState().deliveries.find((x) => x.id === deliveryId);
+  if (!delivery) throw new Error('Delivery not found.');
+  const status = await backend.fetchOrderStatus(delivery.orderId);
+  if (status === 'out_for_delivery') return false;
+  if (status === 'delivered') {
+    setDraft(deliveryId, { ...draftFor(deliveryId), queued: true });
+    try {
+      await sendReceiptOnce(delivery);
+    } catch (e) {
+      if (e instanceof ApiError && e.status >= 400 && e.status < 500) throw e;
+    }
+  }
   await Promise.all([refreshOrders(), refreshLiveData()]).catch(() => undefined);
   return true;
 }
 
 // ============================================================ updates
 
-/** Real mode keeps the read state in this browser (the backend has no endpoint for it). */
+/** Alerts are marked read on the notification service; derived order steps are remembered on this device. */
 export async function markUpdatesRead(ids: string[]) {
   if (!ids.length) return;
   setState((s) => ({ ...s, updates: s.updates.map((u) => (ids.includes(u.id) ? { ...u, read: true } : u)) }));
   if (USE_MOCK) await mock.markUpdatesRead(ids);
-  else backend.rememberRead(ids);
+  else {
+    const derived = ids.filter((id) => /^ORD-\d{8}-\d+:/.test(id));
+    const alerts = ids.filter((id) => !derived.includes(id));
+    backend.rememberRead(derived);
+    if (alerts.length) await http.post<void>('/notifications/read', { ids: alerts });
+  }
+}
+
+/** Live updates pushed by notification-service; newest wins on id clashes. */
+export function mergeUpdates(incoming: Update[]) {
+  setState((s) => {
+    const ids = new Set(incoming.map((u) => u.id));
+    return { ...s, updates: [...incoming, ...s.updates.filter((u) => !ids.has(u.id))] };
+  });
 }

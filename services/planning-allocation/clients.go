@@ -6,8 +6,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"crypto/hmac"
-	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -22,7 +20,7 @@ import (
 const systemActorID = "00000000-0000-0000-0000-000000000000"
 
 // serviceToken mints a short-lived access token with role "system", signed with the shared
-// JWT_ACCESS_SECRET the other services verify against.
+// JWT_ACCESS_SECRET the other services verify against (and verifyAccessToken in auth.go accepts).
 func serviceToken(secret string, now time.Time) string {
 	enc := base64.RawURLEncoding
 	header := enc.EncodeToString([]byte(`{"alg":"HS256","typ":"JWT"}`))
@@ -32,9 +30,7 @@ func serviceToken(secret string, now time.Time) string {
 		"iat": now.Unix(), "exp": now.Add(10 * time.Minute).Unix(),
 	})
 	unsigned := header + "." + enc.EncodeToString(claims)
-	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write([]byte(unsigned))
-	return unsigned + "." + enc.EncodeToString(mac.Sum(nil))
+	return unsigned + "." + enc.EncodeToString(hs256(secret, unsigned))
 }
 
 // apiError is a non-2xx reply from another service.
@@ -105,6 +101,23 @@ func (c *serviceClient) call(ctx context.Context, method, path string, body, out
 	return nil
 }
 
+// Ready reports whether the service answers GET /health with 2xx.
+func (c *serviceClient) Ready(ctx context.Context) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(c.baseURL, "/")+"/health", nil)
+	if err != nil {
+		return err
+	}
+	res, err := c.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("%s unreachable: %w", c.name, err)
+	}
+	res.Body.Close()
+	if res.StatusCode < 200 || res.StatusCode > 299 {
+		return fmt.Errorf("%s /health returned %d", c.name, res.StatusCode)
+	}
+	return nil
+}
+
 // errorText flattens the error shapes the Node services use ("text" or {code, message, details}).
 func errorText(e json.RawMessage, raw []byte) string {
 	var s string
@@ -168,6 +181,13 @@ type StatusUpdate struct {
 	ReasonNote string `json:"reason_note,omitempty"`
 }
 
+// PlannedDelivery is one order's planned times, sent when a past day is marked delivered (demo history).
+type PlannedDelivery struct {
+	OrderRef      string `json:"order_ref"`
+	DepartureTime string `json:"departure_time"`
+	ArrivalTime   string `json:"arrival_time"`
+}
+
 type OrdersAPI interface {
 	// CloseWindow runs the (idempotent) cutoff sweep for date ("" = the next run date) and returns
 	// the date it closed.
@@ -175,6 +195,9 @@ type OrdersAPI interface {
 	Confirmed(ctx context.Context, date string) ([]ConfirmedOrder, error)
 	Items(ctx context.Context, orderRef string) ([]OrderItem, error)
 	StatusBatch(ctx context.Context, updates []StatusUpdate) error
+	// SimulateDelivery marks a past day's allocated orders delivered and received (demo history only;
+	// Order Management answers 403 when demo data is off) and returns how many it changed.
+	SimulateDelivery(ctx context.Context, date string, deliveries []PlannedDelivery) (int, error)
 }
 
 type orderClient struct{ serviceClient }
@@ -216,6 +239,14 @@ func (c *orderClient) Items(ctx context.Context, orderRef string) ([]OrderItem, 
 
 func (c *orderClient) StatusBatch(ctx context.Context, updates []StatusUpdate) error {
 	return c.call(ctx, http.MethodPatch, "/api/orders/status-batch", map[string]any{"updates": updates}, nil)
+}
+
+func (c *orderClient) SimulateDelivery(ctx context.Context, date string, deliveries []PlannedDelivery) (int, error) {
+	var out struct {
+		Received int `json:"received"`
+	}
+	err := c.call(ctx, http.MethodPost, "/api/orders/simulate-delivery", map[string]any{"date": date, "deliveries": deliveries}, &out)
+	return out.Received, err
 }
 
 // ---------------------------------------------------------------- Fleet & Directory

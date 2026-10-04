@@ -107,17 +107,40 @@ export const StatusBatchSchema = z.object({
   updates: z.array(StatusUpdateSchema).min(1, 'updates must contain at least one entry').max(500, 'At most 500 updates per call'),
 });
 
+export const ReceiptLineSchema = z.object({
+  sku: z.string().trim().min(1).max(50),
+  // damaged units count towards rejected_units, missing units towards missing_units.
+  kind: z.enum(['missing', 'damaged']),
+  quantity: z.number().int().positive(),
+  reasons: z.array(z.string().trim().min(1).max(60)).max(10).default([]),
+});
+export type ReceiptLine = z.infer<typeof ReceiptLineSchema>;
+
 export const ReceiptSchema = z.object({
   received_units: z.number().int().nonnegative(),
   missing_units: z.number().int().nonnegative().default(0),
   rejected_units: z.number().int().nonnegative().default(0),
   note: trimmedNote.optional(),
+  // Optional per-item breakdown. When present its totals must match missing_units / rejected_units.
+  lines: z.array(ReceiptLineSchema).max(200).default([]),
 });
 export type ReceiptInput = z.infer<typeof ReceiptSchema>;
 
 export const CloseWindowSchema = z.object({
   date: isoDate.optional(),
 });
+
+const hhmm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Must be HH:MM');
+
+/** Demo history: planned times per order for a past day (Planning & Allocation sends its plan). */
+export const SimulateDeliverySchema = z.object({
+  date: isoDate,
+  deliveries: z
+    .array(z.object({ order_ref: z.string().trim().min(1).max(32), departure_time: hhmm, arrival_time: hhmm }))
+    .max(2000)
+    .default([]),
+});
+export type SimulateDeliveryInput = z.infer<typeof SimulateDeliverySchema>;
 
 // ---------------------------------------------------------------- query schemas
 
@@ -161,6 +184,21 @@ export const SummaryQuerySchema = z.object({
   date: optionalQueryString(isoDate),
   depot: optionalQueryString(DepotEnum),
 });
+
+export const DispatcherOverviewQuerySchema = z.object({
+  date: isoDate,
+  depot: optionalQueryString(DepotEnum),
+});
+
+// Bounded so a typo in the range cannot ask for years of windows.
+export const MAX_WINDOW_DAYS = 62;
+export const OrderWindowsQuerySchema = z
+  .object({ from: isoDate, to: isoDate })
+  .refine((q) => q.from <= q.to, { message: "'from' must be on or before 'to'", path: ['from'] })
+  .refine((q) => Date.parse(q.to) - Date.parse(q.from) < MAX_WINDOW_DAYS * 86_400_000, {
+    message: `The range may cover at most ${MAX_WINDOW_DAYS} days`,
+    path: ['to'],
+  });
 
 export const AtRiskQuerySchema = z.object({
   depot: optionalQueryString(DepotEnum),

@@ -66,7 +66,8 @@ async function send(method: Method, path: string, opts: Options): Promise<Respon
   }
 }
 
-async function tryRefresh(): Promise<boolean> {
+/** POST /auth/refresh with the saved refresh token; true when a new access token was stored. */
+export async function tryRefresh(): Promise<boolean> {
   const session = getState().session;
   if (!session?.refreshToken) return false;
   const res = await send('POST', '/auth/refresh', {

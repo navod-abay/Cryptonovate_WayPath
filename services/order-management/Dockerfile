@@ -7,6 +7,8 @@ RUN rm -f package-lock.json && npm install --no-audit --no-fund
 
 COPY tsconfig.json ./
 COPY src ./src
+# Demo orders and outlet fairness counters (CSV), read by src/db/seed.ts on first boot
+COPY seed-data ./seed-data
 RUN npm run build
 
 # The listening port is not baked into the image: it comes from PORT at runtime

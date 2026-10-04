@@ -12,6 +12,7 @@ import { buildOpenApiSpec } from './docs/openapi.js';
 import ordersRouter from './routes/orders.routes.js';
 import { startCutoffTimer, stopCutoffTimer } from './services/cutoffJob.js';
 import { startReferenceDataRefresh, stopReferenceDataRefresh } from './services/referenceData.js';
+import { startAlertRelay, stopAlertRelay } from './services/alertOutbox.js';
 
 const app = express();
 
@@ -55,6 +56,7 @@ async function bootstrap() {
 
     startCutoffTimer();
     startReferenceDataRefresh();
+    startAlertRelay();
     if (demoSeedPending) retryDemoSeed();
   } catch (error) {
     if (error instanceof SchemaAssertionError) {
@@ -67,8 +69,8 @@ async function bootstrap() {
   }
 }
 
-// The demo seed needs vehicles from Fleet & Directory. If Fleet was not up at boot, keep
-// trying in the background instead of seeding from invented data.
+// The dataset seed needs the outlets copied from Fleet & Directory's table. If they were not
+// there at boot, keep trying in the background.
 const DEMO_SEED_RETRY_MS = 15_000;
 let demoSeedTimer: NodeJS.Timeout | undefined;
 function retryDemoSeed() {
@@ -106,6 +108,7 @@ async function gracefulShutdown(signal: string) {
       await new Promise<void>((resolve) => server!.close(() => resolve()));
       console.log('🔒 Express HTTP server closed.');
     }
+    await stopAlertRelay();
     await pool.end();
     console.log('🗄️ PostgreSQL pool closed cleanly.');
     process.exit(0);

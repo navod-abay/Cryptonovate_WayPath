@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Building2, PersonStanding, TrendingDown, TrendingUp, Truck } from 'lucide-react';
 import { addDays, categories, today } from '../data/presentation';
@@ -5,6 +6,10 @@ import { RequestState, useApi } from '../data/useApi';
 import { dispatcherRepository as data } from '../data/dispatcherRepository';
 import { CategoryIcon, EmptyState, formatDate, Panel } from '../components/common';
 import DemandChart from '../components/DemandChart';
+import { mergeIncidents, subscribeAlerts } from '../data/alertStream';
+import type { Incident } from '../data/types';
+
+const ago = (minutes: number) => minutes < 60 ? `${minutes}mins` : `${Math.floor(minutes / 60)}hrs`;
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -13,6 +18,13 @@ export default function Dashboard() {
   const orders = useApi(signal=>data.getOrders(date,date,signal),[date]);
   const stats = useApi(signal=>data.getStatistics(date,signal),[date]);
   const incidents = useApi(signal=>data.getIncidents(signal),[]);
+  // Alerts pushed since the last poll; the poll (every minute) remains the fallback.
+  const [live, setLive] = useState<Incident[]>([]);
+  useEffect(() => subscribeAlerts({
+    onAlerts: alerts => setLive(current => mergeIncidents(alerts, current)),
+    onReady: () => { data.getIncidents().then(list => setLive(current => mergeIncidents(current, list))).catch(() => undefined); },
+  }), []);
+  const alerts = mergeIncidents(incidents.data || [], live);
   const windows = useApi(signal=>data.getWindows(addDays(date,1),addDays(date,14),signal),[date]);
   const deferred = (orders.data || []).filter(o => o.status === 'Deferred');
   const next = windows.data?.days.find(d=>Date.parse(d.cutoffAt)>Date.now()) || windows.data?.days[0];
@@ -34,9 +46,9 @@ export default function Dashboard() {
           <div><h2>Item Demand — Next Week</h2><DemandChart /></div>
         </div>
       </div>
-      <aside className="alerts panel soft"><h2>Alerts</h2><RequestState resource={incidents} />{incidents.data && !incidents.data.length && <EmptyState text="No incidents reported." />}<div className="alert-list">{(incidents.data || []).map(a => {
+      <aside className="alerts panel soft"><h2>Alerts</h2><RequestState resource={incidents} />{incidents.data && !alerts.length && <EmptyState text="No incidents reported." />}<div className="alert-list">{alerts.map(a => {
         const Icon = a.kind === 'driver' ? Truck : a.kind === 'store' ? Building2 : PersonStanding;
-        return <Link key={a.id} className="alert-row" to={`/dispatcher/incidents/${a.id}`}><Icon size={28} strokeWidth={1.5} /><span><strong>{a.source}</strong><span className="alert-summary">{a.summary}</span></span><time>{a.minutesAgo < 60 ? `${a.minutesAgo}mins` : `${Math.floor(a.minutesAgo / 60)}hrs`} ago</time></Link>;
+        return <Link key={a.id} className="alert-row" to={`/dispatcher/incidents/${a.id}`}><Icon size={28} strokeWidth={1.5} /><span><strong>{a.source}</strong><span className="alert-summary">{a.summary}</span></span><span className="alert-when"><time>{ago(a.minutesAgo)} ago</time>{a.syncedLate && a.receivedMinutesAgo !== undefined && <span className="alert-late" title="Queued on the device while offline">synced {ago(a.receivedMinutesAgo)} ago</span>}</span></Link>;
       })}</div></aside>
     </main>
   </>;

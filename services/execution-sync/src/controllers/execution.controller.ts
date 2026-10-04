@@ -7,10 +7,23 @@ import {
   PodSchema,
   BulkSyncSchema,
   HandoverSchema,
-  DisputeOrderSchema,
+  DriverIncidentsSchema,
+  DeliveryProblemSchema,
 } from '../schemas/execution.schema';
 
 export class ExecutionController {
+  // A0. Get Active Trips for Dock
+  static async getActiveTrips(req: Request, res: Response) {
+    try {
+      const { depot } = req.params;
+      const { status } = req.query;
+      const trips = await ExecutionSyncService.getActiveTrips(depot, status as string);
+      return res.json({ success: true, data: trips });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
   // A1. Get LIFO Manifest
   static async getManifest(req: Request, res: Response) {
     try {
@@ -111,8 +124,7 @@ export class ExecutionController {
   static async bulkSync(req: Request, res: Response) {
     try {
       const validatedData = BulkSyncSchema.parse(req.body);
-      const driverId = req.user?.userId;
-      const syncSummary = await ExecutionSyncService.processBulkSync(validatedData, driverId, req.headers.authorization);
+      const syncSummary = await ExecutionSyncService.processBulkSync(validatedData, req.user, req.headers.authorization);
       return res.json({ success: true, data: syncSummary });
     } catch (err: any) {
       if (err.name === 'ZodError') {
@@ -176,19 +188,27 @@ export class ExecutionController {
     }
   }
 
-  // D2. Dispute Order Receipt
-  static async disputeOrder(req: Request, res: Response) {
+  // B4. Driver Incident Reports (single or queued batch)
+  static async reportDriverIncidents(req: Request, res: Response) {
     try {
-      const { orderRef } = req.params;
-      const validatedData = DisputeOrderSchema.parse(req.body);
-      const storeManagerId = req.user?.userId;
-      const dispute = await ExecutionSyncService.disputeOrder(
-        orderRef,
-        storeManagerId,
-        validatedData.discrepancyType,
-        validatedData.description
-      );
-      return res.status(201).json({ success: true, data: dispute });
+      const incidents = DriverIncidentsSchema.parse(req.body);
+      const result = await ExecutionSyncService.recordDriverIncidents(incidents, req.user);
+      return res.status(result.accepted.length > 0 ? 201 : 200).json({ success: true, data: result });
+    } catch (err: any) {
+      if (err.name === 'ZodError') {
+        return res.status(400).json({ success: false, error: 'Validation Error', details: err.errors });
+      }
+      return res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
+  // D2. Delivery Problem (delivery still on the way)
+  static async reportDeliveryProblem(req: Request, res: Response) {
+    try {
+      const { deliveryId } = req.params;
+      const validatedData = DeliveryProblemSchema.parse(req.body);
+      const problem = await ExecutionSyncService.reportDeliveryProblem(deliveryId, validatedData, req.user);
+      return res.status(201).json({ success: true, data: problem });
     } catch (err: any) {
       if (err.name === 'ZodError') {
         return res.status(400).json({ success: false, error: 'Validation Error', details: err.errors });

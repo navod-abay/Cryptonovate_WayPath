@@ -31,6 +31,8 @@ local.properties
 *.iml
 *.hprof
 .cxx/
+# Native (CMake/Ninja) build output from a Windows build, written under its absolute path (C:/tmp/...)
+android/app/C:/
 *.keystore
 !debug.keystore
 .kotlin/

@@ -225,7 +225,7 @@ func samplePlan(date string) *Plan {
 
 type funcPlanner func(ctx context.Context, runID string, d time.Time) (*RunStats, error)
 
-func (f funcPlanner) Plan(ctx context.Context, runID string, d time.Time) (*RunStats, error) {
+func (f funcPlanner) Plan(ctx context.Context, runID, _ string, d time.Time) (*RunStats, error) {
 	return f(ctx, runID, d)
 }
 
@@ -233,17 +233,21 @@ var noopPlanner = funcPlanner(func(context.Context, string, time.Time) (*RunStat
 
 var fixedNow = func() time.Time { return time.Date(2026, 10, 2, 20, 0, 0, 0, time.UTC) } // 3 Oct 01:30 in Colombo
 
+const testSecret = "planning-test-secret"
+
 func newTestServer(store *memStore, p Planner) http.Handler {
 	mux := http.NewServeMux()
-	(&API{store: store, runs: NewRunManager(store, store, p, time.Minute), now: fixedNow,
+	(&API{store: store, runs: NewRunManager(store, store, p, time.Minute), now: fixedNow, secret: testSecret,
 		nextRunDate: func(context.Context) (time.Time, error) { return time.Date(2026, 10, 5, 0, 0, 0, 0, sriLanka), nil },
 	}).routes(mux)
 	return mux
 }
 
+// do calls the API as a service (role "system", allowed on every route); auth_test.go covers the roles.
 func do(t *testing.T, h http.Handler, method, path, body string) (*httptest.ResponseRecorder, map[string]any) {
 	t.Helper()
 	req := httptest.NewRequest(method, path, strings.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+serviceToken(testSecret, time.Now()))
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	var out map[string]any
@@ -330,6 +334,7 @@ func TestTripsAreServedUnderBothPrefixes(t *testing.T) {
 		t.Errorf("unknown trip: status %d, want 404", rec.Code)
 	}
 	req := httptest.NewRequest("GET", "/trips?date=2026-10-05&depot=Peliyagoda", nil)
+	req.Header.Set("Authorization", "Bearer "+serviceToken(testSecret, time.Now()))
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	var list []map[string]any
@@ -413,5 +418,32 @@ func TestFailedRunDiscardsPlanAndAllowsRetry(t *testing.T) {
 	}
 	if _, started, _ := m.Start(context.Background(), day, "cron"); started {
 		t.Error("a completed date must not be planned again")
+	}
+}
+
+func TestOnlyCompletedRunsWakeTheScheduler(t *testing.T) {
+	store := newMemStore()
+	fail := true
+	p := funcPlanner(func(context.Context, string, time.Time) (*RunStats, error) {
+		if fail {
+			return nil, errors.New("fleet-directory unreachable")
+		}
+		return &RunStats{}, nil
+	})
+	m := NewRunManager(store, store, p, time.Minute)
+	run, _, _ := m.Start(context.Background(), time.Date(2026, 10, 4, 0, 0, 0, 0, sriLanka), "catchup")
+	waitForRun(t, m, run.RunID)
+	select {
+	case <-m.Done():
+		t.Fatal("a failed run must not wake the scheduler (it would retry immediately)")
+	case <-time.After(50 * time.Millisecond):
+	}
+	fail = false
+	run, _, _ = m.Start(context.Background(), time.Date(2026, 10, 4, 0, 0, 0, 0, sriLanka), "catchup")
+	waitForRun(t, m, run.RunID)
+	select {
+	case <-m.Done():
+	case <-time.After(time.Second):
+		t.Fatal("a completed run must wake the scheduler")
 	}
 }
