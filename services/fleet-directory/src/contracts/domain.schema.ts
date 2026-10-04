@@ -25,6 +25,7 @@ export const VehicleSchema = z.object({
   km_per_l: z.number().positive('Kilometers per liter must be positive'),
   weekly_fuel_quota_l: z.number().nonnegative('Weekly fuel quota cannot be negative'),
   depot: DepotEnum,
+  weekly_range_km: z.number().nonnegative().optional(),
   status: VehicleStatusEnum,
 });
 

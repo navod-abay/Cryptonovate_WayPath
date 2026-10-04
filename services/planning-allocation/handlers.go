@@ -1,12 +1,13 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"math"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -22,13 +23,27 @@ type API struct {
 	store ScheduleStore
 	runs  *RunManager
 	now   func() time.Time
+	// nextRunDate asks Order Management which delivery date the next planning run is for.
+	nextRunDate func(ctx context.Context) (time.Time, error)
 }
 
+// apiPrefix: the gateway strips /api/planning, but services calling Planning directly (Execution &
+// Sync) keep it, so every route is served under both paths.
+const apiPrefix = "/api/planning"
+
 func (a *API) routes(mux *http.ServeMux) {
-	mux.HandleFunc("GET /schedule/summary", a.getSummary)
-	mux.HandleFunc("GET /depots/{depot}/schedule", a.getDepotSchedule)
-	mux.HandleFunc("GET /schedule/deferrals", a.getDeferrals)
-	mux.HandleFunc("POST /planning-runs", a.startPlanning)
+	handle := func(method, path string, h http.HandlerFunc) {
+		mux.HandleFunc(method+" "+path, h)
+		mux.HandleFunc(method+" "+apiPrefix+path, h)
+	}
+	handle("GET", "/schedule/summary", a.getSummary)
+	handle("GET", "/depots/{depot}/schedule", a.getDepotSchedule)
+	handle("GET", "/schedule/deferrals", a.getDeferrals)
+	handle("GET", "/trips", a.listTrips)
+	handle("GET", "/trips/{tripId}", a.getTrip)
+	handle("POST", "/planning-runs", a.startPlanning)
+	handle("GET", "/planning-runs", a.listRuns)
+	handle("GET", "/planning-runs/{runId}", a.getRun)
 }
 
 // GET /schedule/summary?date=YYYY-MM-DD
@@ -43,17 +58,17 @@ func (a *API) getSummary(w http.ResponseWriter, r *http.Request) {
 	for _, depot := range depots {
 		sched, err := a.store.DepotSchedule(r.Context(), date, depot)
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "could not load schedule")
+			serverError(w, "could not load schedule", err)
 			return
 		}
 		deferred, err := a.store.DeferredOrders(r.Context(), date, depot)
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "could not load deferrals")
+			serverError(w, "could not load deferrals", err)
 			return
 		}
-		fleet, err := a.store.FleetSize(r.Context(), depot)
+		fleet, err := a.store.FleetSize(r.Context(), date, depot)
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "could not load fleet")
+			serverError(w, "could not load fleet", err)
 			return
 		}
 		s := DepotSummary{Depot: depot, VehiclesAvailable: fleet, OrdersDeferred: len(deferred)}
@@ -103,7 +118,7 @@ func (a *API) getDepotSchedule(w http.ResponseWriter, r *http.Request) {
 	}
 	sched, err := a.store.DepotSchedule(r.Context(), date, depot)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "could not load schedule")
+		serverError(w, "could not load schedule", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, sched)
@@ -116,23 +131,53 @@ func (a *API) getDeferrals(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	depot := ""
-	if q := r.URL.Query().Get("depot"); q != "" {
-		var ok bool
-		if depot, ok = canonicalDepot(q); !ok {
-			writeError(w, http.StatusBadRequest, "unknown depot: "+q)
-			return
-		}
+	depot, ok := a.depotQuery(w, r)
+	if !ok {
+		return
 	}
 	orders, err := a.store.DeferredOrders(r.Context(), date, depot)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "could not load deferrals")
+		serverError(w, "could not load deferrals", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, DeferralList{Date: date.Format(dateLayout), Depot: depot, Count: len(orders), Orders: orders})
 }
 
-// POST /planning-runs — called by the nightly cron job; plans tomorrow unless planDate is given.
+// GET /trips?date=YYYY-MM-DD&depot=Peliyagoda&vehicleId=VEH003 — trips with stops and items to load.
+func (a *API) listTrips(w http.ResponseWriter, r *http.Request) {
+	date, err := a.dateParam(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	depot, ok := a.depotQuery(w, r)
+	if !ok {
+		return
+	}
+	trips, err := a.store.Trips(r.Context(), date, depot, strings.TrimSpace(r.URL.Query().Get("vehicleId")))
+	if err != nil {
+		serverError(w, "could not load trips", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, trips)
+}
+
+// GET /trips/{tripId} — one trip of a completed plan, stops in delivery order, with items.
+func (a *API) getTrip(w http.ResponseWriter, r *http.Request) {
+	trip, err := a.store.Trip(r.Context(), r.PathValue("tripId"))
+	if err != nil {
+		serverError(w, "could not load trip", err)
+		return
+	}
+	if trip == nil {
+		writeError(w, http.StatusNotFound, "no planned trip "+r.PathValue("tripId"))
+		return
+	}
+	writeJSON(w, http.StatusOK, trip)
+}
+
+// POST /planning-runs — plans a date now. The daily 16:00 run starts itself (scheduler.go); this is
+// for re-running a failed date or planning without waiting.
 func (a *API) startPlanning(w http.ResponseWriter, r *http.Request) {
 	var req StartPlanningRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
@@ -140,8 +185,16 @@ func (a *API) startPlanning(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	today := a.today()
-	planDate := today.AddDate(0, 0, 1)
-	if req.PlanDate != "" {
+	var planDate time.Time
+	if req.PlanDate == "" {
+		d, err := a.nextRunDate(r.Context())
+		if err != nil {
+			log.Printf("[%s] next run date: %v", serviceName, err)
+			writeError(w, http.StatusBadGateway, "could not get the next run date from order-management")
+			return
+		}
+		planDate = d
+	} else {
 		d, err := time.ParseInLocation(dateLayout, req.PlanDate, sriLanka)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, "planDate must be YYYY-MM-DD")
@@ -155,14 +208,47 @@ func (a *API) startPlanning(w http.ResponseWriter, r *http.Request) {
 	}
 	trigger := req.Trigger
 	if trigger == "" {
-		trigger = "cron"
+		trigger = "manual"
 	}
-	run, started := a.runs.Start(planDate, trigger)
+	run, started, err := a.runs.Start(r.Context(), planDate, trigger)
+	if err != nil {
+		serverError(w, "could not start planning run", err)
+		return
+	}
 	if !started {
 		writeJSON(w, http.StatusConflict, run)
 		return
 	}
 	writeJSON(w, http.StatusAccepted, run)
+}
+
+// GET /planning-runs?date=YYYY-MM-DD — every run for a plan date, newest first.
+func (a *API) listRuns(w http.ResponseWriter, r *http.Request) {
+	date, err := a.dateParam(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	runs, err := a.runs.store.ListRuns(r.Context(), date.Format(dateLayout))
+	if err != nil {
+		serverError(w, "could not load planning runs", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, runs)
+}
+
+// GET /planning-runs/{runId}
+func (a *API) getRun(w http.ResponseWriter, r *http.Request) {
+	run, ok, err := a.runs.Get(r.Context(), r.PathValue("runId"))
+	if err != nil {
+		serverError(w, "could not load planning run", err)
+		return
+	}
+	if !ok {
+		writeError(w, http.StatusNotFound, "no planning run "+r.PathValue("runId"))
+		return
+	}
+	writeJSON(w, http.StatusOK, run)
 }
 
 func (a *API) today() time.Time {
@@ -182,6 +268,19 @@ func (a *API) dateParam(r *http.Request) (time.Time, error) {
 	return d, nil
 }
 
+// depotQuery reads the optional ?depot= filter; it writes a 400 and returns false when unknown.
+func (a *API) depotQuery(w http.ResponseWriter, r *http.Request) (string, bool) {
+	q := r.URL.Query().Get("depot")
+	if q == "" {
+		return "", true
+	}
+	depot, ok := canonicalDepot(q)
+	if !ok {
+		writeError(w, http.StatusBadRequest, "unknown depot: "+q)
+	}
+	return depot, ok
+}
+
 func canonicalDepot(s string) (string, bool) {
 	for _, d := range depots {
 		if strings.EqualFold(d, s) {
@@ -193,6 +292,11 @@ func canonicalDepot(s string) (string, bool) {
 
 func writeError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, ErrorResponse{Error: msg})
+}
+
+func serverError(w http.ResponseWriter, msg string, err error) {
+	log.Printf("[%s] %s: %v", serviceName, msg, err)
+	writeError(w, http.StatusInternalServerError, msg)
 }
 
 func addSummary(t *DepotSummary, s DepotSummary) {
@@ -228,8 +332,4 @@ func ratio(a, b float64) float64 {
 func round(x float64, places int) float64 {
 	p := math.Pow(10, float64(places))
 	return math.Round(x*p) / p
-}
-
-func tripID(vehicleID string, n int) string {
-	return vehicleID + "-T" + strconv.Itoa(n)
 }

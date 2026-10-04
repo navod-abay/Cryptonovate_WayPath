@@ -1,4 +1,4 @@
-# Order Management Service (port 3002)
+# Order Management Service (port 5002)
 
 Owns **what needs to go where, and by when**: store orders, their line items, the 16:00 Asia/Colombo
 ordering cutoff, the status lifecycle, deferrals with reasons, receipts, and an append-only audit trail.
@@ -29,7 +29,7 @@ does not delete existing demo orders, and turning it back on does not re-date th
 cp .env.example .env                                  # once, from the repo root
 docker compose up -d --build postgres auth-rbac fleet-directory order-management
 docker compose logs order-management                  # expect "outlets_ref synced from Fleet's outlets table" and "Demo orders seeded"
-curl localhost:3002/health                            # direct
+curl localhost:5002/health                            # direct
 curl localhost/api/orders/health                      # through the gateway (needs the gateway up)
 ```
 
@@ -161,7 +161,7 @@ docker compose exec -T postgres psql -U postgres -d delivery_db < infrastructure
 
 ## Endpoints
 
-Paths are shown as the frontend sees them through the gateway. Direct calls to `localhost:3002`
+Paths are shown as the frontend sees them through the gateway. Direct calls to `localhost:5002`
 work with or without the `/api/orders` prefix. Every route except `/health` requires
 `Authorization: Bearer <access_token>`. Responses use `{ success, data }` or
 `{ success: false, error: { code, message, details? } }`.

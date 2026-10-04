@@ -3,11 +3,15 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 const serviceName = "planning-allocation"
@@ -34,22 +38,88 @@ func cors(next http.Handler) http.Handler {
 	})
 }
 
+func env(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
+}
+
+func envInt(key string, def int) int {
+	v := os.Getenv(key)
+	if v == "" {
+		return def
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 1 {
+		log.Fatalf("[%s] %s must be a positive integer, got %q", serviceName, key, v)
+	}
+	return n
+}
+
+func mustEnv(key string) string {
+	v := os.Getenv(key)
+	if v == "" {
+		log.Fatalf("[%s] %s is required", serviceName, key)
+	}
+	return v
+}
+
+func connect(ctx context.Context, url string) *pgxpool.Pool {
+	db, err := pgxpool.New(ctx, url)
+	if err != nil {
+		log.Fatalf("[%s] DATABASE_URL: %v", serviceName, err)
+	}
+	for attempt := 1; ; attempt++ {
+		err = db.Ping(ctx)
+		if err == nil {
+			return db
+		}
+		if attempt == 10 {
+			log.Fatalf("[%s] cannot reach PostgreSQL: %v", serviceName, err)
+		}
+		time.Sleep(2 * time.Second)
+	}
+}
+
 func main() {
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "3003"
+	ctx := context.Background()
+	port := env("PORT", "5003")
+	secret := mustEnv("JWT_ACCESS_SECRET")
+
+	db := connect(ctx, mustEnv("DATABASE_URL"))
+	store := &pgStore{db: db}
+	if err := store.AssertSchema(ctx); err != nil {
+		log.Fatalf("[%s] FATAL: %v", serviceName, err)
+	}
+	if n, err := store.FailInterruptedRuns(ctx); err != nil {
+		log.Fatalf("[%s] recover interrupted runs: %v", serviceName, err)
+	} else if n > 0 {
+		log.Printf("[%s] marked %d run(s) interrupted by the last restart as failed", serviceName, n)
 	}
 
-	mux := http.NewServeMux()
+	orders := newOrderClient(env("ORDER_SERVICE_URL", "http://order-management:5002"), secret)
+	fleet := newFleetClient(env("FLEET_SERVICE_URL", "http://fleet-directory:5004"))
+	params := DefaultALNSParams()
+	params.Iterations = envInt("PLANNING_ITERATIONS", 2000)
+	planner := &ALNSPlanner{orders: orders, fleet: fleet, store: store, params: params, seeds: envInt("PLANNING_SEEDS", 5)}
+	runs := NewRunManager(store, store, planner, 30*time.Minute)
 
+	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]any{
+		pingCtx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+		defer cancel()
+		status, code, dbState := "healthy", http.StatusOK, "up"
+		if err := db.Ping(pingCtx); err != nil {
+			status, code, dbState = "degraded", http.StatusServiceUnavailable, "down"
+		}
+		writeJSON(w, code, map[string]any{
 			"service":   serviceName,
-			"status":    "healthy",
+			"status":    status,
+			"db":        dbState,
 			"timestamp": time.Now().UTC().Format(time.RFC3339),
 		})
 	})
-
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"service": serviceName,
@@ -57,9 +127,24 @@ func main() {
 		})
 	})
 
-	api := &API{store: stubStore{}, runs: NewRunManager(stubPlanner{}, 30*time.Minute), now: time.Now}
+	api := &API{store: store, runs: runs, now: time.Now,
+		nextRunDate: func(ctx context.Context) (time.Time, error) {
+			day, err := orders.CloseWindow(ctx, "")
+			if err != nil {
+				return time.Time{}, err
+			}
+			return time.ParseInLocation(dateLayout, day, sriLanka)
+		}}
 	api.routes(mux)
 
-	log.Printf("[%s] Microservice listening on port %s", serviceName, port)
+	if env("PLANNING_SCHEDULER", "on") != "off" {
+		sched := &Scheduler{orders: orders, runs: runs, store: store, triggerHour: envInt("PLANNING_TRIGGER_HOUR", 16),
+			interval:    time.Duration(envInt("PLANNING_TICK_SECONDS", 60)) * time.Second,
+			maxAttempts: envInt("PLANNING_MAX_ATTEMPTS", 3), now: time.Now}
+		go sched.Run(ctx)
+	}
+
+	log.Printf("[%s] Microservice listening on port %s (ALNS3: %d iterations × %d seeds)",
+		serviceName, port, params.Iterations, planner.seeds)
 	log.Fatal(http.ListenAndServe(":"+port, cors(mux)))
 }

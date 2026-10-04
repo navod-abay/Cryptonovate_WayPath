@@ -1,15 +1,19 @@
 openapi: 3.0.3
 info:
   title: Fleet Directory Service
-  version: 0.1.0
-  description: Fleet, vehicle and driver registry.
+  version: 0.2.0
+  description: Fleet, vehicle and driver registry. Manages vehicle data, fuel logging, and workshop downtime bookings.
 servers:
   - url: http://localhost/api/fleet
     description: Via API gateway
-  - url: http://localhost:3004
+  - url: http://localhost:5004
     description: Direct (local container)
 tags:
-  - name: Fleet
+  - name: Vehicles
+  - name: Fuel
+  - name: Downtime
+  - name: Outlets
+  - name: Travel
   - name: System
 
 paths:
@@ -24,24 +28,277 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Health'
+
   /vehicles:
     get:
-      tags: [Fleet]
-      summary: List vehicles (placeholder data)
+      tags: [Vehicles]
+      summary: List vehicles
+      description: |
+        Returns all vehicles, optionally filtered by depot, status, or availability on a future date.
+        When `available_on` is provided, vehicles that are currently `in_workshop` OR have a
+        `vehicle_downtime` booking overlapping that date are excluded.
+      parameters:
+        - in: query
+          name: depot
+          schema:
+            type: string
+            enum: [Peliyagoda, Kandy]
+          description: Filter by depot
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [available, in_workshop]
+          description: Filter by current vehicle status
+        - in: query
+          name: available_on
+          schema:
+            type: string
+            format: date
+            example: '2026-10-05'
+          description: Return only vehicles available on this date (YYYY-MM-DD)
       responses:
         '200':
-          description: Vehicles
+          description: List of vehicles
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VehicleListResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+
+  /vehicles/fuel-usage:
+    get:
+      tags: [Fuel]
+      summary: Get weekly fuel usage for all vehicles
+      description: |
+        Returns fuel consumption and remaining quota for every vehicle for the
+        specified ISO year + ISO week. Vehicles with no logged distances for that
+        week appear with `fuel_used_l = 0`.
+      parameters:
+        - in: query
+          name: iso_year
+          required: true
+          schema:
+            type: integer
+            minimum: 2020
+            maximum: 2100
+            example: 2026
+        - in: query
+          name: iso_week
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 53
+            example: 40
+      responses:
+        '200':
+          description: Per-vehicle fuel usage summary
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  vehicles:
+                  success:
+                    type: boolean
+                  data:
                     type: array
                     items:
-                      $ref: '#/components/schemas/Vehicle'
+                      $ref: '#/components/schemas/FuelUsageEntry'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+
+  /vehicles/{vehicle_id}/log-distance:
+    post:
+      tags: [Fuel]
+      summary: Log distance driven by a vehicle
+      parameters:
+        - $ref: '#/components/parameters/VehicleId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LogDistanceRequest'
+      responses:
+        '200':
+          description: Distance logged and liters consumed calculated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      vehicle_id:
+                        type: string
+                      distance_km:
+                        type: number
+                      liters_consumed:
+                        type: number
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /vehicles/{vehicle_id}/status:
+    patch:
+      tags: [Vehicles]
+      summary: Update vehicle status
+      parameters:
+        - $ref: '#/components/parameters/VehicleId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  type: string
+                  enum: [available, in_workshop]
+      responses:
+        '200':
+          description: Updated vehicle
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/Vehicle'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /vehicles/{vehicle_id}/downtime:
+    post:
+      tags: [Downtime]
+      summary: Book a future workshop downtime window
+      parameters:
+        - $ref: '#/components/parameters/VehicleId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VehicleDowntimeRequest'
+      responses:
+        '201':
+          description: Downtime booking created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/DowntimeEntry'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    get:
+      tags: [Downtime]
+      summary: List downtime bookings for a vehicle
+      parameters:
+        - $ref: '#/components/parameters/VehicleId'
+      responses:
+        '200':
+          description: List of downtime bookings ordered by date_from
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/DowntimeEntry'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /vehicles/{vehicle_id}/downtime/{id}:
+    delete:
+      tags: [Downtime]
+      summary: Remove a downtime booking
+      parameters:
+        - $ref: '#/components/parameters/VehicleId'
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Booking removed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      deleted:
+                        type: boolean
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /outlets/batch:
+    post:
+      tags: [Outlets]
+      summary: Fetch multiple outlets by ID
+      responses:
+        '200':
+          description: Outlet list
+
+  /travel-metrics:
+    get:
+      tags: [Travel]
+      summary: Get district travel metrics and service allowances
+      responses:
+        '200':
+          description: Travel metrics
 
 components:
+  parameters:
+    VehicleId:
+      in: path
+      name: vehicle_id
+      required: true
+      schema:
+        type: string
+        example: T01
+
+  responses:
+    ValidationError:
+      description: Validation error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
   schemas:
     Health:
       type: object
@@ -54,18 +311,131 @@ components:
         timestamp:
           type: string
           format: date-time
+
     Vehicle:
+      type: object
+      properties:
+        vehicle_id:
+          type: string
+          example: T01
+        type:
+          type: string
+          enum: [truck, van]
+        temp:
+          type: string
+          enum: [reefer, ambient]
+        weight_cap_kg:
+          type: number
+        volume_cap_m3:
+          type: number
+        fuel_type:
+          type: string
+          enum: [diesel, petrol, electric]
+        km_per_l:
+          type: number
+        weekly_fuel_quota_l:
+          type: number
+        depot:
+          type: string
+          enum: [Peliyagoda, Kandy]
+        status:
+          type: string
+          enum: [available, in_workshop]
+
+    VehicleListResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Vehicle'
+
+    LogDistanceRequest:
+      type: object
+      required: [distance_km, iso_year, week_number]
+      properties:
+        distance_km:
+          type: number
+          minimum: 0
+          exclusiveMinimum: true
+          example: 245.5
+        iso_year:
+          type: integer
+          minimum: 2020
+          maximum: 2100
+          example: 2026
+        week_number:
+          type: integer
+          minimum: 1
+          maximum: 53
+          example: 40
+
+    FuelUsageEntry:
+      type: object
+      properties:
+        vehicle_id:
+          type: string
+        weekly_fuel_quota_l:
+          type: number
+        fuel_used_l:
+          type: number
+        fuel_remaining_l:
+          type: number
+        km_used:
+          type: number
+        km_left:
+          type: number
+
+    VehicleDowntimeRequest:
+      type: object
+      required: [date_from, date_to]
+      properties:
+        date_from:
+          type: string
+          format: date
+          example: '2026-10-10'
+        date_to:
+          type: string
+          format: date
+          example: '2026-10-12'
+        reason:
+          type: string
+          maxLength: 255
+          example: Scheduled service
+
+    DowntimeEntry:
       type: object
       properties:
         id:
           type: string
-          example: v_1
-        licensePlate:
+          format: uuid
+        vehicle_id:
           type: string
-          example: TRK-9921
-        type:
+        date_from:
           type: string
-          example: Refrigerated Van
-        status:
+          format: date
+        date_to:
           type: string
-          example: AVAILABLE
+          format: date
+        reason:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+            message:
+              type: string

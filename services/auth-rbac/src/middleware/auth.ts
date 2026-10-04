@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { TokenService } from '../services/token.service.js';
+import { TokenService } from '../services/token.service';
 
 export const authenticateJwt = (req: Request, res: Response, next: NextFunction): void => {
   const authHeader = req.headers.authorization;

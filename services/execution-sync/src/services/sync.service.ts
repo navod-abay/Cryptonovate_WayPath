@@ -1,9 +1,9 @@
 import { pool } from '../db/pool';
 import { BulkSyncInput, PodInput, ShortfallInput } from '../schemas/execution.schema';
 
-const PLANNING_SERVICE_URL = process.env.PLANNING_SERVICE_URL || 'http://planning-allocation:3003';
-const ORDER_SERVICE_URL = process.env.ORDER_SERVICE_URL || 'http://order-management:3002';
-const FLEET_SERVICE_URL = process.env.FLEET_SERVICE_URL || 'http://fleet-directory:3004';
+const PLANNING_SERVICE_URL = process.env.PLANNING_SERVICE_URL || 'http://planning-allocation:5003';
+const ORDER_SERVICE_URL = process.env.ORDER_SERVICE_URL || 'http://order-management:5002';
+const FLEET_SERVICE_URL = process.env.FLEET_SERVICE_URL || 'http://fleet-directory:5004';
 
 // Helper for safe external REST calls with timeout
 async function safeFetch(url: string, options: RequestInit = {}, timeoutMs = 5000) {

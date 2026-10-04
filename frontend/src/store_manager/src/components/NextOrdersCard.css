@@ -1,0 +1,8 @@
+.sm-next { display: flex; flex-direction: column; gap: 40px; overflow: auto; min-height: 0; }
+.sm-next__section { display: flex; flex-direction: column; gap: 16px; }
+.sm-next__head { display: flex; align-items: center; justify-content: space-between; padding-top: 12px; }
+.sm-next__head h3 { font-size: 28px; font-weight: 500; }
+.sm-next__edit { background: none; border: 0; color: var(--sm-gray-200); padding: 4px; border-radius: 8px; display: inline-flex; }
+.sm-next__edit:hover { color: var(--sm-gray-500); background: var(--sm-gray-100); }
+.sm-next__empty { display: flex; flex-direction: column; gap: 24px; padding: 24px 0 8px; }
+.sm-next__empty-msg { font-size: 22px; font-weight: 500; line-height: 1.6; text-align: center; }

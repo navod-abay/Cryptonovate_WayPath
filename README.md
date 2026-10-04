@@ -1,6 +1,6 @@
 # Delivery Planning Microservices Monorepo
 
-Enterprise multi-role logistics & delivery planning platform built with fully isolated Node.js and Go microservices, Next.js SaaS frontend, PostgreSQL database, and NGINX API Gateway.
+Enterprise multi-role logistics & delivery planning platform built with fully isolated Node.js and Go microservices, Vite + React web apps sharing a UI library, PostgreSQL database, and NGINX API Gateway.
 
 ---
 
@@ -24,21 +24,19 @@ TeamName_SolutionName/
 │   ├── config.yml           # Gateway routes definition
 │   ├── nginx.conf           # NGINX reverse proxy config
 │   └── Dockerfile
-├── frontend/                
-│   ├── src/
-│   │   ├── dispatcher/      # Dispatcher role UI module
-│   │   ├── driver/          # Driver mobile UI module
-│   │   ├── loader/          # Warehouse loader UI module
-│   │   └── store_manager/   # Store manager UI module
-│   ├── package.json         # Next.js + Tailwind CSS configuration
-│   └── Dockerfile
+├── frontend/                # Each app is standalone: own package.json and Dockerfile
+│   ├── packages/ui/         # @waypoint/ui shared component library (used from source)
+│   └── src/
+│       ├── dispatcher/      # Dispatcher web app (Vite + React)
+│       ├── store_manager/   # Store manager web app (Vite + React)
+│       └── driver_mobile/   # Driver app (React Native, not in compose)
 └── services/                # Each service is standalone: own Dockerfile, deps and openapi.yaml
-    ├── auth-rbac/           # Auth & RBAC service (Node, port 3001)
-    ├── order-management/    # Orders lifecycle service (Node, port 3002)
-    ├── planning-allocation/ # Route optimization service (Go, port 3003)
-    ├── fleet-directory/     # Vehicles & drivers registry (Node, port 3004)
-    ├── execution-sync/      # Telemetry & GPS sync service (Node, port 3005)
-    └── analytics-prediction/# Predictive ETA & analytics service (Node, port 3006)
+    ├── auth-rbac/           # Auth & RBAC service (Node, port 5001)
+    ├── order-management/    # Orders lifecycle service (Node, port 5002)
+    ├── planning-allocation/ # Route optimization service (Go, port 5003)
+    ├── fleet-directory/     # Vehicles & drivers registry (Node, port 5004)
+    ├── execution-sync/      # Telemetry & GPS sync service (Node, port 5005)
+    └── analytics-prediction/# Predictive ETA & analytics service (Node, port 5006)
 ```
 
 ---
@@ -65,7 +63,8 @@ Every service builds from its own folder (`services/<name>/`), so there is no ro
 
 | Service | Container Port | Gateway Route |
 | :--- | :--- | :--- |
-| **Next.js Frontend** | `3000` | `http://localhost/` |
+| **Dispatcher Web App** | `4173` | `http://localhost:4173/` (direct, not via gateway) |
+| **Store Manager Web App** | `4173` | `http://localhost:4174/` (direct, not via gateway) |
 | **Auth & RBAC** | `5001` | `http://localhost/api/auth/` |
 | **Order Management** | `5002` | `http://localhost/api/orders/` |
 | **Planning & Allocation** | `5003` | `http://localhost/api/planning/` |
