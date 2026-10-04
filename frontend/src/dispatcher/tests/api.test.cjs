@@ -178,3 +178,11 @@ test('local availability overlays a legacy API list until server calendar fields
   serverCalendar=true;
   assert.equal((await repo.getVehicles())[0].available,true);
 });
+
+test('Sundays are closed days with no schedule',()=>{
+  const {isClosedDay}=load('data/scheduleAvailability.ts',async()=>{});
+  assert.equal(isClosedDay('2026-10-04'),true);   // Sunday
+  assert.equal(isClosedDay('2026-10-03'),false);  // Saturday
+  assert.equal(isClosedDay('2026-10-05'),false);  // Monday
+  assert.equal(isClosedDay('2027-01-03'),true);   // Sunday across a year boundary
+});

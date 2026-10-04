@@ -68,8 +68,6 @@ const envSchema = z.object({
   // Fleet & Directory's API: the source of vehicle data (reefer capacity, demo seed).
   FLEET_SERVICE_URL: required('FLEET_SERVICE_URL').pipe(z.string().url('FLEET_SERVICE_URL must be a URL')),
   FLEET_TIMEOUT_MS: intFromString('3000', 100, 60_000),
-  // Fleet may still be starting when this service boots; the demo seed waits this long for it.
-  FLEET_BOOT_ATTEMPTS: intFromString('5', 1, 60),
   FLEET_RETRY_DELAY_MS: intFromString('2000', 0, 60_000),
   // How often outlets_ref is re-copied from Fleet's outlets table.
   OUTLET_REFRESH_INTERVAL_MS: intFromString('300000', 5000, 86_400_000),

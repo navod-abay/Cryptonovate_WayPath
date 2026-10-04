@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Badge, COLORS } from '@waypoint/ui';
-import { CalendarCheck, Fuel, Milk, Truck } from 'lucide-react';
+import { CalendarCheck, CalendarX, Fuel, Milk, Truck } from 'lucide-react';
 import { dispatcherRepository as data } from '../data/dispatcherRepository';
 import { categories, today } from '../data/presentation';
 import { RequestState, useApi } from '../data/useApi';
 import { CategoryIcon, EmptyState, formatDate, isValidDate, Panel, VehicleIcon } from '../components/common';
 import OrderAccordion from '../components/OrderAccordion';
-import { isScheduleAvailable } from '../data/scheduleAvailability';
+import { isClosedDay, isScheduleAvailable } from '../data/scheduleAvailability';
 import { addDays } from '../data/presentation';
 import type { Warehouse } from '../data/types';
 
@@ -22,6 +22,14 @@ export default function Schedule() {
     return ()=>window.clearInterval(timer);
   },[]);
   const change = (key: string, value: string) => { const next = new URLSearchParams(params); next.set(key, value); setParams(next); };
+  if (isClosedDay(date)) {
+    const day = (d: string) => `/dispatcher/schedule/today?date=${d}&warehouse=${warehouse}`;
+    return <main className="page schedule-page"><Panel className="schedule-board">
+      <ScheduleHeading date={date} warehouse={warehouse} change={change} />
+      <div className="schedule-unavailable schedule-closed" role="alert"><CalendarX size={48} strokeWidth={1.5} /><h2>No deliveries on Sundays</h2><p>Depots are closed on {formatDate(date,true)}, so no orders are taken and no trips are scheduled for this day.</p>
+        <div className="closed-day-links"><Link className="text-link" to={day(addDays(date,-1))}>View {formatDate(addDays(date,-1),true)}</Link><Link className="text-link" to={day(addDays(date,1))}>View {formatDate(addDays(date,1),true)}</Link></div></div>
+    </Panel></main>;
+  }
   if (!isScheduleAvailable(date,now)) return <main className="page schedule-page"><Panel className="schedule-board">
     <ScheduleHeading date={date} warehouse={warehouse} change={change} />
     <div className="schedule-unavailable" role="status"><CalendarCheck size={48} strokeWidth={1.5} /><h2>Schedule not available yet</h2><p>The schedule for {formatDate(date,true)} is prepared after 5 PM on {formatDate(addDays(date,-1),true)} (Sri Lanka time).</p><p className="secondary">You can view upcoming orders while waiting for the schedule.</p><Link className="text-link" to="/dispatcher/schedule/upcoming">View upcoming orders</Link></div>

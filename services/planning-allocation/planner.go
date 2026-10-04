@@ -14,7 +14,8 @@ import (
 
 // Planner builds, stores and publishes the schedule for one day.
 type Planner interface {
-	Plan(ctx context.Context, runID string, planDate time.Time) (*RunStats, error)
+	// trigger is the run's trigger (cron | manual | catchup).
+	Plan(ctx context.Context, runID, trigger string, planDate time.Time) (*RunStats, error)
 }
 
 // Plan is what one planning run produces; PlanWriter stores it under the run.
@@ -41,6 +42,9 @@ type ALNSPlanner struct {
 	store  PlanWriter
 	params ALNSParams
 	seeds  int
+	// catchupSeeds replaces seeds for catch-up runs (past days and today at startup), which only
+	// need a good plan quickly; the nightly and manual runs keep the full seed count.
+	catchupSeeds int
 }
 
 const (
@@ -48,7 +52,7 @@ const (
 	itemFetchWorkers = 8
 )
 
-func (p *ALNSPlanner) Plan(ctx context.Context, runID string, planDate time.Time) (*RunStats, error) {
+func (p *ALNSPlanner) Plan(ctx context.Context, runID, trigger string, planDate time.Time) (*RunStats, error) {
 	day := planDate.Format(dateLayout)
 	if _, err := p.orders.CloseWindow(ctx, day); err != nil {
 		return nil, fmt.Errorf("cutoff sweep for %s: %w", day, err)
@@ -75,9 +79,13 @@ func (p *ALNSPlanner) Plan(ctx context.Context, runID string, planDate time.Time
 		return nil, err
 	}
 
+	seeds := p.seeds
+	if trigger == "catchup" && p.catchupSeeds > 0 {
+		seeds = p.catchupSeeds
+	}
 	start := time.Now()
-	a, sol, seed := p.solve(orders, vehs, travel, planDate)
-	stats := &RunStats{Orders: len(orders), Iterations: p.params.Iterations, Seeds: p.seeds, BestSeed: seed}
+	a, sol, seed := p.solve(orders, vehs, travel, planDate, seeds)
+	stats := &RunStats{Orders: len(orders), Iterations: p.params.Iterations, Seeds: seeds, BestSeed: seed}
 	plan := &Plan{FleetAvailable: map[string]int{}}
 	for _, v := range vehs {
 		plan.FleetAvailable[v.Depot]++
@@ -181,7 +189,7 @@ func buildInputs(pool []ConfirmedOrder, vehicles []FleetVehicle, fuel []FleetFue
 
 // solve runs ALNS3 once per seed (in parallel) and keeps the lowest-cost plan. Seeds derive from the
 // plan date, so re-running a date reproduces the same plan for the same inputs.
-func (p *ALNSPlanner) solve(orders []ALNSOrder, vehs []ALNSVehicle, travel map[string]DistrictTravel, date time.Time) (
+func (p *ALNSPlanner) solve(orders []ALNSOrder, vehs []ALNSVehicle, travel map[string]DistrictTravel, date time.Time, seeds int) (
 	*ALNS, *Solution, uint64) {
 	if len(orders) == 0 {
 		return nil, nil, 0
@@ -194,9 +202,9 @@ func (p *ALNSPlanner) solve(orders []ALNSOrder, vehs []ALNSVehicle, travel map[s
 		cost float64
 		seed uint64
 	}
-	results := make([]result, p.seeds)
+	results := make([]result, seeds)
 	var wg sync.WaitGroup
-	for n := 0; n < p.seeds; n++ {
+	for n := 0; n < seeds; n++ {
 		wg.Add(1)
 		go func(n int) {
 			defer wg.Done()

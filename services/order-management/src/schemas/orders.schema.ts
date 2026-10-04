@@ -119,6 +119,18 @@ export const CloseWindowSchema = z.object({
   date: isoDate.optional(),
 });
 
+const hhmm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Must be HH:MM');
+
+/** Demo history: planned times per order for a past day (Planning & Allocation sends its plan). */
+export const SimulateDeliverySchema = z.object({
+  date: isoDate,
+  deliveries: z
+    .array(z.object({ order_ref: z.string().trim().min(1).max(32), departure_time: hhmm, arrival_time: hhmm }))
+    .max(2000)
+    .default([]),
+});
+export type SimulateDeliveryInput = z.infer<typeof SimulateDeliverySchema>;
+
 // ---------------------------------------------------------------- query schemas
 
 const csvOrRepeated = <T extends z.ZodTypeAny>(item: T) =>
