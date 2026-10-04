@@ -29,9 +29,9 @@ variable "environment" {
 }
 
 variable "instance_type" {
-  description = "EC2 Instance type (Free Tier eligible: t3.micro / t2.micro)"
+  description = "EC2 Instance type (m7i-flex.large)"
   type        = string
-  default     = "t3.micro"
+  default     = "m7i-flex.large"
 }
 
 variable "admin_ssh_cidr" {
