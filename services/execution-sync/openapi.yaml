@@ -6,7 +6,7 @@ info:
 servers:
   - url: http://localhost/api/execution
     description: Via NGINX API Gateway
-  - url: http://localhost:3005
+  - url: http://localhost:5005
     description: Direct local container access
 tags:
   - name: System

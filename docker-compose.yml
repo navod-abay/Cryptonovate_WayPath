@@ -36,10 +36,10 @@ services:
     env_file:
       - .env
     environment:
-      PORT: 3001
+      PORT: 5001
       DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres_password}@postgres:5432/${POSTGRES_DB:-delivery_db}
     ports:
-      - "3001:3001"
+      - "5001:5001"
     volumes:
       - ./services/auth-rbac/src:/app/src
       - /app/node_modules
@@ -56,12 +56,12 @@ services:
     env_file:
       - .env
     environment:
-      PORT: 3002
+      PORT: 5002
       DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres_password}@postgres:5432/${POSTGRES_DB:-delivery_db}
       # Where Order Management reaches Fleet & Directory. Override per environment.
-      FLEET_SERVICE_URL: ${FLEET_SERVICE_URL:-http://fleet-directory:3004}
+      FLEET_SERVICE_URL: ${FLEET_SERVICE_URL:-http://fleet-directory:5004}
     ports:
-      - "3002:3002"
+      - "5002:5002"
     volumes:
       - ./services/order-management/src:/app/src
       - /app/node_modules
@@ -78,10 +78,10 @@ services:
     env_file:
       - .env
     environment:
-      PORT: 3003
+      PORT: 5003
       DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres_password}@postgres:5432/${POSTGRES_DB:-delivery_db}
     ports:
-      - "3003:3003"
+      - "5003:5003"
     depends_on:
       postgres:
         condition: service_healthy
@@ -95,10 +95,10 @@ services:
     env_file:
       - .env
     environment:
-      PORT: 3004
+      PORT: 5004
       DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres_password}@postgres:5432/${POSTGRES_DB:-delivery_db}
     ports:
-      - "3004:3004"
+      - "5004:5004"
     volumes:
       - ./services/fleet-directory/src:/app/src
       - /app/node_modules
@@ -115,10 +115,10 @@ services:
     env_file:
       - .env
     environment:
-      PORT: 3005
+      PORT: 5005
       DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres_password}@postgres:5432/${POSTGRES_DB:-delivery_db}
     ports:
-      - "3005:3005"
+      - "5005:5005"
     volumes:
       - ./services/execution-sync/src:/app/src
       - /app/node_modules
@@ -135,10 +135,10 @@ services:
     env_file:
       - .env
     environment:
-      PORT: 3006
+      PORT: 5006
       DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres_password}@postgres:5432/${POSTGRES_DB:-delivery_db}
     ports:
-      - "3006:3006"
+      - "5006:5006"
     volumes:
       - ./services/analytics-prediction/src:/app/src
       - /app/node_modules

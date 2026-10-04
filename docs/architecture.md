@@ -6,7 +6,7 @@ The Delivery Planning Monorepo follows an event-ready, domain-driven microservic
 
 ```mermaid
 graph TD
-    Client["Next.js Web App / Mobile Client"] -->|HTTP / WebSockets| Gateway["NGINX API Gateway (Port 80)"]
+    Client["Dispatcher / Store Manager Web Apps / Mobile Client"] -->|HTTP / WebSockets| Gateway["NGINX API Gateway (Port 80)"]
     
     Gateway -->|/api/auth| Auth["auth-rbac (Port 5001)"]
     Gateway -->|/api/orders| Orders["order-management (Port 5002)"]
@@ -14,7 +14,6 @@ graph TD
     Gateway -->|/api/fleet| Fleet["fleet-directory (Port 5004)"]
     Gateway -->|/api/execution| Execution["execution-sync (Port 5005)"]
     Gateway -->|/api/analytics| Analytics["analytics-prediction (Port 5006)"]
-    Gateway -->|/| Frontend["Next.js Frontend (Port 3000)"]
 
     Auth --> Postgres[(PostgreSQL DB Port 5432)]
     Orders --> Postgres

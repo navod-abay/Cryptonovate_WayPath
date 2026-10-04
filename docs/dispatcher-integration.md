@@ -49,7 +49,7 @@ Frontend interfaces for these shapes live next to the repository. Sample numbers
 
 Run `npm ci` then `npm run dev` from `frontend/src/dispatcher`, and open http://127.0.0.1:5173/dispatcher.
 
-- Local Vite proxies match the existing service ports 3002–3006.
+- Local Vite proxies match the existing service ports 5002–5006.
 - `VITE_API_BASE_URL` selects a gateway origin; leave empty for local proxy.
 - `VITE_FILE_FALLBACK=false` disables fallback for API debugging. Default is true.
 - `npm test` checks API-first behavior, unauthenticated requests, file-backed screen data, cancellation and failed file loading.
@@ -61,7 +61,7 @@ Default `VITE_LOGIN_MODE=demo` accepts username `dispatcher` and password `Dispa
 
 Set `VITE_LOGIN_MODE=api` and restart Vite to use `POST /api/auth/login`, submitting `{username,password}` with JSON content type. Success opens `/dispatcher`; errors remain visible and never become successful file fallback. The service team still needs to implement backend authentication/session enforcement.
 
-The login UI lives at `/login`, also opened by `/`. It has username/password fields and a show/hide-password control. The dev proxy forwards Auth to port 3001.
+The login UI lives at `/login`, also opened by `/`. It has username/password fields and a show/hide-password control. The dev proxy forwards Auth to port 5001.
 
 ## Proposed vehicle availability call (frontend only)
 

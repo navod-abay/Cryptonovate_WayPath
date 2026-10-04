@@ -37,7 +37,7 @@ func cors(next http.Handler) http.Handler {
 func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
-		port = "3003"
+		port = "5003"
 	}
 
 	mux := http.NewServeMux()

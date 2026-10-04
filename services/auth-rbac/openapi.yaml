@@ -10,7 +10,7 @@ info:
 servers:
   - url: http://localhost/api/auth
     description: Via API gateway
-  - url: http://localhost:3001
+  - url: http://localhost:5001
     description: Direct (local container)
 tags:
   - name: Auth
