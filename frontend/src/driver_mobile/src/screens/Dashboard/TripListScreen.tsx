@@ -34,17 +34,17 @@ export default function TripListScreen({ navigation }: Props) {
           activeTripId: "Trip 1",
           isStarted: false, 
           nodes: [
-            { id: 'w1', type: 'warehouse', sequence: 0, title: 'Peliyagoda Warehouse', badgeText: 'DOCK 3', location: 'Peliyagoda', scheduledStart: '02:30 AM', scheduledEnd: '03:30 AM', status: 'pending', logs: [], inventory: [] },
-            { id: 'o1', type: 'outlet', sequence: 1, title: 'OUT001', badgeText: 'MALL BAY DOCK', location: 'Colombo', scheduledStart: '05:30 AM', scheduledEnd: '08:30 AM', estimatedArrival: '5:28 AM', status: 'pending', logs: [], inventory: [{ id: '1', name: 'Diary Crates', expected: 6, actual: 5 }, { id: '2', name: 'Fresh Milk Crates', expected: 5, actual: 5 }] },
-            { id: 'o2', type: 'outlet', sequence: 2, title: 'OUT018', badgeText: 'STREET', location: 'Colombo', scheduledStart: '07:00 AM', scheduledEnd: '05:00 PM', estimatedArrival: '7:05 AM', status: 'pending', logs: [], inventory: [] },
+            { id: 'w1', type: 'warehouse', goodsType: 'chilled', sequence: 0, title: 'Peliyagoda Warehouse', badgeText: 'DOCK 3', location: 'Peliyagoda', scheduledStart: '02:30 AM', scheduledEnd: '03:30 AM', status: 'pending', logs: [], inventory: [] },
+            { id: 'o1', type: 'outlet', goodsType: 'chilled', sequence: 1, title: 'OUT001', badgeText: 'MALL BAY DOCK', location: 'Colombo', scheduledStart: '05:30 AM', scheduledEnd: '08:30 AM', estimatedArrival: '5:28 AM', status: 'pending', logs: [], inventory: [{ id: '1', name: 'Diary Crates', expected: 6, actual: 5 }, { id: '2', name: 'Fresh Milk Crates', expected: 5, actual: 5 }] },
+            { id: 'o2', type: 'outlet', goodsType: 'style', sequence: 2, title: 'OUT018', badgeText: 'STREET', location: 'Colombo', scheduledStart: '07:00 AM', scheduledEnd: '05:00 PM', estimatedArrival: '7:05 AM', status: 'pending', logs: [], inventory: [] },
           ]
         },
         {
           activeTripId: "Trip 2",
           isStarted: false, 
           nodes: [
-            { id: 'w2', type: 'warehouse', sequence: 0, title: 'Kandy Warehouse', badgeText: 'DOCK 1', location: 'Kandy', scheduledStart: '01:00 PM', scheduledEnd: '02:00 PM', status: 'pending', logs: [], inventory: [] },
-            { id: 'o3', type: 'outlet', sequence: 1, title: 'OUT022', badgeText: 'STREET', location: 'Kandy', scheduledStart: '02:30 PM', scheduledEnd: '04:30 PM', estimatedArrival: '2:15 PM', status: 'pending', logs: [], inventory: [] },
+            { id: 'w2', type: 'warehouse', goodsType: 'dry', sequence: 0, title: 'Kandy Warehouse', badgeText: 'DOCK 1', location: 'Kandy', scheduledStart: '01:00 PM', scheduledEnd: '02:00 PM', status: 'pending', logs: [], inventory: [] },
+            { id: 'o3', type: 'outlet', goodsType: 'tech', sequence: 1, title: 'OUT022', badgeText: 'STREET', location: 'Kandy', scheduledStart: '02:30 PM', scheduledEnd: '04:30 PM', estimatedArrival: '2:15 PM', status: 'pending', logs: [], inventory: [] },
           ]
         }
       ]);
@@ -115,6 +115,7 @@ export default function TripListScreen({ navigation }: Props) {
                 badgeText={warehouseNode.badgeText}
                 arriveTime={warehouseNode.scheduledStart}
                 departTime={warehouseNode.scheduledEnd}
+                goodsType={warehouseNode.goodsType}
               />
             </TouchableOpacity>
           )}

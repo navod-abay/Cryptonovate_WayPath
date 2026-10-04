@@ -3,6 +3,7 @@ import {View, StyleSheet} from 'react-native';
 import CustomText from './CustomText';
 import { COLORS, SPACING, FONT_SIZE, FONT_WEIGHT, scale } from '../utils/constants';
 import Badge from './Badge';
+import TypeBadge from './TypeBadge';
 import { TripNode } from '../types/trip';
 
 interface Props {
@@ -16,9 +17,17 @@ export default function OutletRow({ node }: Props) {
       <View style={styles.outletDetails}>
         <View style={styles.rowSpaceBetween}>
           <CustomText style={styles.outletTitle}>{node.title}</CustomText>
-          <Badge label={node.badgeText} />
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <Badge label={node.badgeText} />
+            {node.goodsType && (
+              <>
+                <View style={{ width: SPACING.sm }} />
+                <TypeBadge type={node.goodsType} showText={false} />
+              </>
+            )}
+          </View>
         </View>
-        <CustomText style={styles.outletLocation}>{node.location}</CustomText>
+        {/* <CustomText style={styles.outletLocation}>{node.location}</CustomText> */}
         <CustomText style={styles.timeWindow}>{node.scheduledStart} - {node.scheduledEnd}</CustomText>
         {node.estimatedArrival && (
           <CustomText style={styles.estimatedTime}>Estimated Arrival - {node.estimatedArrival}</CustomText>

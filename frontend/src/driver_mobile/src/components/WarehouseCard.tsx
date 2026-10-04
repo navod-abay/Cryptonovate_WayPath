@@ -3,25 +3,25 @@ import {View, StyleSheet} from 'react-native';
 import CustomText from './CustomText';
 import { COLORS, SPACING, FONT_SIZE, FONT_WEIGHT, scale } from '../utils/constants';
 import Badge from './Badge';
-import CarrotIcon from './CarrotIcon';
+import TypeBadge from './TypeBadge';
+import { GoodsType } from '../types/trip';
 
 interface Props {
   title: string;
   badgeText: string;
   arriveTime: string;
   departTime: string;
+  goodsType?: GoodsType;
 }
 
-export default function WarehouseCard({ title, badgeText, arriveTime, departTime }: Props) {
+export default function WarehouseCard({ title, badgeText, arriveTime, departTime, goodsType }: Props) {
   return (
     <View style={styles.card}>
       <View style={styles.cardHeader}>
         <View style={styles.row}>
           <Badge label={badgeText} />
           <View style={{ width: SPACING.sm }} />
-          <Badge backgroundColor={COLORS.badgeYellow} 
-          icon={<CarrotIcon width={scale(14)} height={scale(14)} color={COLORS.iconYellow} />}
-          /> 
+          <TypeBadge type={goodsType} showText={true} /> 
         </View>
         <CustomText style={styles.warehouseTitle}>{title}</CustomText>
       </View>

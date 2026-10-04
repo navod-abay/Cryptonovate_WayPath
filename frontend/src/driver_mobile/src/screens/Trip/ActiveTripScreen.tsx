@@ -18,7 +18,7 @@ import { launchCamera, CameraOptions } from 'react-native-image-picker';
 import { saveOfflineDelivery } from '../../services/SyncService';
 import { TripNode, TripLog } from '../../types/trip';
 import Feather from 'react-native-vector-icons/Feather';
-import CarrotIcon from '../../components/CarrotIcon';
+import TypeBadge from '../../components/TypeBadge';
 import FontAwesome from 'react-native-vector-icons/FontAwesome';
 import AntDesign from 'react-native-vector-icons/AntDesign';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
@@ -204,8 +204,7 @@ export default function ActiveTripScreen({ navigation, route }: Props) {
         <View style={styles.badgeRow}>
           <Badge label={currentNode.badgeText} backgroundColor={COLORS.badgeCyan} />
           <View style={{ width: SPACING.sm }} />
-          <Badge backgroundColor={COLORS.badgeYellow} 
-          icon={<CarrotIcon width={scale(14)} height={scale(14)} color={COLORS.iconYellow} />} /> 
+          <TypeBadge type={currentNode.goodsType} showText={true} />
         </View>
 
         {/* Dynamic Time Section */}

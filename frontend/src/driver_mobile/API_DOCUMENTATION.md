@@ -50,8 +50,10 @@ Fetches all the trips assigned to the logged-in driver for the current day. The 
           {
             "id": "node_01",
             "type": "warehouse",
+            "goodsType": "chilled",
             "title": "Peliyagoda Warehouse",
             "badgeText": "DOCK 3",
+            "location": "Peliyagoda",
             "scheduledStart": "02:30 AM",
             "scheduledEnd": "03:30 AM",
             "status": "completed",
@@ -62,14 +64,19 @@ Fetches all the trips assigned to the logged-in driver for the current day. The 
           {
             "id": "node_02",
             "type": "outlet",
-            "title": "OUT001 Colombo",
+            "goodsType": "chilled",
+            "title": "OUT001",
             "badgeText": "MALL BAY DOCK",
+            "location": "Colombo",
             "scheduledStart": "05:30 AM",
             "scheduledEnd": "08:30 AM",
             "estimatedArrival": "5:28 AM",
             "status": "pending",
             "reportCount": 0,
-            "inventory": [],
+            "inventory": [
+              { "id": "1", "name": "Dairy Crates", "expected": 6, "actual": 0 },
+              { "id": "2", "name": "Fresh Milk Crates", "expected": 5, "actual": 0 }
+            ],
             "logs": []
           }
         ]
@@ -81,11 +88,28 @@ Fetches all the trips assigned to the logged-in driver for the current day. The 
           {
             "id": "node_03",
             "type": "warehouse",
+            "goodsType": "dry",
             "title": "Kandy Warehouse",
             "badgeText": "DOCK 1",
+            "location": "Kandy",
             "scheduledStart": "01:00 PM",
             "scheduledEnd": "02:00 PM",
             "status": "pending",
+            "inventory": [],
+            "logs": []
+          },
+          {
+            "id": "node_04",
+            "type": "outlet",
+            "goodsType": "tech",
+            "title": "OUT022",
+            "badgeText": "STREET",
+            "location": "Kandy",
+            "scheduledStart": "02:30 PM",
+            "scheduledEnd": "04:30 PM",
+            "estimatedArrival": "2:15 PM",
+            "status": "pending",
+            "reportCount": 0,
             "inventory": [],
             "logs": []
           }
