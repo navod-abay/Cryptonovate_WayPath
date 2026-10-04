@@ -6,7 +6,9 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 
-export type UserRole = 'dispatcher' | 'loader' | 'driver' | 'store_manager';
+// 'system' is a service identity, not a person: Planning & Allocation signs its own access tokens
+// with this role to read the confirmed pool and write allocations back.
+export type UserRole = 'dispatcher' | 'loader' | 'driver' | 'store_manager' | 'system';
 
 export interface AccessTokenPayload {
   sub: string;
