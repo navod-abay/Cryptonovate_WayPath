@@ -25,9 +25,6 @@ dist/
 build/
 **/build/
 
-# Next.js
-.next/
-out/
 
 # Logs
 *.log
@@ -37,3 +34,6 @@ npm-debug.log*
 .DS_Store
 Thumbs.db
 *.png
+
+
+.vscode

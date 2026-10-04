@@ -3,7 +3,6 @@ WORKDIR /app/src/dispatcher
 
 # Build context is frontend, including the existing shared UI package.
 COPY packages/ui /app/packages/ui
-COPY package.json /app/package.json
 COPY src/dispatcher/package.json src/dispatcher/package-lock.json ./
 RUN npm ci
 # Shared source files resolve React/types through their frontend ancestor.

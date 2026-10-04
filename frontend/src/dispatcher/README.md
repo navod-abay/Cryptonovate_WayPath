@@ -20,7 +20,7 @@ Edit [the JSON file](public/data/dispatcher.json) and refresh the browser to cha
 
 A small banner identifies file fallback. Requests retry APIs on the normal polling interval; successful APIs replace file data. Empty successful API results stay empty. No backend implementations are added by Dispatcher.
 
-The dev proxy forwards `/api/auth`, `/api/orders`, `/api/planning`, `/api/fleet`, `/api/execution` and `/api/analytics` to local ports 3001–3006. For a remote gateway, set `VITE_API_BASE_URL` in `.env.local` and restart Vite. Set `VITE_FILE_FALLBACK=false` to expose failed API requests during integration testing.
+The dev proxy forwards `/api/auth`, `/api/orders`, `/api/planning`, `/api/fleet`, `/api/execution` and `/api/analytics` to local ports 5001–5006. For a remote gateway, set `VITE_API_BASE_URL` in `.env.local` and restart Vite. Set `VITE_FILE_FALLBACK=false` to expose failed API requests during integration testing.
 
 ## Schedule availability
 

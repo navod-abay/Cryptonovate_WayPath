@@ -28,11 +28,11 @@ Examples are captured from a running instance.
 
 ## Conventions
 
-**Base path.** Through the gateway: `http://localhost/api/orders/...`. Direct: `http://localhost:3002/api/orders/...`
-or `http://localhost:3002/...`. The same router is mounted at both paths because nginx strips the
+**Base path.** Through the gateway: `http://localhost/api/orders/...`. Direct: `http://localhost:5002/api/orders/...`
+or `http://localhost:5002/...`. The same router is mounted at both paths because nginx strips the
 `/api/orders/` prefix. The list endpoint needs a trailing slash through the gateway (`/api/orders/`).
 
-**Swagger UI.** Interactive docs at `http://localhost:3002/api/orders/docs` (gateway: `http://localhost/api/orders/docs`);
+**Swagger UI.** Interactive docs at `http://localhost:5002/api/orders/docs` (gateway: `http://localhost/api/orders/docs`);
 raw OpenAPI 3 JSON at `/api/orders/openapi.json`. Use **Authorize** with an access token.
 
 **Auth.** Every route except `/health` needs `Authorization: Bearer <access_token>` from auth-rbac

@@ -49,7 +49,7 @@ erDiagram
 
 ---
 
-## Order Management tables (owner: order-management, port 3002)
+## Order Management tables (owner: order-management, port 5002)
 
 DDL lives in `infrastructure/postgres-init/02-order-management.sql`. It is additive and idempotent,
 and the service never runs DDL at runtime. Demo **data** is seeded by the service at boot, because

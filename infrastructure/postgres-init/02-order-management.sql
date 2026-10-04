@@ -1,6 +1,6 @@
 -- ============================================================================
 -- 02-order-management.sql
--- Owner: Order Management service (port 3002). SOLE owner of the tables below.
+-- Owner: Order Management service (port 5002). SOLE owner of the tables below.
 -- Additive by contract: CREATE ... IF NOT EXISTS only. No ALTER/DROP. No FK to
 -- tables owned by other services. No shared ENUM types. Safe to re-run.
 -- Applied on a fresh volume by docker-entrypoint-initdb.d, or manually:

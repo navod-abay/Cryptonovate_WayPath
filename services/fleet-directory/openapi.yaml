@@ -6,7 +6,7 @@ info:
 servers:
   - url: http://localhost/api/fleet
     description: Via API gateway
-  - url: http://localhost:3004
+  - url: http://localhost:5004
     description: Direct (local container)
 tags:
   - name: Vehicles

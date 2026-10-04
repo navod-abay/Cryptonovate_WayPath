@@ -6,7 +6,7 @@ info:
 servers:
   - url: http://localhost/api/analytics
     description: Via API gateway
-  - url: http://localhost:3006
+  - url: http://localhost:5006
     description: Direct (local container)
 tags:
   - name: Analytics
