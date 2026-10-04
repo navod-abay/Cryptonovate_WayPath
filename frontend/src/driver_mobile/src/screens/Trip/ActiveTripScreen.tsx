@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import {View, StyleSheet, TouchableOpacity, SafeAreaView, StatusBar, ScrollView} from 'react-native';
+import {View, StyleSheet, TouchableOpacity, SafeAreaView, StatusBar, ScrollView, DeviceEventEmitter} from 'react-native';
 import CustomText from '../../components/CustomText';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RouteProp } from '@react-navigation/native';

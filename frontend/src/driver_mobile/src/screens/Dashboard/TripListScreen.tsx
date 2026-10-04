@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import {View, StyleSheet, FlatList, ScrollView, StatusBar, TouchableOpacity, ActivityIndicator} from 'react-native';
+import {View, StyleSheet, FlatList, ScrollView, StatusBar, TouchableOpacity, ActivityIndicator, DeviceEventEmitter} from 'react-native';
 import CustomText from '../../components/CustomText';
 import { useSafeAreaInsets, SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
