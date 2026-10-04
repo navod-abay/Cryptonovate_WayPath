@@ -7,6 +7,9 @@ import LoginScreen from '../screens/Auth/LoginScreen';
 import OTPScreen from '../screens/Auth/OTPScreen';
 // You will create this next
 import TripListScreen from '../screens/Dashboard/TripListScreen'; 
+import ProfileScreen from '../screens/Dashboard/ProfileScreen';
+import HistoryScreen from '../screens/Dashboard/HistoryScreen';
+import PastTripDetailsScreen from '../screens/Dashboard/PastTripDetailsScreen';
 import ActiveTripScreen from '../screens/Trip/ActiveTripScreen';
 import ReportIssueScreen from '../screens/Trip/ReportIssueScreen';
 
@@ -14,6 +17,9 @@ export type RootStackParamList = {
   Login: undefined; 
   OTP: undefined;
   Dashboard: undefined; 
+  Profile: undefined;
+  History: undefined;
+  PastTripDetails: { tripId: string };
   ActiveTrip: { tripData: TripPayload; initialIndex?: number };
   ReportIssue: { tripId: string; nodeId: string; nodeTitle: string; onReportSubmitted: () => void };
 };
@@ -27,6 +33,9 @@ export default function AppNavigator() {
         <Stack.Screen name="Login" component={LoginScreen} />
         <Stack.Screen name="OTP" component={OTPScreen} />
         <Stack.Screen name="Dashboard" component={TripListScreen} />
+        <Stack.Screen name="Profile" component={ProfileScreen} />
+        <Stack.Screen name="History" component={HistoryScreen} />
+        <Stack.Screen name="PastTripDetails" component={PastTripDetailsScreen} />
         <Stack.Screen name="ActiveTrip" component={ActiveTripScreen} />
         <Stack.Screen name="ReportIssue" component={ReportIssueScreen} />
         

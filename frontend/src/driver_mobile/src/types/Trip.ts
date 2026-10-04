@@ -5,6 +5,8 @@ export interface InventoryItem {
   actual: number;
 }
 
+export type GoodsType = 'chilled' | 'dry' | 'tech' | 'style';
+
 export interface TripLog {
   action: 'Arrival' | 'Departure';
   time: string;
@@ -13,6 +15,7 @@ export interface TripLog {
 export interface TripNode {
   id: string;
   type: 'warehouse' | 'outlet';
+  goodsType?: GoodsType;
   sequence: number;
   title: string;
   badgeText: string;
@@ -23,6 +26,7 @@ export interface TripNode {
   logs: TripLog[];
   inventory: InventoryItem[];
   reportCount?: number;
+  estimatedArrival?: string;
 }
 
 export interface TripPayload {

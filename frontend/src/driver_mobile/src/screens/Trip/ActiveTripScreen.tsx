@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView, StatusBar, ScrollView } from 'react-native';
+import {View, StyleSheet, TouchableOpacity, SafeAreaView, StatusBar, ScrollView, DeviceEventEmitter} from 'react-native';
+import CustomText from '../../components/CustomText';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RouteProp } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -8,13 +9,19 @@ import { COLORS, SPACING, FONT_SIZE, FONT_WEIGHT, scale } from '../../utils/cons
 import PrimaryButton from '../../components/PrimaryButton';
 import Badge from '../../components/Badge';
 import ItemsListModal from '../../components/ItemsListModal';
+import NoNetworkModal from '../../components/NoNetworkModal';
+import SuccessModal from '../../components/SuccessModal';
+import { ActivityIndicator } from 'react-native';
 import DeliveryConfirmationModal from '../../components/DeliveryConfirmationModal';
+import NetInfo from '@react-native-community/netinfo';
+import { launchCamera, CameraOptions } from 'react-native-image-picker';
+import { saveOfflineDelivery } from '../../services/SyncService';
 import { TripNode, TripLog } from '../../types/trip';
 import Feather from 'react-native-vector-icons/Feather';
-import CarrotIcon from '../../components/CarrotIcon';
+import TypeBadge from '../../components/TypeBadge';
 import FontAwesome from 'react-native-vector-icons/FontAwesome';
 import AntDesign from 'react-native-vector-icons/AntDesign';
-
+import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'ActiveTrip'>;
@@ -37,6 +44,40 @@ export default function ActiveTripScreen({ navigation, route }: Props) {
   const [itemsVisible, setItemsVisible] = useState(false);
   const [otpVisible, setOtpVisible] = useState(false);
 
+  // Manual Verification States
+  const [isLoadingNetwork, setIsLoadingNetwork] = useState(false);
+  const [noNetworkModalVisible, setNoNetworkModalVisible] = useState(false);
+  const [isManualVerification, setIsManualVerification] = useState(false);
+  const [successModalVisible, setSuccessModalVisible] = useState(false);
+
+  const [unloadedPhotos, setUnloadedPhotos] = useState<string[]>([]);
+  const [paperPhotos, setPaperPhotos] = useState<string[]>([]);
+
+  const handleCapturePhoto = async (type: 'unloaded' | 'paper') => {
+    const options: CameraOptions = {
+      mediaType: 'photo',
+      cameraType: 'back',
+      saveToPhotos: true,
+      quality: 0.5,
+    };
+    
+    launchCamera(options, (response) => {
+      if (response.didCancel) return;
+      if (response.errorMessage) {
+        console.error('Camera Error: ', response.errorMessage);
+        return;
+      }
+      
+      const fileName = response.assets?.[0]?.fileName || `photo_${Date.now()}.jpg`;
+      
+      if (type === 'unloaded') {
+        setUnloadedPhotos(prev => [...prev, fileName]);
+      } else {
+        setPaperPhotos(prev => [...prev, fileName]);
+      }
+    });
+  };
+
   // Status computation
   const totalOutlets = nodes.filter(n => n.type === 'outlet').length;
   const currentOutletIndex = nodes.slice(0, currentIndex + 1).filter(n => n.type === 'outlet').length;
@@ -50,11 +91,25 @@ export default function ActiveTripScreen({ navigation, route }: Props) {
     setNodes(updatedNodes);
   };
 
-  const handleArrival = () => {
-    updateNodeState('arrived', { action: 'Arrival', time: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) });
+  const handleArrival = async () => {
+    setIsLoadingNetwork(true);
     
-    // Simulate loading/unloading confirmation for BOTH warehouse and outlets after 3 seconds
-    setTimeout(() => updateNodeState('ready_to_depart'), 3000);
+    // Check actual network status
+    const networkState = await NetInfo.fetch();
+    
+    setTimeout(() => {
+      setIsLoadingNetwork(false);
+      
+      if (networkState.isConnected && networkState.isInternetReachable !== false) {
+        // Online: proceed as normal
+        updateNodeState('arrived', { action: 'Arrival', time: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) });
+        // Simulating the 3 second confirmation wait from backend
+        setTimeout(() => updateNodeState('ready_to_depart'), 3000);
+      } else {
+        // Offline: prompt user
+        setNoNetworkModalVisible(true);
+      }
+    }, 1000); // brief loader for UX
   };
 
   const handleOTPConfirm = (code: string) => {
@@ -86,21 +141,21 @@ export default function ActiveTripScreen({ navigation, route }: Props) {
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
            <AntDesign name="arrowleft" style={styles.backArrow} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>{tripData.activeTripId}</Text>
+        <CustomText style={styles.headerTitle}>{tripData.activeTripId}</CustomText>
         <View style={styles.backButton} />
       </View>
 
       {/* DYNAMIC STATUS BANNERS */}
       {isStarted && currentNode.status === 'arrived' && (
         <View style={[styles.banner, { backgroundColor: COLORS.success }]}>
-          <Text style={styles.bannerText}>
+          <CustomText style={styles.bannerText}>
             {isWarehouse ? '1 hr 04 mins in Warehouse' : 'Arrived at Outlet'}
-          </Text>
+          </CustomText>
         </View>
       )}
       {isStarted && currentNode.status === 'ready_to_depart' && (
         <View style={[styles.banner, { backgroundColor: COLORS.danger }]}>
-          <Text style={styles.bannerText}>Departure in 3 mins</Text>
+          <CustomText style={styles.bannerText}>Departure in 3 mins</CustomText>
         </View>
       )}
 
@@ -111,8 +166,8 @@ export default function ActiveTripScreen({ navigation, route }: Props) {
         </TouchableOpacity>
         
         <View style={styles.paginatorCenter}>
-          <Text style={styles.paginatorTitle}>{isWarehouse ? 'Warehouse' : 'Outlet'}</Text>
-          <Text style={styles.paginatorSubtitle}>{isWarehouse ? `${totalOutlets} outlets` : `${currentOutletIndex} of ${totalOutlets}`}</Text>
+          <CustomText style={styles.paginatorTitle}>{isWarehouse ? 'Warehouse' : 'Outlet'}</CustomText>
+          <CustomText style={styles.paginatorSubtitle}>{isWarehouse ? `${totalOutlets} outlets` : `${currentOutletIndex} of ${totalOutlets}`}</CustomText>
         </View>
 
         <TouchableOpacity onPress={() => setCurrentIndex(prev => prev + 1)} disabled={currentIndex === nodes.length - 1} style={styles.arrowButton}>
@@ -125,20 +180,20 @@ export default function ActiveTripScreen({ navigation, route }: Props) {
         {/* Title & Status Icon Row */}
         <View style={styles.titleRow}>
           <View style={styles.titleLeft}>
-            <Text style={styles.nodeTitle}>{currentNode.title}</Text>
+            <CustomText style={styles.nodeTitle}>{currentNode.title}</CustomText>
           </View>
           
           {currentNode.status === 'completed' ? (
             <View style={styles.checkCircle}>
-              <Text style={styles.checkIcon}>✓</Text>
+              <CustomText style={styles.checkIcon}>✓</CustomText>
             </View>
           ) : (
             <TouchableOpacity onPress={handleFlagPress} style={{ flexDirection: 'row', alignItems: 'center' }}>
               {/* Conditionally render the report count if greater than 0[cite: 11] */}
               {(currentNode.reportCount ?? 0) > 0 && (
-                <Text style={{ color: COLORS.danger, fontSize: FONT_SIZE.sm, marginRight: scale(4), textDecorationLine: 'underline' }}>
+                <CustomText style={{ color: COLORS.danger, fontSize: FONT_SIZE.sm, marginRight: scale(4), textDecorationLine: 'underline' }}>
                   {currentNode.reportCount} Report
-                </Text>
+                </CustomText>
               )}
               <Feather name="flag" color={COLORS.danger} size={scale(20)} />
             </TouchableOpacity>
@@ -149,66 +204,115 @@ export default function ActiveTripScreen({ navigation, route }: Props) {
         <View style={styles.badgeRow}>
           <Badge label={currentNode.badgeText} backgroundColor={COLORS.badgeCyan} />
           <View style={{ width: SPACING.sm }} />
-          <Badge backgroundColor={COLORS.badgeYellow} 
-          icon={<CarrotIcon width={scale(14)} height={scale(14)} color={COLORS.iconYellow} />} /> 
+          <TypeBadge type={currentNode.goodsType} showText={true} />
         </View>
 
         {/* Dynamic Time Section */}
         {isWarehouse ? (
           <View style={styles.timeBlocksContainer}>
             <View style={styles.timeBlock}>
-              <Text style={styles.timeBlockLabel}>Arrive</Text>
-              <Text style={[styles.timeBlockValue, { color: COLORS.primaryDark }]}>{currentNode.scheduledStart}</Text>
+              <CustomText style={styles.timeBlockLabel}>Arrive</CustomText>
+              <CustomText style={[styles.timeBlockValue, { color: COLORS.primaryDark }]}>{currentNode.scheduledStart}</CustomText>
             </View>
             <View style={styles.timeBlock}>
-              <Text style={styles.timeBlockLabel}>Depart</Text>
-              <Text style={[styles.timeBlockValue, { color: COLORS.danger }]}>{currentNode.scheduledEnd}</Text>
+              <CustomText style={styles.timeBlockLabel}>Depart</CustomText>
+              <CustomText style={[styles.timeBlockValue, { color: COLORS.danger }]}>{currentNode.scheduledEnd}</CustomText>
             </View>
           </View>
         ) : (
-          <Text style={styles.outletTimeWindow}>{currentNode.scheduledStart} - {currentNode.scheduledEnd}</Text>
+          <CustomText style={styles.outletTimeWindow}>{currentNode.scheduledStart} - {currentNode.scheduledEnd}</CustomText>
         )}
 
         {/* View Items Link */}
         <TouchableOpacity style={styles.itemsLinkRow} onPress={() => setItemsVisible(true)}>
-          <FontAwesome name="list-alt" style={styles.itemsIcon} />
-          <Text style={styles.itemsText}>View Items List</Text>
+          {/* <FontAwesome name="list-alt" style={styles.itemsIcon} /> */}
+          <MaterialIcons name="checklist-rtl" style={styles.itemsIcon} />
+          <CustomText style={styles.itemsText}>View Items List</CustomText>
         </TouchableOpacity>
 
-        {/* Activity Logs (Arrival / Departure Timestamps) */}
-        <View style={styles.logsContainer}>
-          {currentNode.logs?.map((log, index) => (
-            <View key={index} style={styles.logRow}>
-              <Text style={styles.logTime}>{log.time}</Text>
-              <Text style={styles.logAction}>{log.action}</Text>
+        {/* Activity Logs (Arrival / Departure Timestamps) OR Manual Verification */}
+        {isLoadingNetwork ? (
+          <View style={styles.loaderContainer}>
+            <ActivityIndicator size="large" color={COLORS.primaryDark} />
+          </View>
+        ) : isManualVerification ? (
+          <View style={styles.proofContainer}>
+            <CustomText style={styles.proofTitle}>Proof of Delivery</CustomText>
+            
+            <TouchableOpacity style={styles.uploadBox} onPress={() => handleCapturePhoto('unloaded')}>
+              <Feather name="camera" size={scale(20)} color={COLORS.textSecondary} style={styles.uploadIcon} />
+              <CustomText style={styles.uploadText}>Photo of unloaded items</CustomText>
+            </TouchableOpacity>
+            <View style={styles.photoList}>
+              {unloadedPhotos.map((photo, idx) => (
+                <View key={idx} style={styles.photoPill}>
+                  <CustomText style={styles.photoName}>{photo}</CustomText>
+                  <TouchableOpacity onPress={() => setUnloadedPhotos(unloadedPhotos.filter((_, i) => i !== idx))}>
+                    <CustomText style={styles.photoClose}>✕</CustomText>
+                  </TouchableOpacity>
+                </View>
+              ))}
             </View>
-          ))}
-        </View>
+
+            <TouchableOpacity style={styles.uploadBox} onPress={() => handleCapturePhoto('paper')}>
+              <Feather name="camera" size={scale(20)} color={COLORS.textSecondary} style={styles.uploadIcon} />
+              <CustomText style={styles.uploadText}>Paper confirmation by{'\n'}the store manager</CustomText>
+            </TouchableOpacity>
+            <View style={styles.photoList}>
+              {paperPhotos.map((photo, idx) => (
+                <View key={idx} style={styles.photoPill}>
+                  <CustomText style={styles.photoName}>{photo}</CustomText>
+                  <TouchableOpacity onPress={() => setPaperPhotos(paperPhotos.filter((_, i) => i !== idx))}>
+                    <CustomText style={styles.photoClose}>✕</CustomText>
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </View>
+          </View>
+        ) : (
+          <View style={styles.logsContainer}>
+            {currentNode.logs?.map((log, index) => (
+              <View key={index} style={styles.logRow}>
+                <CustomText style={styles.logTime}>{log.time}</CustomText>
+                <CustomText style={styles.logAction}>{log.action}</CustomText>
+              </View>
+            ))}
+          </View>
+        )}
       </ScrollView>
 
       {/* 4. FIXED BOTTOM BUTTONS */}
      <View style={[styles.footer, { paddingBottom: insets.bottom || SPACING.lg }]}>
-        <PrimaryButton 
-          title="Open in Maps" 
-          variant="outline" 
-          onPress={() => {}} 
-          style={{ marginBottom: SPACING.md }} 
-          iconRight={<Feather name="navigation" size={scale(18)} color={COLORS.primaryDark} />}
-        />
+        {!isManualVerification && (
+          <PrimaryButton 
+            title="Open in Maps" 
+            variant="outline" 
+            onPress={() => {}} 
+            style={{ marginBottom: SPACING.md }} 
+            iconRight={<Feather name="navigation" size={scale(18)} color={COLORS.primaryDark} />}
+          />
+        )}
         
         {/* Dynamic Action Button Logic */}
-        {currentNode.status === 'pending' ? (
+        {isManualVerification ? (
+          <PrimaryButton 
+            title="Complete Delivery" 
+            disabled={unloadedPhotos.length === 0 || paperPhotos.length === 0} 
+            onPress={() => setSuccessModalVisible(true)} 
+          />
+        ) : currentNode.status === 'pending' ? (
           <PrimaryButton 
             title="I've Arrived !" 
             disabled={!isStarted || (currentIndex !== 0 && nodes[currentIndex - 1].status !== 'completed')} 
             onPress={handleArrival} 
+            isLoading={isLoadingNetwork}
           />
         ) : currentNode.status === 'completed' ? (
            <PrimaryButton title="Completed" disabled={true} onPress={() => {}} />
         ) : (
           <PrimaryButton 
             title="Depart Now" 
-            disabled={currentNode.status === 'arrived'} // Disabled for both warehouse and outlets until the 3-second loader finishes
+            disabled={currentNode.status === 'arrived'}
             onPress={() => setOtpVisible(true)} 
           />
         )}
@@ -217,6 +321,32 @@ export default function ActiveTripScreen({ navigation, route }: Props) {
       {/* Overlay Modals */}
       <ItemsListModal visible={itemsVisible} onClose={() => setItemsVisible(false)} items={currentNode.inventory} />
       <DeliveryConfirmationModal visible={otpVisible} onClose={() => setOtpVisible(false)} onConfirm={handleOTPConfirm} />
+      
+      <NoNetworkModal 
+        visible={noNetworkModalVisible} 
+        onClose={() => setNoNetworkModalVisible(false)} 
+        onProceed={() => {
+          setNoNetworkModalVisible(false);
+          setIsManualVerification(true);
+        }} 
+      />
+      <SuccessModal 
+        visible={successModalVisible} 
+        onClose={() => setSuccessModalVisible(false)} 
+        onDone={async () => {
+          setSuccessModalVisible(false);
+          setIsManualVerification(false);
+          await saveOfflineDelivery({
+            tripId: tripData.activeTripId,
+            nodeId: currentNode.id,
+            unloadedPhotos,
+            paperPhotos,
+            timestamp: new Date().toISOString()
+          });
+          
+          updateNodeState('completed', { action: 'Offline Delivery (Queued)', time: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) });
+        }} 
+      />
     </View>
   );
 }
@@ -264,6 +394,17 @@ const styles = StyleSheet.create({
   logRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: scale(8), borderBottomWidth: 1, borderBottomColor: COLORS.background },
   logTime: { fontSize: FONT_SIZE.sm, fontWeight: FONT_WEIGHT.bold, color: COLORS.textMain },
   logAction: { fontSize: FONT_SIZE.sm, color: COLORS.textSecondary },
+
+  loaderContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: SPACING.xl },
+  proofContainer: { borderTopWidth: 1, borderTopColor: COLORS.border, paddingTop: SPACING.md },
+  proofTitle: { fontSize: FONT_SIZE.md, color: COLORS.textMain, marginBottom: SPACING.md, fontWeight: FONT_WEIGHT.bold },
+  uploadBox: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: COLORS.border, borderStyle: 'dashed', borderRadius: scale(8), paddingVertical: SPACING.lg, marginBottom: SPACING.sm },
+  uploadIcon: { marginRight: SPACING.sm },
+  uploadText: { color: COLORS.textSecondary, fontSize: FONT_SIZE.sm, textAlign: 'center' },
+  photoList: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: SPACING.md, gap: SPACING.sm },
+  photoPill: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.badgeCyan, paddingHorizontal: SPACING.md, paddingVertical: scale(6), borderRadius: scale(16) },
+  photoName: { color: COLORS.primaryDark, fontSize: FONT_SIZE.xs, fontWeight: FONT_WEIGHT.bold, marginRight: SPACING.sm },
+  photoClose: { color: COLORS.primaryDark, fontSize: FONT_SIZE.sm, fontWeight: FONT_WEIGHT.bold },
 
   footer: { paddingHorizontal: SPACING.lg, paddingTop: SPACING.md, borderTopWidth: 1, borderTopColor: COLORS.border, backgroundColor: COLORS.surface },
 });

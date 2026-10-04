@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Modal, View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import {Modal, View, StyleSheet, TouchableOpacity} from 'react-native';
+import CustomText from './CustomText';
 import { COLORS, SPACING, FONT_SIZE, FONT_WEIGHT, scale } from '../utils/constants';
 import OTPInput from './OTPInput';
 
@@ -54,31 +55,31 @@ export default function DeliveryConfirmationModal({ visible, onClose, onConfirm 
           
           {/* Header with the bottom horizontal line[cite: 13] */}
           <View style={styles.header}>
-            <Text style={styles.title}>Delivery Confirmation</Text>
+            <CustomText style={styles.title}>Delivery Confirmation</CustomText>
             <TouchableOpacity onPress={onClose}>
-              <Text style={styles.closeIcon}>✕</Text>
+              <CustomText style={styles.closeIcon}>✕</CustomText>
             </TouchableOpacity>
           </View>
           
-          <Text style={styles.subtitle}>
+          <CustomText style={styles.subtitle}>
             Please enter the code displayed in the store manager's application.
-          </Text>
+          </CustomText>
           
           <OTPInput code={code} setCode={setCode} length={6} />
           
           {/* Footer area with the top horizontal line[cite: 13] */}
           <View style={styles.footerDivider}>
-            <Text style={styles.resendText}>
+            <CustomText style={styles.resendText}>
               {timeLeft > 0 
                 ? `Resend code in ${formatTime(timeLeft)} mins` 
                 : 'Resend code now'}
-            </Text>
+            </CustomText>
           </View>
           
           {/* Automatically confirm if all 6 digits are entered for demo purposes */}
           {code[5] !== '' && (
             <TouchableOpacity style={styles.confirmButton} onPress={handleComplete}>
-              <Text style={styles.confirmText}>Verify</Text>
+              <CustomText style={styles.confirmText}>Verify</CustomText>
             </TouchableOpacity>
           )}
         </View>

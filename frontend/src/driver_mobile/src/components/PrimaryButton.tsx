@@ -1,14 +1,12 @@
 import React from 'react';
-import { 
-  TouchableOpacity, 
-  Text, 
+import {TouchableOpacity, 
   StyleSheet, 
   ActivityIndicator, 
   ViewStyle, 
   StyleProp,
-  View
-} from 'react-native';
+  View} from 'react-native';
 import { COLORS, SPACING, FONT_SIZE, FONT_WEIGHT } from '../utils/constants';
+import CustomText from './CustomText';
 
 interface PrimaryButtonProps {
   title: string;
@@ -55,14 +53,14 @@ export default function PrimaryButton({
           {/* Render left icon if provided */}
           {iconLeft && <View style={styles.iconLeft}>{iconLeft}</View>}
           
-          <Text style={[
+          <CustomText style={[
             styles.text, 
             isOutline && styles.outlineText,
             isCyan && styles.cyanText,
             isDisabled && styles.disabledText
           ]}>
             {title}
-          </Text>
+          </CustomText>
           
           {/* Render right icon if provided */}
           {iconRight && <View style={styles.iconRight}>{iconRight}</View>}
@@ -76,7 +74,7 @@ const styles = StyleSheet.create({
   button: {
     backgroundColor: COLORS.primaryDark,
     paddingVertical: SPACING.md,
-    borderRadius: 8,
+    borderRadius: 12 ,
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row', // Aligns text and icons horizontally
