@@ -115,6 +115,27 @@ router.post(
 );
 
 router.post(
+  '/deliveries/:deliveryId/handover',
+  authenticateJwt,
+  requireRole('store_manager', 'dispatcher'),
+  ExecutionController.issueHandover
+);
+
+router.get(
+  '/deliveries/:deliveryId/handover',
+  authenticateJwt,
+  requireRole('store_manager', 'dispatcher'),
+  ExecutionController.getHandoverStatus
+);
+
+router.post(
+  '/deliveries/:deliveryId/handover/verify',
+  authenticateJwt,
+  requireRole('driver', 'dispatcher'),
+  ExecutionController.verifyHandover
+);
+
+router.post(
   '/orders/:orderRef/handover',
   authenticateJwt,
   requireRole('driver'),

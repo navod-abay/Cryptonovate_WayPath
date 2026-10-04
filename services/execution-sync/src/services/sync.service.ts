@@ -540,7 +540,36 @@ export class ExecutionSyncService {
    * Driver enters the code at the outlet. A correct code marks the order delivered using the
    * driver's own token. Every try counts, and the code locks after too many wrong ones.
    */
-  static async completeHandover(orderRef: string, code: string, authorization: string | undefined) {
+  static async completeHandover(
+    orderRef: string,
+    code: string,
+    authorization: string | undefined,
+    user?: AccessTokenPayload,
+    idempotencyKey?: string,
+    completedAt?: string,
+  ) {
+    if (idempotencyKey) {
+      const previous = await pool.query(
+        `SELECT order_ref, verified_at FROM handover_verifications
+         WHERE order_ref = $1 AND idempotency_key = $2`,
+        [orderRef, idempotencyKey],
+      );
+      if (previous.rows.length > 0) {
+        return { orderRef, deliveryId: orderRef, status: 'delivered', verifiedAt: previous.rows[0].verified_at };
+      }
+    }
+
+    const order = await fetchOrder(orderRef, authorization);
+    if (order?.status === 'delivered') {
+      throw new ExecutionError(409, 'ALREADY_DELIVERED', 'This delivery has already been completed');
+    }
+    if (order?.status !== 'out_for_delivery') {
+      throw new ExecutionError(409, 'INVALID_STATE', 'This delivery is not ready for handover', { status: order?.status });
+    }
+    if (user?.role === 'driver' && user.vehicle_id && order.vehicle_id && user.vehicle_id !== order.vehicle_id) {
+      throw new ExecutionError(403, 'DRIVER_NOT_ASSIGNED', 'This driver is not assigned to the delivery');
+    }
+
     const attempt = await pool.query(
       `UPDATE handover_codes SET attempts = attempts + 1
         WHERE order_ref = $1 AND used_at IS NULL AND expires_at > now() AND attempts < $2
@@ -558,7 +587,7 @@ export class ExecutionSyncService {
     const expected = Buffer.from(handoverCode(orderRef, nonce));
     const given = Buffer.from(code);
     if (given.length !== expected.length || !timingSafeEqual(given, expected)) {
-      throw new ExecutionError(400, 'INVALID_CODE', 'That code is not correct', { attemptsLeft: HANDOVER_MAX_ATTEMPTS - attempts });
+      throw new ExecutionError(422, 'INVALID_CODE', 'That code is not correct', { attemptsLeft: HANDOVER_MAX_ATTEMPTS - attempts });
     }
 
     const res = await safeFetch(`${ORDER_SERVICE_URL}/api/orders/${encodeURIComponent(orderRef)}/status`, {
@@ -579,7 +608,31 @@ export class ExecutionSyncService {
        ON CONFLICT (order_ref) DO UPDATE SET status = 'delivered', pod_signature = 'handover-code', synced_at = now()`,
       [orderRef, outletId],
     );
-    return { orderRef, status: 'delivered', deliveredAt: new Date().toISOString() };
+    const verifiedAt = completedAt || new Date().toISOString();
+    if (idempotencyKey) {
+      await pool.query(
+        `INSERT INTO handover_verifications (order_ref, idempotency_key, driver_id, verified_at)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (order_ref, idempotency_key) DO NOTHING`,
+        [orderRef, idempotencyKey, user?.userId && UUID_PATTERN.test(user.userId) ? user.userId : null, verifiedAt],
+      );
+    }
+    return { orderRef, deliveryId: orderRef, status: 'delivered', verifiedAt };
+  }
+
+  static async getHandoverStatus(orderRef: string, authorization: string | undefined) {
+    const order = await fetchOrder(orderRef, authorization);
+    const verification = await pool.query(
+      `SELECT verified_at FROM handover_verifications
+       WHERE order_ref = $1 ORDER BY verified_at DESC LIMIT 1`,
+      [orderRef],
+    );
+    return {
+      orderRef,
+      deliveryId: orderRef,
+      status: order?.status === 'delivered' ? 'delivered' : 'handover_pending',
+      ...(verification.rows[0] ? { verifiedAt: verification.rows[0].verified_at } : {}),
+    };
   }
 
   /**

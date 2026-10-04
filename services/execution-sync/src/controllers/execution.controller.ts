@@ -194,6 +194,46 @@ export class ExecutionController {
     }
   }
 
+  // D1a. Store manager issues or retrieves the active delivery handover code.
+  static async issueHandover(req: Request, res: Response) {
+    try {
+      const result = await ExecutionSyncService.confirmOrder(req.params.deliveryId, req.headers.authorization);
+      return res.json({ success: true, data: { ...result, deliveryId: req.params.deliveryId, status: 'handover_pending' } });
+    } catch (err: any) {
+      return sendError(res, err);
+    }
+  }
+
+  static async getHandoverStatus(req: Request, res: Response) {
+    try {
+      const result = await ExecutionSyncService.getHandoverStatus(req.params.deliveryId, req.headers.authorization);
+      return res.json({ success: true, data: result });
+    } catch (err: any) {
+      return sendError(res, err);
+    }
+  }
+
+  // D1b. Driver verifies the delivery handover code.
+  static async verifyHandover(req: Request, res: Response) {
+    try {
+      const { code, completedAt } = HandoverSchema.parse(req.body);
+      const idempotencyKey = typeof req.headers['idempotency-key'] === 'string'
+        ? req.headers['idempotency-key']
+        : undefined;
+      const result = await ExecutionSyncService.completeHandover(
+        req.params.deliveryId,
+        code,
+        req.headers.authorization,
+        req.user,
+        idempotencyKey,
+        completedAt,
+      );
+      return res.json({ success: true, data: result });
+    } catch (err: any) {
+      return sendError(res, err);
+    }
+  }
+
   // D1b. Driver enters the handover code at the outlet
   static async handover(req: Request, res: Response) {
     try {

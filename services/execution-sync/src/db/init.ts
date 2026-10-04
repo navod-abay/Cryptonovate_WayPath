@@ -161,6 +161,17 @@ export async function initDb() {
       );
     `);
 
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS handover_verifications (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        order_ref VARCHAR(50) NOT NULL,
+        idempotency_key VARCHAR(200) NOT NULL,
+        driver_id UUID,
+        verified_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE (order_ref, idempotency_key)
+      );
+    `);
+
     // Dashboard alerts waiting to be relayed to NATS (see services/alertOutbox.ts)
     await client.query(`
       CREATE TABLE IF NOT EXISTS execution_alert_outbox (

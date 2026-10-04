@@ -71,6 +71,7 @@ export const ConfirmOrderSchema = z.object({
 
 export const HandoverSchema = z.object({
   code: z.string().regex(/^\d{6}$/, 'The handover code is 6 digits'),
+  completedAt: z.string().datetime().optional(),
 });
 
 export const DRIVER_ISSUES = ['no_receive', 'closed', 'refused', 'blocked'] as const;
