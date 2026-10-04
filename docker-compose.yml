@@ -56,6 +56,7 @@ services:
     volumes:
       - ./services/auth-rbac/src:/app/src
       - /app/node_modules
+    command: npx tsx watch src/index.ts
     depends_on:
       postgres:
         condition: service_healthy
@@ -82,6 +83,7 @@ services:
     volumes:
       - ./services/order-management/src:/app/src
       - /app/node_modules
+    command: npx tsx watch src/index.ts
     depends_on:
       postgres:
         condition: service_healthy
@@ -125,6 +127,7 @@ services:
     volumes:
       - ./services/fleet-directory/src:/app/src
       - /app/node_modules
+    command: npx tsx watch src/index.ts
     depends_on:
       postgres:
         condition: service_healthy
@@ -148,6 +151,7 @@ services:
     volumes:
       - ./services/execution-sync/src:/app/src
       - /app/node_modules
+    command: npx tsx watch src/index.ts
     depends_on:
       postgres:
         condition: service_healthy

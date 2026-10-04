@@ -6,7 +6,7 @@
  * - Times out after REQUEST_TIMEOUT_MS.
  * - On 401 tries POST /auth/refresh once, then signs the user out.
  */
-import { API_BASE_URL, REQUEST_TIMEOUT_MS } from './config';
+import { API_BASE_URL, AUTH_API_BASE_URL, REQUEST_TIMEOUT_MS } from './config';
 import { getState, saveSession, setState } from '@/state/store';
 
 export class ApiError extends Error {
@@ -22,6 +22,8 @@ interface Options {
   query?: Record<string, string | number | undefined>;
   /** Send the bearer token (default true). */
   auth?: boolean;
+  /** Custom base URL override (e.g. AUTH_API_BASE_URL) */
+  baseUrl?: string;
 }
 
 let onUnauthorized: () => void = () => undefined;
@@ -31,8 +33,9 @@ export const setPendingToken = (t: string | null) => { pendingToken = t; };
 /** authApi registers what to do when the session can't be refreshed (sign out). */
 export const setUnauthorizedHandler = (fn: () => void) => { onUnauthorized = fn; };
 
-function buildUrl(path: string, query?: Options['query']) {
-  const url = `${API_BASE_URL}${path.startsWith('/') ? path : `/${path}`}`;
+function buildUrl(path: string, query?: Options['query'], baseUrl?: string) {
+  const base = baseUrl ?? API_BASE_URL;
+  const url = `${base}${path.startsWith('/') ? path : `/${path}`}`;
   const qs = Object.entries(query ?? {})
     .filter(([, v]) => v !== undefined && v !== '')
     .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`)
@@ -45,7 +48,7 @@ async function send(method: Method, path: string, opts: Options): Promise<Respon
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   const token = getState().session?.token ?? pendingToken;
   try {
-    return await fetch(buildUrl(path, opts.query), {
+    return await fetch(buildUrl(path, opts.query, opts.baseUrl), {
       method,
       headers: {
         Accept: 'application/json',
@@ -66,7 +69,11 @@ async function send(method: Method, path: string, opts: Options): Promise<Respon
 async function tryRefresh(): Promise<boolean> {
   const session = getState().session;
   if (!session?.refreshToken) return false;
-  const res = await send('POST', '/auth/refresh', { body: { refresh_token: session.refreshToken }, auth: false }).catch(() => null);
+  const res = await send('POST', '/auth/refresh', {
+    body: { refresh_token: session.refreshToken },
+    auth: false,
+    baseUrl: AUTH_API_BASE_URL,
+  }).catch(() => null);
   if (!res?.ok) return false;
   const json = await res.json().catch(() => ({}));
   const token = json.access_token ?? json.data?.access_token;
@@ -84,7 +91,7 @@ export async function request<T>(method: Method, path: string, opts: Options = {
   const json = res.status === 204 ? null : await res.json().catch(() => null);
   if (!res.ok) {
     if (res.status === 401 && opts.auth !== false) onUnauthorized();
-    const message = json?.message ?? json?.error ?? `Request failed (${res.status}).`;
+    const message = json?.message ?? json?.error?.message ?? json?.error ?? `Request failed (${res.status}).`;
     throw new ApiError(message, res.status, json?.details);
   }
   // Backend services reply { success: true, data: ... }; fall back to the raw body.
@@ -92,9 +99,9 @@ export async function request<T>(method: Method, path: string, opts: Options = {
 }
 
 export const http = {
-  get: <T>(path: string, query?: Options['query']) => request<T>('GET', path, { query }),
+  get: <T>(path: string, query?: Options['query'], opts?: Omit<Options, 'body' | 'query'>) => request<T>('GET', path, { ...opts, query }),
   post: <T>(path: string, body?: unknown, opts?: Omit<Options, 'body'>) => request<T>('POST', path, { ...opts, body }),
-  put: <T>(path: string, body?: unknown) => request<T>('PUT', path, { body }),
-  patch: <T>(path: string, body?: unknown) => request<T>('PATCH', path, { body }),
-  del: <T>(path: string) => request<T>('DELETE', path),
+  put: <T>(path: string, body?: unknown, opts?: Omit<Options, 'body'>) => request<T>('PUT', path, { ...opts, body }),
+  patch: <T>(path: string, body?: unknown, opts?: Omit<Options, 'body'>) => request<T>('PATCH', path, { ...opts, body }),
+  del: <T>(path: string, opts?: Omit<Options, 'body'>) => request<T>('DELETE', path, opts),
 };

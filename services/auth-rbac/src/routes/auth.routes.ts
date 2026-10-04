@@ -1,7 +1,7 @@
 import { Router } from 'express';
-import { AuthController, loginSchema, refreshSchema } from '../controllers/auth.controller.js';
-import { validateRequest } from '../middleware/validate.js';
-import { authenticateJwt } from '../middleware/auth.js';
+import { AuthController, loginSchema, refreshSchema } from '../controllers/auth.controller';
+import { validateRequest } from '../middleware/validate';
+import { authenticateJwt } from '../middleware/auth';
 
 const router = Router();
 

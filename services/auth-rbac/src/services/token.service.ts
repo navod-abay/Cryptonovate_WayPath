@@ -1,6 +1,6 @@
 import jwt from 'jsonwebtoken';
-import { env } from '../config/env.js';
-import { AccessTokenPayload, RefreshTokenPayload, User } from '../types/auth.types.js';
+import { env } from '../config/env';
+import { AccessTokenPayload, RefreshTokenPayload, User } from '../types/auth.types';
 
 export class TokenService {
   /**

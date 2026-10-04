@@ -1,5 +1,5 @@
 import bcrypt from 'bcryptjs';
-import { pool } from './pool.js';
+import { pool } from './pool';
 
 export async function initDatabaseAndSeed(): Promise<void> {
   const client = await pool.connect();
@@ -27,6 +27,11 @@ export async function initDatabaseAndSeed(): Promise<void> {
         is_active BOOLEAN DEFAULT true,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
       );
+
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS full_name VARCHAR(100);
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS outlet_id VARCHAR(20);
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS depot VARCHAR(50);
+      ALTER TABLE users ALTER COLUMN email DROP NOT NULL;
     `);
 
     // Check if seeding is necessary or idempotent update

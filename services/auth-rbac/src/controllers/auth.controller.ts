@@ -1,9 +1,9 @@
 import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
-import { pool } from '../db/pool.js';
-import { TokenService } from '../services/token.service.js';
-import { User } from '../types/auth.types.js';
+import { pool } from '../db/pool';
+import { TokenService } from '../services/token.service';
+import { User } from '../types/auth.types';
 
 export const loginSchema = z.object({
   username: z.string().min(1, 'Username is required'),
