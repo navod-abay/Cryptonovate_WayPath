@@ -43,3 +43,18 @@ export interface TripPayload {
   isStarted: boolean; // Tracks if "Start Trip" was pressed
   nodes: TripNode[];
 }
+
+export interface HandoverVerifyRequest {
+  code: string;
+  completedAt: string;
+}
+
+export interface HandoverVerifyResponse {
+  success: boolean;
+  data: {
+    deliveryId: string;
+    orderRef: string;
+    status: string;
+    verifiedAt: string;
+  };
+}

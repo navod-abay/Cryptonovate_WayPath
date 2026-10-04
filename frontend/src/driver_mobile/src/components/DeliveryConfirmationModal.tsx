@@ -8,9 +8,11 @@ interface Props {
   visible: boolean;
   onClose: () => void;
   onConfirm: (code: string) => void;
+  isLoading?: boolean;
+  error?: string | null;
 }
 
-export default function DeliveryConfirmationModal({ visible, onClose, onConfirm }: Props) {
+export default function DeliveryConfirmationModal({ visible, onClose, onConfirm, isLoading = false, error = null }: Props) {
   // Initialize with 6 empty strings to match the 6 input boxes in the design[cite: 13]
   const [code, setCode] = useState(Array(6).fill(''));
   
@@ -45,7 +47,8 @@ export default function DeliveryConfirmationModal({ visible, onClose, onConfirm 
 
   const handleComplete = () => {
     onConfirm(code.join(''));
-    setCode(Array(6).fill('')); // Reset on success
+    // We do NOT reset on success here. The parent component will close the modal on success, 
+    // or display the error and keep the modal open.
   };
 
   return (
@@ -56,7 +59,7 @@ export default function DeliveryConfirmationModal({ visible, onClose, onConfirm 
           {/* Header with the bottom horizontal line[cite: 13] */}
           <View style={styles.header}>
             <CustomText style={styles.title}>Delivery Confirmation</CustomText>
-            <TouchableOpacity onPress={onClose}>
+            <TouchableOpacity onPress={onClose} disabled={isLoading}>
               <CustomText style={styles.closeIcon}>✕</CustomText>
             </TouchableOpacity>
           </View>
@@ -75,11 +78,20 @@ export default function DeliveryConfirmationModal({ visible, onClose, onConfirm 
                 : 'Resend code now'}
             </CustomText>
           </View>
+
+          {error && <CustomText style={styles.errorText}>{error}</CustomText>}
           
-          {/* Automatically confirm if all 6 digits are entered for demo purposes */}
           {code[5] !== '' && (
-            <TouchableOpacity style={styles.confirmButton} onPress={handleComplete}>
-              <CustomText style={styles.confirmText}>Verify</CustomText>
+            <TouchableOpacity 
+              style={[styles.confirmButton, isLoading && styles.disabledButton]} 
+              onPress={handleComplete}
+              disabled={isLoading}
+            >
+              {isLoading ? (
+                <ActivityIndicator color={COLORS.surface} />
+              ) : (
+                <CustomText style={styles.confirmText}>Verify</CustomText>
+              )}
             </TouchableOpacity>
           )}
         </View>
@@ -146,4 +158,13 @@ const styles = StyleSheet.create({
     color: COLORS.surface, 
     fontWeight: FONT_WEIGHT.bold 
   },
+  disabledButton: {
+    opacity: 0.7
+  },
+  errorText: {
+    color: COLORS.danger,
+    fontSize: FONT_SIZE.sm,
+    textAlign: 'center',
+    marginTop: SPACING.sm
+  }
 });

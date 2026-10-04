@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {View, StyleSheet, TouchableOpacity, SafeAreaView, StatusBar, ScrollView, DeviceEventEmitter} from 'react-native';
 import CustomText from '../../components/CustomText';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -22,6 +22,7 @@ import TypeBadge from '../../components/TypeBadge';
 import FontAwesome from 'react-native-vector-icons/FontAwesome';
 import AntDesign from 'react-native-vector-icons/AntDesign';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import { verifyHandover } from '../../api/trips';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'ActiveTrip'>;
@@ -43,6 +44,9 @@ export default function ActiveTripScreen({ navigation, route }: Props) {
   // Modal States
   const [itemsVisible, setItemsVisible] = useState(false);
   const [otpVisible, setOtpVisible] = useState(false);
+  const [otpIsLoading, setOtpIsLoading] = useState(false);
+  const [otpError, setOtpError] = useState<string | null>(null);
+  const idempotencyKeyRef = useRef<string>('');
 
   // Manual Verification States
   const [isLoadingNetwork, setIsLoadingNetwork] = useState(false);
@@ -112,10 +116,39 @@ export default function ActiveTripScreen({ navigation, route }: Props) {
     }, 1000); // brief loader for UX
   };
 
-  const handleOTPConfirm = (code: string) => {
-    console.log(`Verifying OTP ${code} with Port 5001 Auth Service...`);
-    setOtpVisible(false);
-    updateNodeState('completed', { action: 'Departure', time: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) });
+  const handleOTPConfirm = async (code: string) => {
+    if (isWarehouse) return;
+    
+    if (!currentNode.stopId) {
+       setOtpError("Delivery ID missing.");
+       return;
+    }
+
+    setOtpIsLoading(true);
+    setOtpError(null);
+    
+    try {
+      if (!idempotencyKeyRef.current) {
+         idempotencyKeyRef.current = Date.now().toString() + Math.random().toString();
+      }
+      const response = await verifyHandover(currentNode.stopId, code, idempotencyKeyRef.current);
+      
+      setOtpVisible(false);
+      updateNodeState(response.data.status as any, { action: 'Departure/Handover', time: new Date(response.data.verifiedAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) });
+      
+    } catch (err: any) {
+      if (err.status === 422) setOtpError("Incorrect PIN.");
+      else if (err.status === 410) setOtpError("PIN expired.");
+      else if (err.status === 409) setOtpError("Delivery is not ready for handover.");
+      else if (err.status === 401 || err.status === 403) setOtpError("Unauthorized driver.");
+      else {
+         setOtpError("Network error. Use manual proof.");
+         setOtpVisible(false);
+         setNoNetworkModalVisible(true);
+      }
+    } finally {
+      setOtpIsLoading(false);
+    }
   };
 
   const handleFlagPress = () => {
@@ -315,14 +348,28 @@ export default function ActiveTripScreen({ navigation, route }: Props) {
           <PrimaryButton 
             title="Depart Now" 
             disabled={currentNode.status === 'arrived'}
-            onPress={() => setOtpVisible(true)} 
+            onPress={() => {
+              if (isWarehouse) {
+                updateNodeState('completed', { action: 'Departure', time: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) });
+              } else {
+                idempotencyKeyRef.current = Date.now().toString() + Math.random().toString();
+                setOtpError(null);
+                setOtpVisible(true);
+              }
+            }} 
           />
         )}
       </View>
 
       {/* Overlay Modals */}
       <ItemsListModal visible={itemsVisible} onClose={() => setItemsVisible(false)} items={currentNode.inventory} />
-      <DeliveryConfirmationModal visible={otpVisible} onClose={() => setOtpVisible(false)} onConfirm={handleOTPConfirm} />
+      <DeliveryConfirmationModal 
+        visible={otpVisible} 
+        onClose={() => setOtpVisible(false)} 
+        onConfirm={handleOTPConfirm} 
+        isLoading={otpIsLoading}
+        error={otpError}
+      />
       
       <NoNetworkModal 
         visible={noNetworkModalVisible} 
@@ -340,10 +387,14 @@ export default function ActiveTripScreen({ navigation, route }: Props) {
           setIsManualVerification(false);
           await saveOfflineDelivery({
             tripId: tripData.activeTripId,
-            nodeId: currentNode.id,
+            stopId: currentNode.stopId || '',
+            orderRef: currentNode.orderRef || '',
+            outletId: currentNode.title,
+            vehicleId: tripData.vehicleId,
+            status: 'completed',
             unloadedPhotos,
             paperPhotos,
-            timestamp: new Date().toISOString()
+            capturedAt: new Date().toISOString()
           });
           
           updateNodeState('completed', { action: 'Offline Delivery (Queued)', time: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) });
