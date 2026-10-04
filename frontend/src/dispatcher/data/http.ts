@@ -3,7 +3,15 @@ import { getAccessToken,refreshAccessToken } from './session';
 export class ApiError extends Error {
   constructor(message:string,public status:number) { super(message); }
 }
-export const base=(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/,'');
+const rawEnvUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '').replace(/\/api$/, '');
+const isLocalhostEnv = !rawEnvUrl || rawEnvUrl.includes('localhost') || rawEnvUrl.includes('127.0.0.1');
+
+export const base =
+  !isLocalhostEnv
+    ? rawEnvUrl
+    : typeof window !== 'undefined'
+      ? `${window.location.protocol}//${window.location.hostname}`
+      : 'http://localhost';
 
 /** Calls the API with the signed-in user's access token. Failures surface as ApiError. */
 export async function request<T>(path:string,signal?:AbortSignal,init:RequestInit={}):Promise<T> {

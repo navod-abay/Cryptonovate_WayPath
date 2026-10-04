@@ -13,7 +13,16 @@ export const USE_MOCK_AUTH = (import.meta.env.VITE_USE_MOCK_AUTH ?? '') !== ''
   ? import.meta.env.VITE_USE_MOCK_AUTH === 'true'
   : USE_MOCK;
 
-export const GATEWAY_URL = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '');
+const rawEnvUrl = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '').replace(/\/api$/, '');
+const isLocalhostEnv = !rawEnvUrl || rawEnvUrl.includes('localhost') || rawEnvUrl.includes('127.0.0.1');
+
+export const GATEWAY_URL =
+  !isLocalhostEnv
+    ? rawEnvUrl
+    : typeof window !== 'undefined'
+      ? `${window.location.protocol}//${window.location.hostname}`
+      : 'http://localhost';
+
 export const API_BASE_URL = `${GATEWAY_URL}/api`;
 /** Auth is served by the same gateway as every other service. */
 export const AUTH_API_BASE_URL = API_BASE_URL;
