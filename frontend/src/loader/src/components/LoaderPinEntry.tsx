@@ -25,27 +25,23 @@ export function LoaderPinEntry({
   maxPinLength = 4,
 }: LoaderPinEntryProps) {
   const [pin, setPin] = useState('');
-  const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
   const isSubmitting = useRef(false);
 
   const handleKeyPress = useCallback(
     (key: string) => {
-      if (pin.length >= maxPinLength) return;
-      setError('');
-      setPin((prev) => prev + key);
+      if (isLoading || pin.length >= maxPinLength) return;
+        setPin((prev) => prev + key);
     },
-    [pin, maxPinLength]
+    [pin, maxPinLength, isLoading]
   );
 
   const handleClear = useCallback(() => {
     setPin('');
-    setError('');
   }, []);
 
   const handleBackspace = useCallback(() => {
     setPin((prev) => prev.slice(0, -1));
-    setError('');
   }, []);
 
   React.useEffect(() => {
@@ -56,7 +52,7 @@ export function LoaderPinEntry({
           await onSuccess?.(pin);
           setSuccess(true);
         } catch {
-          // Error handled by parent
+          setPin(''); // the parent shows the error; let the loader try again
         } finally {
           isSubmitting.current = false;
         }

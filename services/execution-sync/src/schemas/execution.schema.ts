@@ -1,11 +1,17 @@
 import { z } from 'zod';
 
+/** Units of one order line that will not be loaded: missing from stock, or damaged and removed. */
 export const ShortfallSchema = z.object({
   orderRef: z.string().min(1, 'Order reference is required'),
   sku: z.string().min(1, 'SKU is required'),
-  missingQty: z.number().int().min(0).default(0),
+  missingQty: z.number().int().min(1, 'missingQty must be at least 1'),
   damageFlag: z.boolean().default(false),
-  notes: z.string().optional(),
+  notes: z.string().max(500).optional(),
+});
+
+/** A unit label read by the camera or a handheld scanner: <orderRef>|<sku>|<unit>. */
+export const ScanSchema = z.object({
+  barcode: z.string().trim().min(1, 'barcode is required').max(120),
 });
 
 export const DispatchSchema = z.object({
@@ -95,6 +101,7 @@ export const DeliveryProblemSchema = z.object({
 });
 
 export type ShortfallInput = z.infer<typeof ShortfallSchema>;
+export type ScanInput = z.infer<typeof ScanSchema>;
 export type TelemetryInput = z.infer<typeof TelemetrySchema>;
 export type PodInput = z.infer<typeof PodSchema>;
 export type BulkSyncInput = z.infer<typeof BulkSyncSchema>;

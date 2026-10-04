@@ -1,25 +1,32 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { LoaderPinEntry } from './components/LoaderPinEntry';
 import { ReadyToLoadScreen } from './components/ReadyToLoadScreen';
 import { LoadingScreen } from './components/LoadingScreen';
 import { CompletedScreen } from './components/CompletedScreen';
 import { LoadingDetailScreen } from './components/LoadingDetailScreen';
 import { FinalCheckScreen } from './components/FinalCheckScreen';
-import { login, getProfile, isAuthenticated, logout, AuthUser } from './api/authApi';
-import { getActiveTrips, getManifest, LoadingItem, Vehicle } from './api/executionApi';
-import { outlets } from './data/mockData';
+import { LabelSheet } from './components/LabelSheet';
+import { pinLogin, getProfile, isAuthenticated, logout, AuthUser } from './api/authApi';
+import { getActiveTrips, startLoading, Vehicle } from './api/executionApi';
 
-type Screen = 'pin' | 'queue' | 'loading' | 'completed' | 'detail' | 'finalCheck';
+type Screen = 'pin' | 'queue' | 'loading' | 'completed' | 'detail' | 'labels' | 'finalCheck';
+
+/** The depot this kiosk stands in: a PIN identifies one of that depot's loaders. */
+const KIOSK_DEPOT = import.meta.env.VITE_LOADER_DEPOT || 'Peliyagoda';
+const DOCK = 'Dock 03';
+const CUTOFF = '04:00 AM';
 
 export default function LoaderApp() {
   const [screen, setScreen] = useState<Screen>('pin');
-  const [workerName, setWorkerName] = useState('');
   const [user, setUser] = useState<AuthUser | null>(null);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
-  const [loadingItems, setLoadingItems] = useState<LoadingItem[]>([]);
   const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null);
+  const [outlets, setOutlets] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+
+  const depot = user?.depot ?? KIOSK_DEPOT;
+  const workerName = user?.fullName ?? '';
 
   // Check if already authenticated
   useEffect(() => {
@@ -27,54 +34,32 @@ export default function LoaderApp() {
       getProfile()
         .then((profile) => {
           setUser(profile);
-          setWorkerName(profile.fullName);
           setScreen('queue');
         })
         .catch(() => logout());
     }
   }, []);
 
-  // Fetch vehicles when entering queue screens
+  // The queue screens list the trips of the vehicles assigned to this loader, by loading status.
   useEffect(() => {
-    if (screen === 'queue' || screen === 'loading' || screen === 'completed') {
+    if (user && (screen === 'queue' || screen === 'loading' || screen === 'completed')) {
       setIsLoading(true);
       setError('');
       setVehicles([]); // Clear old data before fetching new
       const status = screen === 'queue' ? 'ready_to_load' : screen === 'loading' ? 'loading' : 'completed';
-      getActiveTrips('Peliyagoda', status)
+      getActiveTrips(depot, status)
         .then(setVehicles)
         .catch((err) => setError(err.message))
         .finally(() => setIsLoading(false));
     }
-  }, [screen]);
-
-  // Fetch manifest when entering detail screen
-  useEffect(() => {
-    if (screen === 'detail') {
-      setIsLoading(true);
-      getManifest('trip_001')
-        .then((manifest) => setLoadingItems(manifest.items))
-        .catch((err) => setError(err.message))
-        .finally(() => setIsLoading(false));
-    }
-  }, [screen]);
+  }, [screen, user, depot]);
 
   const handleLogin = useCallback(async (pin: string) => {
     setIsLoading(true);
     setError('');
     try {
-      // Map PIN to actual password (demo purposes)
-      const password = pin === '1234' ? 'Password123!' : pin;
-      const response = await login('loader_peliyagoda', password);
+      const response = await pinLogin(KIOSK_DEPOT, pin);
       setUser(response.user);
-      setWorkerName(response.user.fullName);
-      // Prefetch vehicles before navigating to queue
-      try {
-        const trips = await getActiveTrips('Peliyagoda');
-        setVehicles(trips);
-      } catch {
-        // Vehicles will be fetched by useEffect if this fails
-      }
       setScreen('queue');
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Login failed';
@@ -90,23 +75,21 @@ export default function LoaderApp() {
     }
   }, []);
 
-  const handleStartLoading = (vehicleId: string) => {
-    const vehicle = vehicles.find((v) => v.id === vehicleId);
-    if (vehicle) {
+  /** Start Loading (or resume one from the Loading queue): the trip moves to "Loading". */
+  const handleStartLoading = async (tripId: string) => {
+    const vehicle = vehicles.find((v) => v.tripId === tripId);
+    if (!vehicle) return;
+    try {
+      await startLoading(tripId);
       setSelectedVehicle(vehicle);
       setScreen('detail');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not start loading');
     }
   };
 
-  const handleView = (vehicleId: string) => {
-    console.log('View:', vehicleId);
-  };
-
-  const handleLogout = () => {
-    logout();
-    setUser(null);
-    setWorkerName('');
-    setScreen('pin');
+  const handleView = (tripId: string) => {
+    console.log('View:', tripId);
   };
 
   if (screen === 'pin') {
@@ -114,95 +97,108 @@ export default function LoaderApp() {
       <LoaderPinEntry
         onSuccess={handleLogin}
         isLoading={isLoading}
-        error={error}
-        depot="Peliyagoda"
-        dock="Dock 03"
+        apiError={error}
+        depot={KIOSK_DEPOT}
+        dock={DOCK}
         vehiclesBefore={vehicles.length}
-        cutoffTime="04:00 AM"
+        cutoffTime={CUTOFF}
       />
     );
   }
 
-  if (screen === 'detail') {
+  if (screen === 'detail' && selectedVehicle) {
     return (
       <LoadingDetailScreen
-        vehicle={selectedVehicle || vehicles[0]}
-        outlets={outlets}
-        items={loadingItems}
+        vehicle={selectedVehicle}
+        workerName={workerName}
         onBack={() => setScreen('queue')}
-        onFinish={() => setScreen('finalCheck')}
+        onFinish={(stopOutlets) => {
+          setOutlets(stopOutlets);
+          setScreen('finalCheck');
+        }}
+        onShowLabels={() => setScreen('labels')}
       />
     );
   }
 
-  if (screen === 'finalCheck') {
+  if (screen === 'labels' && selectedVehicle) {
+    return <LabelSheet tripId={selectedVehicle.tripId} onBack={() => setScreen('detail')} />;
+  }
+
+  if (screen === 'finalCheck' && selectedVehicle) {
     return (
       <FinalCheckScreen
-        vehicle={vehicles[0] || {
-          vehicle_id: 'VEH056',
-          type: 'truck',
-          temp: 'reefer',
-          weight_cap_kg: 5000,
-          volume_cap_m3: 20,
-          fuel_type: 'diesel',
-          km_per_l: 8,
-          weekly_fuel_quota_l: 100,
-          depot: 'Peliyagoda',
-          status: 'available',
-        }}
+        vehicle={selectedVehicle}
         outlets={outlets}
+        workerName={workerName}
         onBack={() => setScreen('detail')}
         onRelease={() => setScreen('queue')}
       />
     );
   }
 
+  // Queue screens have no error slot of their own.
+  const errorBanner = error && (
+    <div role="alert" className="fixed top-20 inset-x-0 z-40 flex justify-center px-4 pointer-events-none">
+      <p className="bg-red-50 border border-red-300 text-red-700 text-sm rounded-xl px-4 py-2 shadow">{error}</p>
+    </div>
+  );
+
   if (screen === 'loading') {
     return (
+      <>
+      {errorBanner}
       <LoadingScreen
         vehicles={vehicles}
         isLoading={isLoading}
-        depot="Peliyagoda"
-        dock="Dock 03"
+        depot={depot}
+        dock={DOCK}
         workerName={workerName}
         vehiclesBefore={vehicles.length}
-        cutoffTime="04:00 AM"
-        onView={handleView}
+        cutoffTime={CUTOFF}
+        onView={(tripId) => void handleStartLoading(tripId)}
         onBack={() => setScreen('queue')}
         onNext={() => setScreen('completed')}
       />
+      </>
     );
   }
 
   if (screen === 'completed') {
     return (
+      <>
+      {errorBanner}
       <CompletedScreen
         vehicles={vehicles}
         isLoading={isLoading}
-        depot="Peliyagoda"
-        dock="Dock 03"
+        depot={depot}
+        dock={DOCK}
         workerName={workerName}
         vehiclesBefore={vehicles.length}
-        cutoffTime="04:00 AM"
+        cutoffTime={CUTOFF}
         onView={handleView}
         onBack={() => setScreen('loading')}
         onNext={() => setScreen('queue')}
       />
+      </>
     );
   }
 
   return (
+    <>
+    {errorBanner}
     <ReadyToLoadScreen
       vehicles={vehicles}
       isLoading={isLoading}
-      depot="Peliyagoda"
-      dock="Dock 03"
+      depot={depot}
+      dock={DOCK}
       workerName={workerName}
       vehiclesBefore={vehicles.length}
-      cutoffTime="04:00 AM"
-      onStartLoading={handleStartLoading}
+      cutoffTime={CUTOFF}
+      onStartLoading={(tripId) => void handleStartLoading(tripId)}
       onBack={() => setScreen('completed')}
       onNext={() => setScreen('loading')}
     />
+    </>
   );
 }

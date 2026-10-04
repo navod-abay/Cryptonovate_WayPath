@@ -26,8 +26,9 @@ async function handleResponse<T>(response: Response): Promise<T> {
   const data = await response.json();
 
   if (!response.ok) {
-    const error = data as { error?: ApiError };
-    throw new Error(error?.error?.message || `HTTP ${response.status}`);
+    // auth-rbac and fleet send { error: { code, message } }; execution-sync sends { error: "text" }.
+    const error = (data as { error?: ApiError | string })?.error;
+    throw new Error((typeof error === 'string' ? error : error?.message) || `HTTP ${response.status}`);
   }
 
   // Unwrap { success, data } envelope

@@ -11,7 +11,7 @@ interface ReadyToLoadScreenProps {
   workerName: string;
   vehiclesBefore: number;
   cutoffTime: string;
-  onStartLoading: (vehicleId: string) => void;
+  onStartLoading: (tripId: string) => void;
   onBack: () => void;
   onNext?: () => void;
 }
@@ -46,24 +46,6 @@ export function ReadyToLoadScreen({
       );
     }, 60000);
     return () => clearInterval(interval);
-  }, []);
-
-  const handleMoveUp = useCallback((index: number) => {
-    if (index === 0) return;
-    setVehicles((prev) => {
-      const next = [...prev];
-      [next[index - 1], next[index]] = [next[index], next[index - 1]];
-      return next;
-    });
-  }, []);
-
-  const handleMoveDown = useCallback((index: number) => {
-    setVehicles((prev) => {
-      if (index === prev.length - 1) return prev;
-      const next = [...prev];
-      [next[index], next[index + 1]] = [next[index + 1], next[index]];
-      return next;
-    });
   }, []);
 
   const handleScrollUp = useCallback(() => {
@@ -142,7 +124,7 @@ export function ReadyToLoadScreen({
             <div ref={scrollRef} className="flex-1 overflow-y-auto space-y-3">
               {vehicles.map((vehicle) => (
                 <VehicleCard
-                  key={vehicle.id}
+                  key={vehicle.tripId}
                   vehicle={vehicle}
                   onStartLoading={onStartLoading}
                 />

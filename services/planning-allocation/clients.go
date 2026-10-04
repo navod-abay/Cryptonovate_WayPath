@@ -315,3 +315,30 @@ func (c *fleetClient) TravelMetrics(ctx context.Context) (TravelMetrics, error) 
 	err := c.call(ctx, http.MethodGet, "/api/fleet/travel-metrics", nil, &out)
 	return out, err
 }
+
+// ---------------------------------------------------------------- auth-rbac
+
+// Loader is a loader account; Planning shares each day's vehicles among a depot's loaders.
+type Loader struct {
+	ID       string `json:"id"`
+	Username string `json:"username"`
+	FullName string `json:"fullName"`
+	Depot    string `json:"depot"`
+}
+
+type LoadersAPI interface {
+	Loaders(ctx context.Context) ([]Loader, error) // active loaders of every depot
+}
+
+type authClient struct{ serviceClient }
+
+func newAuthClient(baseURL, secret string) *authClient {
+	return &authClient{serviceClient{name: "auth-rbac", baseURL: baseURL, secret: secret,
+		http: &http.Client{Timeout: 10 * time.Second}}}
+}
+
+func (c *authClient) Loaders(ctx context.Context) ([]Loader, error) {
+	var out []Loader
+	err := c.call(ctx, http.MethodGet, "/api/auth/loaders", nil, &out)
+	return out, err
+}

@@ -22,12 +22,16 @@ export async function login(username: string, password: string): Promise<LoginRe
   return data;
 }
 
-export async function refreshSession(): Promise<{ access_token: string }> {
-  return apiPost('/api/auth/refresh', {});
+/** A loader signs in at their depot's kiosk with their own 4-digit PIN. */
+export async function pinLogin(depot: string, pin: string): Promise<LoginResponse> {
+  const data = await apiPost<LoginResponse>('/api/auth/pin-login', { depot, pin });
+  setTokens(data.access_token, data.refresh_token);
+  return data;
 }
 
 export async function getProfile(): Promise<AuthUser> {
-  return apiGet<AuthUser>('/api/auth/me');
+  const data = await apiGet<{ user: AuthUser }>('/api/auth/me');
+  return data.user;
 }
 
 export function isAuthenticated(): boolean {

@@ -11,7 +11,7 @@ interface LoadingScreenProps {
   workerName: string;
   vehiclesBefore: number;
   cutoffTime: string;
-  onView: (vehicleId: string) => void;
+  onView: (tripId: string) => void;
   onBack: () => void;
   onNext?: () => void;
 }
@@ -118,7 +118,7 @@ export function LoadingScreen({
             <div ref={scrollRef} className="flex-1 overflow-y-auto space-y-3">
               {vehicles.map((vehicle) => (
                 <VehicleCard
-                  key={vehicle.vehicle_id}
+                  key={vehicle.tripId}
                   vehicle={vehicle}
                   onStartLoading={onView}
                   actionLabel="View"

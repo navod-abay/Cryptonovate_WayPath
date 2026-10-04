@@ -37,6 +37,85 @@ paths:
                     type: string
                     format: date-time
 
+  /docks/{depot}/active-trips:
+    get:
+      tags: [Warehouse Loading]
+      summary: The loader's queue of trips to load
+      description: >-
+        Today's planned trips (Colombo date) of the vehicles Planning assigned to the calling loader,
+        each with its loading status; a dispatcher sees every trip at the depot. A loader may only ask
+        for their own depot.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: depot
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [Peliyagoda, Kandy]
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [ready_to_load, loading, completed]
+        - name: date
+          in: query
+          required: false
+          description: Plan date (YYYY-MM-DD); defaults to today in Colombo
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Trips ordered by departure time
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        tripId:
+                          type: string
+                          example: 20261005-VEH001-T1
+                        tripNumber:
+                          type: integer
+                        vehicleId:
+                          type: string
+                        vehicleType:
+                          type: string
+                          enum: [truck, van]
+                        temperature:
+                          type: string
+                          enum: [frozen, ambient]
+                        departureTime:
+                          type: string
+                          example: '03:30'
+                        stops:
+                          type: integer
+                        status:
+                          type: string
+                          enum: [ready_to_load, loading, completed]
+                        dock:
+                          type: string
+                        loaderId:
+                          type: string
+                          nullable: true
+                        loaderName:
+                          type: string
+                          nullable: true
+        '403':
+          description: A loader asked for another depot
+        '502':
+          description: Planning & Allocation is unreachable or failed
+
   /trips/{tripId}/manifest:
     get:
       tags: [Warehouse Loading]
@@ -49,14 +128,24 @@ paths:
           required: true
           schema:
             type: string
+      description: >-
+        The planned trip's stops reversed for LIFO loading. A loader may only open a trip of a vehicle
+        assigned to them; the same rule applies to shortfall and dispatch.
       responses:
         '200':
           description: LIFO ordered loading manifest retrieved
+        '403':
+          description: The trip is assigned to another loader
+        '404':
+          description: No planned trip with this id
+        '502':
+          description: Planning & Allocation is unreachable or failed
 
-  /trips/{tripId}/shortfall:
+  /trips/{tripId}/start:
     post:
       tags: [Warehouse Loading]
-      summary: Record Item Shortfall or Damage
+      summary: Start loading a trip
+      description: Moves the trip to the loader's "loading" queue. Idempotent; a dispatched trip is 409.
       security:
         - BearerAuth: []
       parameters:
@@ -65,13 +154,88 @@ paths:
           required: true
           schema:
             type: string
+            example: 20261005-VEH035-T1
+      responses:
+        '200':
+          description: Loading started (or already started)
+        '403':
+          description: The trip is assigned to another loader
+        '409':
+          description: The trip has already been dispatched
+
+  /trips/{tripId}/scans:
+    post:
+      tags: [Warehouse Loading]
+      summary: Record one scanned unit label
+      description: >-
+        Every unit carries a label `<orderRef>|<sku>|<unit>`, printed as a QR code (Code 128 also works) (unit 1..quantity of the order
+        line). A label scanned twice is reported as a duplicate and counted once. When every unit of an
+        order is scanned or reported missing/damaged, and at least one was scanned, the order is set to
+        `loaded` in Order Management as the calling loader ("loaded short" when some were reported).
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: tripId
+          in: path
+          required: true
+          schema:
+            type: string
+            example: 20261005-VEH035-T1
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [orderRef, sku]
+              required: [barcode]
+              properties:
+                barcode:
+                  type: string
+                  example: ORD-20261005-00431|BUTTER-CTN|3
+      responses:
+        '201':
+          description: Unit counted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScanResult'
+        '200':
+          description: Label already scanned; nothing changed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScanResult'
+        '403':
+          description: The trip is assigned to another loader
+        '409':
+          description: The unit's order is not on this truck, every unit of the line is already accounted for, or the trip is dispatched
+        '422':
+          description: Not a unit label, or no such item or unit on the order
+
+  /trips/{tripId}/shortfall:
+    post:
+      tags: [Warehouse Loading]
+      summary: Report units missing or damaged at loading
+      description: >-
+        Units of one order line that will not be loaded. At most the line's units not yet scanned or
+        reported. Raises a `loader.shortfall` alert for the depot's dispatchers and the outlet's store
+        manager, and may complete the order (see /scans).
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: tripId
+          in: path
+          required: true
+          schema:
+            type: string
+            example: 20261005-VEH035-T1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [orderRef, sku, missingQty]
               properties:
                 orderRef:
                   type: string
@@ -79,20 +243,30 @@ paths:
                   type: string
                 missingQty:
                   type: integer
-                  default: 0
+                  minimum: 1
+                  description: Number of units missing (or damaged, with damageFlag)
                 damageFlag:
                   type: boolean
                   default: false
+                  description: true = damaged and removed, false = missing
                 notes:
                   type: string
+                  maxLength: 500
       responses:
         '201':
-          description: Shortfall logged successfully
+          description: Shortfall recorded and alert queued
+        '403':
+          description: The trip is assigned to another loader
+        '422':
+          description: The order or item is not on this trip, or more units than are left were reported
 
   /trips/{tripId}/dispatch:
     post:
       tags: [Warehouse Loading]
-      summary: Complete Warehouse Manifest Dispatch
+      summary: Release the loaded truck
+      description: >-
+        Every unit must be scanned or reported, and Order Management must have accepted every loaded
+        order (retried here). Orders with nothing scanned are listed in notLoaded and stay allocated.
       security:
         - BearerAuth: []
       parameters:
@@ -101,6 +275,7 @@ paths:
           required: true
           schema:
             type: string
+            example: 20261005-VEH035-T1
       requestBody:
         required: false
         content:
@@ -111,19 +286,54 @@ paths:
                 loaderId:
                   type: string
                   format: uuid
+                  description: Dispatchers only; a loader always dispatches as themselves
       responses:
         '200':
           description: Manifest completed and trip dispatched
+        '403':
+          description: The trip is assigned to another loader
+        '409':
+          description: Units are not scanned or reported yet (details.open lists them)
+        '502':
+          description: Order Management has not accepted an order as loaded yet
 
   /driver/active-route:
     get:
       tags: [Driver Execution]
-      summary: Get Active Route & Assigned Stops
+      summary: The driver's trips for the day
+      description: >-
+        The planned trips of the vehicle in the driver's token (auth-rbac users.vehicle_id), in trip
+        order, with stops in delivery order and their items, plus each trip's loading status. A
+        dispatcher passes vehicleId.
       security:
         - BearerAuth: []
+      parameters:
+        - name: date
+          in: query
+          required: false
+          description: Plan date (YYYY-MM-DD); defaults to today in Colombo
+          schema:
+            type: string
+            format: date
+        - name: vehicleId
+          in: query
+          required: false
+          description: Dispatchers only; a driver always gets their own vehicle
+          schema:
+            type: string
+            example: VEH001
       responses:
         '200':
-          description: Active route details retrieved
+          description: >-
+            { date, vehicleId, trips: Planning's TripDetail (tripId, tripNumber, departureTime,
+            returnTime, district, stops[] with eta, window and items) plus loadingStatus
+            (ready_to_load | loading | completed) }
+        '400':
+          description: A dispatcher did not name a vehicle
+        '403':
+          description: The driver account is not linked to a vehicle
+        '502':
+          description: Planning & Allocation is unreachable or failed
 
   /telemetry:
     post:
@@ -520,6 +730,48 @@ paths:
 
 components:
   schemas:
+    ScanResult:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            status:
+              type: string
+              enum: [scanned, duplicate]
+            orderRef:
+              type: string
+            outletId:
+              type: string
+            sku:
+              type: string
+            description:
+              type: string
+            unit:
+              type: integer
+            line:
+              type: object
+              description: The order line's units so far
+              properties:
+                qty: {type: integer}
+                scanned: {type: integer}
+                missing: {type: integer}
+                damaged: {type: integer}
+                remaining: {type: integer}
+            order:
+              type: object
+              properties:
+                complete:
+                  type: boolean
+                  description: Every unit scanned or reported
+                loaded:
+                  type: boolean
+                  description: Complete with at least one unit scanned
+                synced:
+                  type: boolean
+                  description: Order Management has the order as loaded
     DriverIncident:
       type: object
       required: [clientEventId, issue, capturedAt]

@@ -70,6 +70,8 @@ type VehicleSchedule struct {
 	Temperature      string  `json:"temperature"` // reefer | ambient
 	WeightCapacityKg float64 `json:"weightCapacityKg"`
 	VolumeCapacityM3 float64 `json:"volumeCapacityM3"`
+	LoaderID         string  `json:"loaderId,omitempty"` // auth-rbac user id of the loader who loads this vehicle
+	LoaderName       string  `json:"loaderName,omitempty"`
 	Trips            []Trip  `json:"trips"`
 }
 
@@ -84,6 +86,10 @@ type TripDetail struct {
 	WeightCapacityKg float64 `json:"weightCapacityKg"`
 	VolumeCapacityM3 float64 `json:"volumeCapacityM3"`
 	PlanRunID        string  `json:"planRunId"`
+	// The loader who loads this vehicle (every trip of a vehicle has the same one); empty when the
+	// depot had no loader when the plan was made.
+	LoaderID   string `json:"loaderId,omitempty"`
+	LoaderName string `json:"loaderName,omitempty"`
 }
 
 type DepotSchedule struct {

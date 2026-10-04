@@ -123,10 +123,12 @@ services:
     healthcheck:
       <<: *healthcheck
       test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:5003/health"]
-    # Planning reads orders and the fleet as soon as it starts (catch-up), so it waits until both are
-    # healthy. order-management only reports healthy after its seed step has run.
+    # Planning reads orders, the fleet and the loaders (auth-rbac) as soon as it starts (catch-up),
+    # so it waits until they are healthy. order-management only reports healthy after its seed step.
     depends_on:
       postgres:
+        condition: service_healthy
+      auth-rbac:
         condition: service_healthy
       order-management:
         condition: service_healthy
@@ -270,8 +272,25 @@ services:
       gateway:
         condition: service_healthy
 
-  # loader: add once the loader web app is merged — same shape as store-manager,
-  # dockerfile src/loader/Dockerfile, host port 4175.
+  loader:
+    build:
+      context: ./frontend
+      dockerfile: src/loader/Dockerfile
+      args:
+        # The app appends /api/<service> itself, so this is the gateway origin.
+        VITE_API_GATEWAY_URL: ${LOADER_API_GATEWAY_URL:-http://localhost}
+        # The depot this kiosk stands in: a loader's PIN is checked against that depot's loaders.
+        VITE_LOADER_DEPOT: ${LOADER_DEPOT:-Peliyagoda}
+    container_name: app_loader
+    restart: unless-stopped
+    ports:
+      - "4175:4173"
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:4173/"]
+    depends_on:
+      gateway:
+        condition: service_healthy
 
   # ============================================================================
   # API GATEWAY (NGINX Reverse Proxy)

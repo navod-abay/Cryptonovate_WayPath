@@ -13,6 +13,7 @@ export class TokenService {
       role: user.role,
       outlet_id: user.outlet_id,
       depot: user.depot,
+      vehicle_id: user.vehicle_id ?? null,
       type: 'access',
     };
 
