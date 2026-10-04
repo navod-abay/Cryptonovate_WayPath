@@ -119,6 +119,26 @@ resource "aws_security_group" "app_sg" {
     ipv6_cidr_blocks = ["::/0"]
   }
 
+  # Ingress: Dispatcher Web Application
+  ingress {
+    description      = "Dispatcher Web Application"
+    from_port        = 4173
+    to_port          = 4173
+    protocol         = "tcp"
+    cidr_blocks      = ["0.0.0.0/0"]
+    ipv6_cidr_blocks = ["::/0"]
+  }
+
+  # Ingress: Store Manager Web Application
+  ingress {
+    description      = "Store Manager Web Application"
+    from_port        = 4174
+    to_port          = 4174
+    protocol         = "tcp"
+    cidr_blocks      = ["0.0.0.0/0"]
+    ipv6_cidr_blocks = ["::/0"]
+  }
+
   # Ingress: Restricted SSH access
   ingress {
     description = "Restricted administrative SSH access"
