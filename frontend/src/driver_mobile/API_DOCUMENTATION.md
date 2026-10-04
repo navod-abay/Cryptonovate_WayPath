@@ -97,6 +97,26 @@ Fetches all the trips assigned to the logged-in driver for the current day. The 
 
 ---
 
+### 2.2 Start Trip
+Marks a trip as 'started' by the driver. This notifies the dispatch system that the driver is en route to the first node.
+
+- **Endpoint:** `POST /api/trips/{tripId}/start`
+- **Headers:** `Authorization: Bearer <accessToken>`
+- **Request Body:**
+  ```json
+  {
+    "timestamp": "2026-10-04T05:00:00.000Z"
+  }
+  ```
+- **Success Response (200 OK):**
+  ```json
+  {
+    "message": "Trip started successfully."
+  }
+  ```
+
+---
+
 ## 3. Trip Execution (Node Updates)
 
 ### 3.1 Mark Node Arrival
@@ -123,7 +143,7 @@ Records the exact time the driver pressed the "I've Arrived!" button.
   ```
 
 ### 3.2 Confirm Departure / Delivery (OTP Validation)
-Validates the OTP entered by the driver (provided by the store manager) and marks the node as completed.
+Validates the OTP entered by the driver (provided by the store manager). This request also optionally submits the actual inventory delivered if it differs from the expected amount.
 
 - **Endpoint:** `POST /api/trips/{tripId}/nodes/{nodeId}/depart`
 - **Headers:** `Authorization: Bearer <accessToken>`
@@ -131,7 +151,11 @@ Validates the OTP entered by the driver (provided by the store manager) and mark
   ```json
   {
     "otpCode": "123456",
-    "timestamp": "2026-10-04T07:05:00.000Z"
+    "timestamp": "2026-10-04T07:05:00.000Z",
+    "inventory": [
+      { "itemId": "1", "actual": 5 },
+      { "itemId": "2", "actual": 5 }
+    ]
   }
   ```
 - **Success Response (200 OK):**

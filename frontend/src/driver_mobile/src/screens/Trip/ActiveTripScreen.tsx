@@ -298,7 +298,7 @@ export default function ActiveTripScreen({ navigation, route }: Props) {
         {isManualVerification ? (
           <PrimaryButton 
             title="Complete Delivery" 
-            disabled={unloadedPhotos.length === 0 && paperPhotos.length === 0} 
+            disabled={unloadedPhotos.length === 0 || paperPhotos.length === 0} 
             onPress={() => setSuccessModalVisible(true)} 
           />
         ) : currentNode.status === 'pending' ? (
