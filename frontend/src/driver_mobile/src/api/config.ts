@@ -1,9 +1,9 @@
-const LOCAL_IP = '192.168.1.X'; // Replace with your Windows machine's local IPv4 address
+const GATEWAY_URL = 'http://192.168.1.X'; // Windows machine's LAN IPv4; the NGINX gateway listens on port 80
 
 export const API_ROUTES = {
-  AUTH: `http://${LOCAL_IP}:5001/api/auth`,
-  ORDERS: `http://${LOCAL_IP}:5002/api/orders`,
-  SYNC: `http://${LOCAL_IP}:5005/api/execution`,
+  AUTH: `${GATEWAY_URL}/api/auth`,
+  ORDERS: `${GATEWAY_URL}/api/orders`,
+  SYNC: `${GATEWAY_URL}/api/execution`,
 } as const;
 
 export const fetchWithTimeout = async (

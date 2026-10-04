@@ -8,7 +8,7 @@ RUN npm ci
 # Shared source files resolve React/types through their frontend ancestor.
 RUN ln -s /app/src/store_manager/node_modules /app/node_modules
 COPY src/store_manager .
-ARG VITE_API_BASE_URL=/api
+ARG VITE_API_BASE_URL=
 ARG VITE_USE_MOCK_API=true
 ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
 ENV VITE_USE_MOCK_API=$VITE_USE_MOCK_API
