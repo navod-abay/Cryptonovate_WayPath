@@ -1,4 +1,12 @@
-const GATEWAY_URL = import.meta.env.VITE_API_GATEWAY_URL || 'http://localhost';
+const rawEnvUrl = (import.meta.env.VITE_API_GATEWAY_URL || import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '').replace(/\/api$/, '');
+const isLocalhostEnv = !rawEnvUrl || rawEnvUrl.includes('localhost') || rawEnvUrl.includes('127.0.0.1');
+
+export const GATEWAY_URL =
+  !isLocalhostEnv
+    ? rawEnvUrl
+    : typeof window !== 'undefined'
+      ? `${window.location.protocol}//${window.location.hostname}`
+      : 'http://localhost';
 
 let accessToken: string | null = null;
 let refreshToken: string | null = null;
