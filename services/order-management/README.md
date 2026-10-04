@@ -17,18 +17,34 @@ Boot order: connect → assert schema → seed → listen → start the cutoff t
 | Data | When | Controlled by |
 |---|---|---|
 | **Outlets** (`outlets_ref`): copied from Fleet & Directory's `outlets` table in the database | every boot, then every 5 minutes; inserted, or corrected if the source changed. Fairness counters are never overwritten | always on; the service will not start if the `outlets` table is missing |
-| **Demo orders** (~1,700): 2 weeks of history, a live board for today, a peak day tomorrow whose Peliyagoda chilled demand is ~1.4× the real reefer capacity (9 reefers, 207.5 m³), at-risk outlets, one `draft` on OUT001. Orders are generated (the dataset has no order file for the live system); outlets and vehicle IDs are real | **once per database**, guarded by a `service_jobs('seed_demo','v1')` row | `SEED_DEMO_DATA` (default `true`) |
+| **Demo orders** (1,541): real orders from the challenge dataset, the last 11 operating days of `task1_test_inputs.csv` (2026-03-17 … 03-28, the window algorithm 3 was back-tested on), moved onto **2 operating days before today, today, and 8 after**. All are `confirmed`; units, weight and volume equal the dataset row (order lines carry readable product names and add up exactly). Outlet fairness counters (`days_since_last_served`, `deferred_yesterday`) come from the dataset history before that window | **once per database**, guarded by a `service_jobs('seed_demo','dataset-v1')` row | `SEED_DEMO_DATA` (default `true`) |
 
-Seed data is deterministic (fixed PRNG seed) and dated relative to the day it ran. Because it is
-one-shot, **the flag only matters on a database that has not been seeded yet**. Turning it off later
-does not delete existing demo orders, and turning it back on does not re-date them.
+"Today" is the day the service seeds, or the last operating day when that is a Sunday or holiday.
+Planning & Allocation then plans the past days and today when it starts (catch-up), oldest first, so
+each day's deferrals roll into the next day's pool; the future days are planned by its daily 16:00 run.
+After planning each **past** day it calls `POST /simulate-delivery` (role `system`, demo data only),
+which takes that day's orders through loaded → out for delivery → delivered → received at the planned
+times, records full receipts and marks the outlets served, so the next day's cutoff sweep sees who was
+delivered. Today's orders stay `allocated`.
+
+The orders are in `seed-data/orders.csv` (one row per order, with a day `offset` instead of a date)
+and the starting fairness counters in `seed-data/outlet_state.csv`. Both are copied into the image, so
+`docker compose up` seeds without the dataset. To pick different days, regenerate them from the
+dataset with `node services/order-management/scripts/build-seed-csv.mjs` (run from the repo root;
+change `DAYS` / `PAST_DAYS` there). Each order keeps its dataset id in `idempotency_key`
+(`dataset:ORD0097105`).
+
+Because the seed is one-shot, **the flag only matters on a database that has not been seeded yet**.
+Turning it off later does not delete existing orders, and turning it back on does not re-date them.
+A database that still holds the earlier synthetic demo seed (`seed_demo/v1`) is left as it is; start
+from an empty volume to get the dataset seed.
 
 ### With demo data (default)
 
 ```bash
 cp .env.example .env                                  # once, from the repo root
 docker compose up -d --build postgres auth-rbac fleet-directory order-management
-docker compose logs order-management                  # expect "outlets_ref synced from Fleet's outlets table" and "Demo orders seeded"
+docker compose logs order-management                  # expect "outlets_ref synced from Fleet's outlets table" and "Dataset orders seeded"
 curl localhost:5002/health                            # direct
 curl localhost/api/orders/health                      # through the gateway (needs the gateway up)
 ```
@@ -61,8 +77,8 @@ docker compose run --rm -d --no-deps --name om_empty -p 3102:3102 \
 curl localhost:3102/health
 ```
 
-Without demo data, `npm run verify` passes **47/49**. Scenario 42 (the over-capacity peak day) and
-scenario 43 (pagination over 25+ rows) need the demo orders.
+Without demo data, `npm run verify` passes **47/49**. Scenario 42 (the capacity summary on a seeded
+day) and scenario 43 (pagination over 25+ rows) need the demo orders.
 
 ### Outside Docker (local Node)
 
@@ -216,7 +232,7 @@ Optional:
 | `NODE_ENV` | `development` | `production` disables the `X-Test-Now` test clock |
 | `CORS_ALLOWED_ORIGINS` | empty (any origin) | comma-separated browser origins allowed to call the API |
 | `FLEET_TIMEOUT_MS` | `3000` | per-request timeout for Fleet calls |
-| `FLEET_BOOT_ATTEMPTS` / `FLEET_RETRY_DELAY_MS` | `5` / `2000` | how long the demo seed waits for Fleet at boot before retrying in the background |
+| `FLEET_RETRY_DELAY_MS` | `2000` | delay between retries when loading vehicles from Fleet |
 | `OUTLET_REFRESH_INTERVAL_MS` | `300000` | how often `outlets_ref` is re-copied from Fleet's table |
 | `ORDER_CUTOFF_HOUR` / `BUSINESS_TZ` | `16` / `Asia/Colombo` | ordering cutoff |
 | `NON_OPERATING_WEEKDAYS` / `HOLIDAY_DATES` | `0` / empty | operating calendar |

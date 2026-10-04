@@ -11,6 +11,7 @@ import {
   AtRiskQuerySchema,
   CancelOrderSchema,
   CloseWindowSchema,
+  SimulateDeliverySchema,
   ConfirmedQuerySchema,
   ConfirmOrderSchema,
   CreateOrderSchema,
@@ -56,6 +57,8 @@ router.get('/at-risk', dispatcher, validateQuery(AtRiskQuerySchema), asyncHandle
 router.get('/summary', dispatcher, validateQuery(SummaryQuerySchema), asyncHandler(ctrl.getSummary));
 router.patch('/status-batch', dispatcherOrPlanning, validateRequest(StatusBatchSchema), asyncHandler(ctrl.statusBatch));
 router.post('/close-window', dispatcherOrPlanning, validateRequest(CloseWindowSchema), asyncHandler(ctrl.closeWindow));
+// Demo history only (SEED_DEMO_DATA): Planning marks the past days it planned at startup as delivered and received.
+router.post('/simulate-delivery', requireRole(['system']), validateRequest(SimulateDeliverySchema), asyncHandler(ctrl.simulateDelivery));
 
 router.get('/', orderReaders, validateQuery(ListOrdersQuerySchema), asyncHandler(ctrl.listOrders));
 router.post('/', orderWriters, resolveCreateOutlet, validateRequest(CreateOrderSchema), asyncHandler(ctrl.createOrder));

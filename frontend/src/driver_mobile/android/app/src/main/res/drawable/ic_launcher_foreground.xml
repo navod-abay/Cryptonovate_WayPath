@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Launcher icon foreground: a delivery truck on the 108dp adaptive-icon canvas (inner 72dp safe zone).
+     Vector rather than PNG so it stays in git (the repo's .gitignore excludes *.png). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- cargo box -->
+    <path android:fillColor="#FFFFFF" android:pathData="M30,40h30a2,2 0 0 1 2,2v22h-34v-22a2,2 0 0 1 2,-2z" />
+    <!-- cab -->
+    <path android:fillColor="#55D3F3" android:pathData="M64,48h9.5l6.5,8.5v7.5h-16z" />
+    <!-- wheels -->
+    <path android:fillColor="#FFFFFF" android:pathData="M40,68m-5,0a5,5 0 1 0 10,0a5,5 0 1 0 -10,0" />
+    <path android:fillColor="#FFFFFF" android:pathData="M71,68m-5,0a5,5 0 1 0 10,0a5,5 0 1 0 -10,0" />
+</vector>

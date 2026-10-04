@@ -546,6 +546,8 @@ components:
           enum: [QUEUED, RUNNING, COMPLETED, FAILED]
         trigger:
           type: string
+          enum: [cron, manual, catchup]
+          description: cron = the daily 16:00 run; catchup = a past day or today planned when the service starts; manual = POST /planning-runs
         requestedAt:
           type: string
           format: date-time
@@ -578,6 +580,7 @@ components:
           description: ALNS iterations per seed
         seeds:
           type: integer
+          description: ALNS runs with different seeds, best kept (PLANNING_SEEDS, default 5; PLANNING_CATCHUP_SEEDS, default 1, for catch-up runs)
         bestSeed:
           type: integer
         objective:

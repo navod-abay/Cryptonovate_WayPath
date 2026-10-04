@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import { verifyToken, requireRole } from './middleware/authGuard';
 
 const app = express();
 const port = process.env.PORT || 5006;
@@ -15,11 +16,15 @@ app.get('/', (req, res) => {
   res.json({ service: 'analytics-prediction', message: 'Delivery Analytics & Predictive ETA Service Operational' });
 });
 
-app.get('/kpi', (req, res) => {
+// Authenticated KPI metrics endpoint
+app.get('/kpi', verifyToken(), requireRole('dispatcher', 'store_manager', 'system'), (req, res) => {
   res.json({
-    onTimeDeliveryRate: 98.4,
-    avgUnloadTimeMinutes: 14.2,
-    predictedDelays: 2
+    success: true,
+    data: {
+      onTimeDeliveryRate: 98.4,
+      avgUnloadTimeMinutes: 14.2,
+      predictedDelays: 2
+    }
   });
 });
 

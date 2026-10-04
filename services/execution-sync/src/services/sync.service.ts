@@ -1,17 +1,44 @@
+import jwt from 'jsonwebtoken';
 import { pool } from '../db/pool';
 import { BulkSyncInput, PodInput, ShortfallInput } from '../schemas/execution.schema';
 
 const PLANNING_SERVICE_URL = process.env.PLANNING_SERVICE_URL || 'http://planning-allocation:5003';
 const ORDER_SERVICE_URL = process.env.ORDER_SERVICE_URL || 'http://order-management:5002';
 const FLEET_SERVICE_URL = process.env.FLEET_SERVICE_URL || 'http://fleet-directory:5004';
+const JWT_SECRET = process.env.JWT_ACCESS_SECRET || 'waypoint_default_jwt_access_secret_key_2026_change_in_prod';
 
-// Helper for safe external REST calls with timeout
+/**
+ * Mint a short-lived access token with role "system" for M2M inter-service calls
+ */
+function mintSystemToken(): string {
+  return jwt.sign(
+    {
+      sub: '00000000-0000-0000-0000-000000000000',
+      username: 'execution-sync',
+      role: 'system',
+      outlet_id: null,
+      depot: null,
+      type: 'access',
+    },
+    JWT_SECRET,
+    { expiresIn: '15m' }
+  );
+}
+
+// Helper for safe external REST calls with timeout and M2M authentication
 async function safeFetch(url: string, options: RequestInit = {}, timeoutMs = 5000) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  const token = mintSystemToken();
+
+  const headers = {
+    Accept: 'application/json',
+    Authorization: `Bearer ${token}`,
+    ...(options.headers || {}),
+  };
 
   try {
-    const res = await fetch(url, { ...options, signal: controller.signal });
+    const res = await fetch(url, { ...options, headers, signal: controller.signal });
     clearTimeout(timeout);
     return res;
   } catch (err: any) {

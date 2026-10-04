@@ -225,7 +225,7 @@ func samplePlan(date string) *Plan {
 
 type funcPlanner func(ctx context.Context, runID string, d time.Time) (*RunStats, error)
 
-func (f funcPlanner) Plan(ctx context.Context, runID string, d time.Time) (*RunStats, error) {
+func (f funcPlanner) Plan(ctx context.Context, runID, _ string, d time.Time) (*RunStats, error) {
 	return f(ctx, runID, d)
 }
 
@@ -413,5 +413,32 @@ func TestFailedRunDiscardsPlanAndAllowsRetry(t *testing.T) {
 	}
 	if _, started, _ := m.Start(context.Background(), day, "cron"); started {
 		t.Error("a completed date must not be planned again")
+	}
+}
+
+func TestOnlyCompletedRunsWakeTheScheduler(t *testing.T) {
+	store := newMemStore()
+	fail := true
+	p := funcPlanner(func(context.Context, string, time.Time) (*RunStats, error) {
+		if fail {
+			return nil, errors.New("fleet-directory unreachable")
+		}
+		return &RunStats{}, nil
+	})
+	m := NewRunManager(store, store, p, time.Minute)
+	run, _, _ := m.Start(context.Background(), time.Date(2026, 10, 4, 0, 0, 0, 0, sriLanka), "catchup")
+	waitForRun(t, m, run.RunID)
+	select {
+	case <-m.Done():
+		t.Fatal("a failed run must not wake the scheduler (it would retry immediately)")
+	case <-time.After(50 * time.Millisecond):
+	}
+	fail = false
+	run, _, _ = m.Start(context.Background(), time.Date(2026, 10, 4, 0, 0, 0, 0, sriLanka), "catchup")
+	waitForRun(t, m, run.RunID)
+	select {
+	case <-m.Done():
+	case <-time.After(time.Second):
+		t.Fatal("a completed run must wake the scheduler")
 	}
 }

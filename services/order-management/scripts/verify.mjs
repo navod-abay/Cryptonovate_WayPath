@@ -620,23 +620,24 @@ async function main() {
     check(JSON.stringify(second.result) === JSON.stringify(first.result), 'second call must not change the result');
   });
 
-  await scenario(42, 'GET /summary on the seeded peak day: chilled demand exceeds reefer capacity', async () => {
+  await scenario(42, 'GET /summary on a seeded day: status/brand/temperature sections and a consistent chilled capacity reference', async () => {
     let today = colomboToday();
     let found;
-    for (let i = -10; i <= 3 && !found; i++) {
+    for (let i = -10; i <= 10 && !found; i++) {
       const date = addDays(today, i);
       if (weekday(date) === 0) continue;
       const data = expectStatus(await call('GET', `/summary?date=${date}&depot=Peliyagoda`, { token: tokens.dispatcher }), 200);
-      if (data.chilled_capacity_reference.exceeds_capacity) found = data;
+      if (Object.values(data.by_status ?? {}).reduce((s, n) => s + n, 0) > 0) found = data;
     }
-    check(found, 'no seeded peak day found around today (was SEED_DEMO_DATA disabled?)');
+    check(found, 'no seeded day found around today (was SEED_DEMO_DATA disabled?)');
     const ref = found.chilled_capacity_reference;
-    check(ref.demand_m3 > ref.capacity_m3, `demand ${ref.demand_m3} ≤ capacity ${ref.capacity_m3}`);
+    check(ref.available && ref.capacity_m3 > 0 && ref.demand_m3 >= 0, `capacity reference ${JSON.stringify(ref)}`);
+    check(ref.exceeds_capacity === ref.demand_m3 > ref.capacity_m3, `exceeds_capacity ${ref.exceeds_capacity} for ${ref.demand_m3}/${ref.capacity_m3} m3`);
     check(found.by_status && found.by_brand && found.by_temperature, 'summary sections missing');
   });
 
   await scenario(43, 'Pagination page_size=10 over 25+ rows: correct total, no duplicates or gaps', async () => {
-    const q = '/?status=received&depot=Peliyagoda';
+    const q = '/?status=confirmed&depot=Peliyagoda';
     const all = expectStatus(await call('GET', `${q}&page_size=30`, { token: tokens.dispatcher }), 200);
     check(all.total >= 25, `need ≥25 rows, have ${all.total}`);
     const pages = [];
