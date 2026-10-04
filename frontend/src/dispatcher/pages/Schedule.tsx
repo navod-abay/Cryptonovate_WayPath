@@ -48,7 +48,7 @@ function AvailableSchedule({date,warehouse,change}:ScheduleProps) {
   const vehicles = resource.data?.vehicles || [];
   const deferred = resource.data?.deferred || [];
   return <main className="page schedule-page">
-    <RequestState resource={resource} />{resource.data?.sample && <p className="data-notice" role="status">Planning is returning a sample schedule. These trips are not generated from live orders.</p>}
+    <RequestState resource={resource} />
     <div className="warehouse-summaries">{(['Peliyagoda', 'Kandy'] as const).map(name => {const summary=resource.data?.summaries.find(s=>s.depot===name);return <Panel key={name} className="warehouse-summary">{['Orders', 'Vehicles', 'Trips'].map((label, i) => <div key={label}><span>{name.toUpperCase()}</span><div><strong>{summary ? [summary.ordersServed+summary.ordersDeferred,summary.vehiclesAvailable,summary.trips][i] : '—'}</strong><span>{label}</span></div></div>)}</Panel>;})}</div>
     <div className="schedule-grid">
       <Panel className="schedule-board">

@@ -6,8 +6,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"crypto/hmac"
-	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -22,7 +20,7 @@ import (
 const systemActorID = "00000000-0000-0000-0000-000000000000"
 
 // serviceToken mints a short-lived access token with role "system", signed with the shared
-// JWT_ACCESS_SECRET the other services verify against.
+// JWT_ACCESS_SECRET the other services verify against (and verifyAccessToken in auth.go accepts).
 func serviceToken(secret string, now time.Time) string {
 	enc := base64.RawURLEncoding
 	header := enc.EncodeToString([]byte(`{"alg":"HS256","typ":"JWT"}`))
@@ -32,9 +30,7 @@ func serviceToken(secret string, now time.Time) string {
 		"iat": now.Unix(), "exp": now.Add(10 * time.Minute).Unix(),
 	})
 	unsigned := header + "." + enc.EncodeToString(claims)
-	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write([]byte(unsigned))
-	return unsigned + "." + enc.EncodeToString(mac.Sum(nil))
+	return unsigned + "." + enc.EncodeToString(hs256(secret, unsigned))
 }
 
 // apiError is a non-2xx reply from another service.

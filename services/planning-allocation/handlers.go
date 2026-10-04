@@ -25,25 +25,38 @@ type API struct {
 	now   func() time.Time
 	// nextRunDate asks Order Management which delivery date the next planning run is for.
 	nextRunDate func(ctx context.Context) (time.Time, error)
+	// secret is JWT_ACCESS_SECRET, used to verify callers' access tokens (auth.go).
+	secret string
 }
 
 // apiPrefix: the gateway strips /api/planning, but services calling Planning directly (Execution &
 // Sync) keep it, so every route is served under both paths.
 const apiPrefix = "/api/planning"
 
+// Who may call what. Every route needs an access token; /health and / (main.go) stay public.
+var (
+	dispatchers = []string{"dispatcher", "system"}
+	// Any driver may read any trip until drivers are linked to vehicles; loaders see their own depot.
+	tripReaders = []string{"dispatcher", "loader", "driver", "system"}
+	// Planning runs start themselves at 16:00 (scheduler.go). Only a service token can start one by
+	// hand, to recover a date the scheduler gave up on; no user role can.
+	servicesOnly = []string{"system"}
+)
+
 func (a *API) routes(mux *http.ServeMux) {
-	handle := func(method, path string, h http.HandlerFunc) {
+	handle := func(method, path string, roles []string, h http.HandlerFunc) {
+		h = a.auth(roles, h)
 		mux.HandleFunc(method+" "+path, h)
 		mux.HandleFunc(method+" "+apiPrefix+path, h)
 	}
-	handle("GET", "/schedule/summary", a.getSummary)
-	handle("GET", "/depots/{depot}/schedule", a.getDepotSchedule)
-	handle("GET", "/schedule/deferrals", a.getDeferrals)
-	handle("GET", "/trips", a.listTrips)
-	handle("GET", "/trips/{tripId}", a.getTrip)
-	handle("POST", "/planning-runs", a.startPlanning)
-	handle("GET", "/planning-runs", a.listRuns)
-	handle("GET", "/planning-runs/{runId}", a.getRun)
+	handle("GET", "/schedule/summary", dispatchers, a.getSummary)
+	handle("GET", "/depots/{depot}/schedule", dispatchers, a.getDepotSchedule)
+	handle("GET", "/schedule/deferrals", dispatchers, a.getDeferrals)
+	handle("GET", "/trips", tripReaders, a.listTrips)
+	handle("GET", "/trips/{tripId}", tripReaders, a.getTrip)
+	handle("POST", "/planning-runs", servicesOnly, a.startPlanning)
+	handle("GET", "/planning-runs", dispatchers, a.listRuns)
+	handle("GET", "/planning-runs/{runId}", dispatchers, a.getRun)
 }
 
 // GET /schedule/summary?date=YYYY-MM-DD
@@ -154,6 +167,9 @@ func (a *API) listTrips(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if depot, ok = loaderDepot(w, r, depot); !ok {
+		return
+	}
 	trips, err := a.store.Trips(r.Context(), date, depot, strings.TrimSpace(r.URL.Query().Get("vehicleId")))
 	if err != nil {
 		serverError(w, "could not load trips", err)
@@ -173,11 +189,14 @@ func (a *API) getTrip(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "no planned trip "+r.PathValue("tripId"))
 		return
 	}
+	if _, ok := loaderDepot(w, r, trip.Depot); !ok {
+		return
+	}
 	writeJSON(w, http.StatusOK, trip)
 }
 
-// POST /planning-runs — plans a date now. The daily 16:00 run starts itself (scheduler.go); this is
-// for re-running a failed date or planning without waiting.
+// POST /planning-runs — plans a date now. Service token (role "system") only: the daily 16:00 run
+// starts itself (scheduler.go); this is for an operator re-running a date the scheduler gave up on.
 func (a *API) startPlanning(w http.ResponseWriter, r *http.Request) {
 	var req StartPlanningRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
