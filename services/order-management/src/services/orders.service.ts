@@ -3,7 +3,7 @@ import type { PoolClient } from 'pg';
 import { env } from '../config/env.js';
 import { pool, withTransaction, type Queryable } from '../db/pool.js';
 import { addDays, colomboToday, isOperatingDay, nextOperatingDay, now } from '../domain/calendar.js';
-import { earliestDeliveryDate, isDateOpen, nextRunDate, resolveConfirmDate } from '../domain/cutoff.js';
+import { cutoffInstant, earliestDeliveryDate, isDateOpen, nextRunDate, resolveConfirmDate } from '../domain/cutoff.js';
 import { AppError, appError, isAppError, isUniqueViolation, mapPgError } from '../domain/errors.js';
 import { nextOrderRef } from '../domain/orderRef.js';
 import { assertDeferralReason, DEFERRAL_REASONS, type DeferralReasonCode } from '../domain/reasonCodes.js';
@@ -33,12 +33,14 @@ import {
   type OrderRow,
 } from '../repositories/orders.repo.js';
 import { findAtRiskOutlets, outletDirectory } from '../repositories/outlets.repo.js';
+import { enqueueAlert, relayPendingAlerts } from './alertOutbox.js';
 import type {
   CreateOrderInput,
   Depot,
   ListOrdersQuery,
   OrderItemInput,
   ReceiptInput,
+  ReceiptLine,
   StatusChangeInput,
   StatusUpdateInput,
   TempRequirement,
@@ -462,6 +464,51 @@ export async function getSummary(date: string | undefined, depot: Depot | undefi
   };
 }
 
+// The dispatcher dashboard groups orders into four categories: Fresh splits by temperature.
+export const DISPATCHER_CATEGORIES = ['chilled', 'dry', 'tech', 'style'] as const;
+export type DispatcherCategory = (typeof DISPATCHER_CATEGORIES)[number];
+
+export function categoryOf(brand: string, temp: string): DispatcherCategory {
+  if (brand === 'Fresh') return temp === 'chilled' ? 'chilled' : 'dry';
+  return brand === 'Tech' ? 'tech' : 'style';
+}
+
+// Drafts were never placed; cancelled and not_run orders will not be delivered.
+const OVERVIEW_EXCLUDED: OrderStatus[] = ['draft', 'cancelled', 'not_run'];
+// Disputed orders reached the outlet too; the dispute is about what arrived.
+const REACHED_OUTLET: OrderStatus[] = ['delivered', 'received', 'disputed'];
+
+export async function getDispatcherOverview(date: string, depot: Depot | undefined) {
+  const rows = await summarise({ date, depot });
+  const counts = Object.fromEntries(DISPATCHER_CATEGORIES.map((c) => [c, { total: 0, delivered: 0 }])) as Record<
+    DispatcherCategory,
+    { total: number; delivered: number }
+  >;
+  for (const r of rows) {
+    if (OVERVIEW_EXCLUDED.includes(r.status)) continue;
+    const bucket = counts[categoryOf(r.brand, r.temp_requirement)];
+    bucket.total += r.orders;
+    if (REACHED_OUTLET.includes(r.status)) bucket.delivered += r.orders;
+  }
+  return {
+    date,
+    depot: depot ?? null,
+    categories: DISPATCHER_CATEGORIES.map((category) => ({ category, ...counts[category] })),
+  };
+}
+
+/** Ordering cutoff for each operating day in [from, to]. Non-operating days have no run and are omitted. */
+export function getOrderWindows(from: string, to: string) {
+  const at = now();
+  const days = [];
+  for (let date = from; date <= to; date = addDays(date, 1)) {
+    if (!isOperatingDay(date)) continue;
+    const cutoff = cutoffInstant(date);
+    days.push({ date, cutoffAt: cutoff.toISOString(), open: cutoff > at });
+  }
+  return { serverTime: at.toISOString(), timeZone: env.BUSINESS_TZ, days };
+}
+
 export async function getAtRisk(params: { depot?: Depot; minDeferrals: number; minDays: number }) {
   const today = colomboToday();
   const rows = await findAtRiskOutlets({ ...params, today, lookbackFrom: addDays(today, -AT_RISK_LOOKBACK_DAYS) });
@@ -637,6 +684,7 @@ export async function applyStatusBatch(actor: Actor, updates: StatusUpdateInput[
 const STATUS_BY_ROLE: Readonly<Partial<Record<Actor['role'], readonly OrderStatus[]>>> = {
   loader: ['loaded'],
   driver: ['out_for_delivery', 'delivered'],
+  system: ['loaded', 'out_for_delivery', 'delivered'],
 };
 
 /** Single-order status change (Execution & Sync). Same rules and code path as one status-batch entry. */
@@ -674,6 +722,42 @@ interface ReceiptRow {
   note: string | null;
   received_by: string | null;
   received_at: Date;
+  lines: ReceiptLine[];
+}
+
+/** Lines are optional; when sent they must add up to the totals and name items on this order. */
+function assertReceiptLines(ref: string, input: ReceiptInput, items: readonly OrderItemRow[]): void {
+  if (input.lines.length === 0) return;
+  const sum = (kind: ReceiptLine['kind']) => input.lines.filter((l) => l.kind === kind).reduce((n, l) => n + l.quantity, 0);
+  const missing = sum('missing');
+  const damaged = sum('damaged');
+  if (missing !== input.missing_units || damaged !== input.rejected_units) {
+    throw appError(
+      'RECEIPT_LINES_MISMATCH',
+      `Lines add up to ${missing} missing and ${damaged} damaged, but the receipt says ${input.missing_units} missing and ${input.rejected_units} rejected`,
+      { lines_missing: missing, lines_damaged: damaged, missing_units: input.missing_units, rejected_units: input.rejected_units },
+    );
+  }
+  const known = new Set(items.map((i) => i.sku));
+  const unknown = [...new Set(input.lines.map((l) => l.sku).filter((sku) => !known.has(sku)))];
+  if (items.length > 0 && unknown.length > 0) {
+    throw appError('RECEIPT_LINES_MISMATCH', `${ref} has no item(s) ${unknown.join(', ')}`, { unknown_skus: unknown });
+  }
+}
+
+function describeShortfall(input: ReceiptInput, items: readonly OrderItemRow[]) {
+  const parts = [
+    input.missing_units > 0 ? `${input.missing_units} missing` : '',
+    input.rejected_units > 0 ? `${input.rejected_units} damaged` : '',
+  ].filter(Boolean);
+  const names = new Map(items.map((i) => [i.sku, i.description]));
+  const lines = input.lines.map(
+    (l) => `${names.get(l.sku) ?? l.sku}: ${l.quantity} ${l.kind}${l.reasons.length ? ` (${l.reasons.join(', ')})` : ''}`,
+  );
+  return {
+    summary: `${parts.join(', ')} items`,
+    detail: [lines.length ? lines.join('; ') : parts.join(', '), input.note].filter(Boolean).join('. '),
+  };
 }
 
 export async function recordReceipt(actor: Actor, ref: string, input: ReceiptInput) {
@@ -706,14 +790,33 @@ export async function recordReceipt(actor: Actor, ref: string, input: ReceiptInp
         );
       }
 
+      const items = await listItems(ref, client);
+      assertReceiptLines(ref, input, items);
+
       const target: OrderStatus = input.missing_units + input.rejected_units === 0 ? 'received' : 'disputed';
       assertTransition(order.status, target);
 
       await client.query(
-        `INSERT INTO order_receipts (order_ref, received_units, missing_units, rejected_units, note, received_by)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [ref, input.received_units, input.missing_units, input.rejected_units, input.note || null, actor.id],
+        `INSERT INTO order_receipts (order_ref, received_units, missing_units, rejected_units, note, received_by, lines)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [ref, input.received_units, input.missing_units, input.rejected_units, input.note || null, actor.id, JSON.stringify(input.lines)],
       );
+      if (target === 'disputed') {
+        await enqueueAlert(client, {
+          type: 'store.discrepancy',
+          sourceRole: 'store_manager',
+          actorId: actor.id,
+          actorName: actor.username,
+          depot: order.depot,
+          outletId: order.outlet_id,
+          vehicleId: order.vehicle_id,
+          tripId: order.trip_id === null ? null : String(order.trip_id),
+          orderRef: ref,
+          ...describeShortfall(input, items),
+          payload: { missingUnits: input.missing_units, rejectedUnits: input.rejected_units, lines: input.lines },
+          occurredAt: new Date().toISOString(),
+        });
+      }
       await setStatus(ref, target, client);
       await appendEvent(
         {
@@ -737,12 +840,13 @@ export async function recordReceipt(actor: Actor, ref: string, input: ReceiptInp
     }
     throw err;
   }
+  void relayPendingAlerts();
 
   const [order, receipt] = await Promise.all([
     loadDetail(ref),
     pool
       .query<ReceiptRow>(
-        `SELECT id, order_ref, received_units, missing_units, rejected_units, note, received_by, received_at
+        `SELECT id, order_ref, received_units, missing_units, rejected_units, note, received_by, received_at, lines
            FROM order_receipts WHERE order_ref = $1`,
         [ref],
       )

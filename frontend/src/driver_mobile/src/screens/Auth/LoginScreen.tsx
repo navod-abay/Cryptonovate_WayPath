@@ -1,5 +1,6 @@
 import React from 'react';
-import { View, Text, StyleSheet, SafeAreaView, StatusBar } from 'react-native';
+import {View, StyleSheet, SafeAreaView, StatusBar} from 'react-native';
+import CustomText from '../../components/CustomText';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../navigation/AppNavigator';
 import { COLORS, SPACING, FONT_SIZE, FONT_WEIGHT } from '../../utils/constants';
@@ -18,12 +19,12 @@ export default function LoginScreen({ navigation }: Props) {
       
       {/* Header Section */}
       <View style={[styles.header, { paddingTop: insets.top + SPACING.xl }]}>
-        <Text style={styles.logoText}>Waypoint Logistics</Text>
+        <CustomText style={styles.logoText}>Waypoint Logistics</CustomText>
       </View>
 
       {/* Content Section */}
       <View style={styles.content}>
-        <Text style={styles.statusText}>You have logged out!</Text>
+        <CustomText style={styles.statusText}>You have logged out!</CustomText>
         <PrimaryButton 
           title="Sign In" 
           variant="cyan" 

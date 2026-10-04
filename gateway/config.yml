@@ -28,3 +28,7 @@ gateway:
       target: http://analytics-prediction:5006
       service: analytics-prediction
       description: Delivery analytics and predictive ETA models
+    - path: /api/notifications
+      target: http://notification-service:5007
+      service: notification-service
+      description: Dashboard alerts (REST + Server-Sent Events stream)

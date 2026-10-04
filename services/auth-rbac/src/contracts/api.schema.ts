@@ -1,6 +1,6 @@
 // Copied from the former packages/shared-types. This service owns its copy; the cross-service contract is openapi.yaml.
 import { z } from 'zod';
-import { DepotEnum, DistrictTravelSchema, ServiceAllowanceSchema } from './domain.schema.js';
+import { DepotEnum, DistrictTravelSchema, ServiceAllowanceSchema } from './domain.schema';
 
 /**
  * ============================================================================
@@ -123,4 +123,4 @@ export interface ApiErrorResponse {
   error: ApiErrorDetail;
 }
 
-export type ApiResponse<T> = ApiSuccessResponse<T> | ApiErrorResponse;
+export type ApiResponse<T> = ApiSuccessResponse<T> | ApiErrorResponse;

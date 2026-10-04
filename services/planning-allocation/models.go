@@ -24,7 +24,14 @@ type ScheduleSummary struct {
 	Totals DepotSummary   `json:"totals"`
 }
 
+type StopItem struct {
+	SKU         string `json:"sku"`
+	Description string `json:"description"`
+	Qty         int    `json:"qty"`
+}
+
 type Stop struct {
+	StopID      string  `json:"stopId,omitempty"` // <tripId>-S<sequence>
 	Sequence    int     `json:"sequence"`
 	OrderRef    string  `json:"orderRef"`
 	OutletID    string  `json:"outletId"`
@@ -35,10 +42,13 @@ type Stop struct {
 	ETA         string  `json:"eta"` // HH:MM, local time
 	WindowOpen  string  `json:"windowOpen"`
 	WindowClose string  `json:"windowClose"`
+	LateMin     float64 `json:"lateMin"`
+	// Items are copied from Order Management when the plan is made; only the trip endpoints return them.
+	Items []StopItem `json:"items,omitempty"`
 }
 
 type Trip struct {
-	TripID            string  `json:"tripId"` // <vehicleId>-T<tripNumber>
+	TripID            string  `json:"tripId"` // <YYYYMMDD>-<vehicleId>-T<tripNumber>, unique across days
 	TripNumber        int     `json:"tripNumber"`
 	Brand             string  `json:"brand"`
 	District          string  `json:"district"`
@@ -63,6 +73,19 @@ type VehicleSchedule struct {
 	Trips            []Trip  `json:"trips"`
 }
 
+// TripDetail is one trip with its vehicle and date, as served to Execution & Sync.
+type TripDetail struct {
+	Trip
+	PlanDate         string  `json:"planDate"`
+	Depot            string  `json:"depot"`
+	VehicleID        string  `json:"vehicleId"`
+	VehicleType      string  `json:"vehicleType"`
+	VehicleTemp      string  `json:"vehicleTemperature"`
+	WeightCapacityKg float64 `json:"weightCapacityKg"`
+	VolumeCapacityM3 float64 `json:"volumeCapacityM3"`
+	PlanRunID        string  `json:"planRunId"`
+}
+
 type DepotSchedule struct {
 	Date      string            `json:"date"`
 	Depot     string            `json:"depot"`
@@ -70,15 +93,18 @@ type DepotSchedule struct {
 	Vehicles  []VehicleSchedule `json:"vehicles"`
 }
 
+// DeferralReason uses Order Management's deferral reason codes, so the code written back with
+// status-batch and the one shown to the dispatcher are the same.
 type DeferralReason string
 
 const (
-	ReasonNoReeferCapacity      DeferralReason = "NO_REEFER_CAPACITY"
-	ReasonNoVehicleCapacity     DeferralReason = "NO_VEHICLE_CAPACITY"
-	ReasonTimeBudgetExceeded    DeferralReason = "TIME_BUDGET_EXCEEDED"
-	ReasonNoVanAvailable        DeferralReason = "NO_VAN_AVAILABLE"
-	ReasonExceedsLargestVehicle DeferralReason = "EXCEEDS_LARGEST_VEHICLE"
-	ReasonFuelQuotaExhausted    DeferralReason = "FUEL_QUOTA_EXHAUSTED"
+	ReasonCapacityWeight     DeferralReason = "CAPACITY_WEIGHT"
+	ReasonCapacityVolume     DeferralReason = "CAPACITY_VOLUME"
+	ReasonNoReeferAvailable  DeferralReason = "NO_REEFER_AVAILABLE"
+	ReasonNoVanForVanOnly    DeferralReason = "NO_VAN_FOR_VAN_ONLY_OUTLET"
+	ReasonTimeBudgetExceeded DeferralReason = "TIME_BUDGET_EXCEEDED"
+	ReasonFuelQuotaExceeded  DeferralReason = "FUEL_QUOTA_EXCEEDED"
+	ReasonVehicleUnavailable DeferralReason = "VEHICLE_UNAVAILABLE"
 )
 
 type DeferredOrder struct {
@@ -121,11 +147,25 @@ type PlanningRun struct {
 	StartedAt   string    `json:"startedAt,omitempty"`
 	FinishedAt  string    `json:"finishedAt,omitempty"`
 	Error       string    `json:"error,omitempty"`
+	Stats       *RunStats `json:"stats,omitempty"`
+}
+
+type RunStats struct {
+	Orders       int     `json:"orders"`
+	Served       int     `json:"served"`
+	Deferred     int     `json:"deferred"`
+	Trips        int     `json:"trips"`
+	VehiclesUsed int     `json:"vehiclesUsed"`
+	Iterations   int     `json:"iterations"`
+	Seeds        int     `json:"seeds"`
+	BestSeed     uint64  `json:"bestSeed"`
+	Objective    float64 `json:"objective"` // plan cost without the lost-second-trip term
+	SolveMs      int64   `json:"solveMs"`
 }
 
 type StartPlanningRequest struct {
-	PlanDate string `json:"planDate,omitempty"` // YYYY-MM-DD; defaults to tomorrow
-	Trigger  string `json:"trigger,omitempty"`  // defaults to "cron"
+	PlanDate string `json:"planDate,omitempty"` // YYYY-MM-DD; defaults to Order Management's next run date
+	Trigger  string `json:"trigger,omitempty"`  // defaults to "manual"
 }
 
 type ErrorResponse struct {

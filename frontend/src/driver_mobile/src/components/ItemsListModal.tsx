@@ -1,5 +1,6 @@
 import React from 'react';
-import { Modal, View, Text, StyleSheet, TouchableOpacity, FlatList } from 'react-native';
+import {Modal, View, StyleSheet, TouchableOpacity, FlatList} from 'react-native';
+import CustomText from './CustomText';
 import { COLORS, SPACING, FONT_SIZE, FONT_WEIGHT, scale } from '../utils/constants';
 import { InventoryItem } from '../types/trip';
 
@@ -15,9 +16,9 @@ export default function ItemsListModal({ visible, onClose, items }: Props) {
       <View style={styles.overlay}>
         <View style={styles.modalContainer}>
           <View style={styles.header}>
-            <Text style={styles.title}>Items List</Text>
+            <CustomText style={styles.title}>Items List</CustomText>
             <TouchableOpacity onPress={onClose}>
-              <Text style={styles.closeIcon}>✕</Text>
+              <CustomText style={styles.closeIcon}>✕</CustomText>
             </TouchableOpacity>
           </View>
           
@@ -28,12 +29,12 @@ export default function ItemsListModal({ visible, onClose, items }: Props) {
               const isMismatch = item.actual < item.expected;
               return (
                 <View style={styles.itemRow}>
-                  <Text style={styles.itemName}>{item.name}</Text>
+                  <CustomText style={styles.itemName}>{item.name}</CustomText>
                   <View style={styles.qtyContainer}>
-                    {isMismatch && <Text style={styles.warningIcon}>!</Text>}
-                    <Text style={[styles.qtyText, isMismatch && styles.warningText]}>
+                    {isMismatch && <CustomText style={styles.warningIcon}>!</CustomText>}
+                    <CustomText style={[styles.qtyText, isMismatch && styles.warningText]}>
                       {item.actual}/{item.expected}
-                    </Text>
+                    </CustomText>
                   </View>
                 </View>
               );

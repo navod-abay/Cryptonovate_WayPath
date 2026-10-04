@@ -1,5 +1,6 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import {View, StyleSheet} from 'react-native';
+import CustomText from './CustomText';
 import { COLORS, FONT_SIZE, FONT_WEIGHT, SPACING, scale } from '../utils/constants';
 
 interface BadgeProps {
@@ -17,7 +18,7 @@ export default function Badge({
 }: BadgeProps) {
   return (
     <View style={[styles.container, { backgroundColor }]}>
-      {label && <Text style={[styles.text, { color: textColor }]}>{label}</Text>}
+      {label && <CustomText style={[styles.text, { color: textColor }]}>{label}</CustomText>}
       {icon && icon}
     </View>
   );

@@ -1,44 +1,30 @@
-import { fileResponse } from './fileData';
+import { getAccessToken,refreshAccessToken } from './session';
 
 export class ApiError extends Error {
   constructor(message:string,public status:number) { super(message); }
 }
-const base=(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/,'');
-const fallbackEnabled=import.meta.env.VITE_FILE_FALLBACK !== 'false';
-const fallbackPaths=new Set<string>();
-const listeners=new Set<()=>void>();
-let snapshot=0;
-export const subscribeDataSource=(listener:()=>void)=>{listeners.add(listener);return ()=>{listeners.delete(listener);};};
-export const getFallbackCount=()=>snapshot;
-export interface RequestOptions extends RequestInit { fileFallback?:boolean }
-function markSource(path:string,file:boolean) {
-  if(file)fallbackPaths.add(path);else fallbackPaths.delete(path);
-  if(snapshot!==fallbackPaths.size){snapshot=fallbackPaths.size;listeners.forEach(listener=>listener());}
-}
+export const base=(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/,'');
 
-/** API first, then a JSON file served by this React app. No sign-in or backend creation. */
-export async function request<T>(path:string,signal?:AbortSignal,options:RequestOptions={}):Promise<T> {
-  const {fileFallback=true,...init}=options;
+/** Calls the API with the signed-in user's access token. Failures surface as ApiError. */
+export async function request<T>(path:string,signal?:AbortSignal,init:RequestInit={}):Promise<T> {
   try {
-    const response=await fetch(`${base}/api${path}`,{
-      ...init,signal:signal ? AbortSignal.any([signal,AbortSignal.timeout(3000)]) : AbortSignal.timeout(3000),
-      headers:{...(init.body ? {'Content-Type':'application/json'} : {}),...init.headers},
-    });
+    const send=()=>{
+      const token=getAccessToken();
+      return fetch(`${base}/api${path}`,{
+        ...init,signal:signal ? AbortSignal.any([signal,AbortSignal.timeout(3000)]) : AbortSignal.timeout(3000),
+        headers:{...(init.body ? {'Content-Type':'application/json'} : {}),...(token ? {Authorization:`Bearer ${token}`} : {}),...init.headers},
+      });
+    };
+    let response=await send();
+    // Access tokens last 15 minutes: refresh once, then retry with the new one.
+    if(response.status===401 && getAccessToken() && await refreshAccessToken(base))response=await send();
     let result;
     try{result=await response.json();}catch{throw new ApiError(`API request failed (${response.status})`,response.status);}
     if(!response.ok)throw new ApiError(typeof result.error==='string' ? result.error : result.error?.message || `API request failed (${response.status})`,response.status);
     if(result.success===false)throw new ApiError(typeof result.error==='string' ? result.error : result.error?.message || 'API request failed',response.status);
-    markSource(path,false);
     return (result.success===true && 'data' in result ? result.data : result) as T;
   } catch(error) {
-    // Navigation cancellation should never start a fallback fetch or publish stale data.
-    if(signal?.aborted)throw error;
-    const apiError=error instanceof ApiError ? error : new ApiError('Cannot reach the API. Please try again.',0);
-    const mutation=init.method && !['GET','HEAD'].includes(init.method.toUpperCase());
-    // Explicit server rejections must not become successful local writes.
-    if(!fallbackEnabled || !fileFallback || (mutation && [200,400,401,403,409,422].includes(apiError.status)))throw apiError;
-    const result=await fileResponse(path,init,signal);
-    markSource(path,true);
-    return result as T;
+    if(signal?.aborted || error instanceof ApiError)throw error;
+    throw new ApiError('Cannot reach the API. Please try again.',0);
   }
 }

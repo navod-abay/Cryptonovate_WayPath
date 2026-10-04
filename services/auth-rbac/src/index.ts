@@ -1,9 +1,9 @@
 import express from 'express';
 import cors from 'cors';
-import { env } from './config/env.js';
-import { pool } from './db/pool.js';
-import { initDatabaseAndSeed } from './db/seed.js';
-import authRoutes from './routes/auth.routes.js';
+import { env } from './config/env';
+import { pool } from './db/pool';
+import { initDatabaseAndSeed } from './db/seed';
+import authRoutes from './routes/auth.routes';
 
 const app = express();
 
@@ -13,6 +13,7 @@ app.use(express.json());
 
 // Mounting Auth Routes (Handles both direct mounts & gateway prefix stripping)
 app.use('/api/auth', authRoutes);
+app.use('/auth', authRoutes);
 app.use('/', authRoutes);
 
 // Global Error Handler

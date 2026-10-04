@@ -8,6 +8,9 @@ const uiSrc = fileURLToPath(new URL('../../packages/ui/src', import.meta.url));
 
 export default defineConfig({
   plugins: [react()],
+  css: {
+    postcss: {},
+  },
   resolve: {
     alias: [
       { find: '@waypoint/ui/styles', replacement: `${uiSrc}/styles.css` },

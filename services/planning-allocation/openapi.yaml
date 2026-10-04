@@ -1,8 +1,22 @@
 openapi: 3.0.3
 info:
   title: Planning & Allocation Service
-  version: 0.1.0
-  description: Route planning and resource allocation engine (Go).
+  version: 0.2.0
+  description: >-
+    Route planning and resource allocation engine (Go). Every day from 16:00 (Asia/Colombo) the service
+    closes ordering for the next run date in Order Management, reads the confirmed pool and the available
+    fleet, plans it with ALNS3 (algorithm 3), stores the trips and deferrals, and writes allocations and
+    deferrals back to Order Management. Every path is also served under /api/planning for services that
+    call Planning directly.
+
+
+    Authentication: every endpoint except /health needs an auth-rbac access token
+    (`Authorization: Bearer <JWT>`, HS256, signed with JWT_ACCESS_SECRET and verified locally) or a
+    service token with role `system`. Roles: dispatchers read schedules, deferrals, trips and planning
+    runs; loaders read trips of their own depot; drivers read any trip; store managers have no access.
+    Starting a planning run by hand needs a service token: the 16:00 run starts itself.
+security:
+  - BearerAuth: []
 servers:
   - url: http://localhost/api/planning
     description: Via API gateway
@@ -10,6 +24,7 @@ servers:
     description: Direct (local container)
 tags:
   - name: Schedule
+  - name: Trips
   - name: Planning
   - name: System
 
@@ -18,9 +33,16 @@ paths:
     get:
       tags: [System]
       summary: Health check
+      security: []
       responses:
         '200':
           description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+        '503':
+          description: The database is unreachable
           content:
             application/json:
               schema:
@@ -31,11 +53,13 @@ paths:
       tags: [Schedule]
       summary: Schedule summary for both depots
       description: Vehicles used, trips, fleet / weight / volume utilisation, total weight and volume, orders served and deferred, distance and fuel, per depot and in total.
-      security:
-        - BearerAuth: []
       parameters:
         - $ref: '#/components/parameters/Date'
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '200':
           description: Summary for the day
           content:
@@ -49,13 +73,15 @@ paths:
     get:
       tags: [Schedule]
       summary: Schedule of one depot
-      description: Every vehicle with its trips (at most two) and the stops of each trip in visiting order.
-      security:
-        - BearerAuth: []
+      description: Every vehicle with its trips (at most two) and the stops of each trip in visiting order, from the date's completed planning run. Before that run exists, `vehicles` is empty and `planRunId` is absent.
       parameters:
         - $ref: '#/components/parameters/Depot'
         - $ref: '#/components/parameters/Date'
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '200':
           description: The depot's schedule
           content:
@@ -75,8 +101,6 @@ paths:
     get:
       tags: [Schedule]
       summary: Orders deferred for the day, with the reason
-      security:
-        - BearerAuth: []
       parameters:
         - $ref: '#/components/parameters/Date'
         - name: depot
@@ -87,6 +111,10 @@ paths:
             type: string
             enum: [Peliyagoda, Kandy]
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '200':
           description: Deferred orders
           content:
@@ -96,13 +124,83 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequest'
 
+  /trips:
+    get:
+      tags: [Trips]
+      summary: Planned trips with stops and items to load
+      description: >-
+        Trips of the date's completed plan, ordered by vehicle and trip number. Used by Execution & Sync.
+        A loader only gets their own depot's trips (another depot is 403).
+      parameters:
+        - $ref: '#/components/parameters/Date'
+        - name: depot
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [Peliyagoda, Kandy]
+        - name: vehicleId
+          in: query
+          required: false
+          schema:
+            type: string
+            example: VEH003
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '200':
+          description: Trips (empty before the date is planned)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TripDetail'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /trips/{tripId}:
+    get:
+      tags: [Trips]
+      summary: One planned trip
+      description: Stops in delivery order, each with the order lines copied when the plan was made. Execution & Sync reverses the stops for LIFO loading.
+      parameters:
+        - name: tripId
+          in: path
+          required: true
+          schema:
+            type: string
+            example: 20261005-VEH003-T1
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '200':
+          description: The trip
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TripDetail'
+        '404':
+          description: No trip with this id in a completed plan
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
   /planning-runs:
     post:
       tags: [Planning]
-      summary: Start planning tomorrow's schedule
-      description: Called by the nightly cron job. Queues a planning run and returns immediately; the run continues in the background. Plans tomorrow (Asia/Colombo) unless planDate is given. Only one run per plan date can be queued or running at a time.
-      security:
-        - BearerAuth: []
+      summary: Plan a date now
+      description: >-
+        Service token (role `system`) only; no user role may start a run. The daily run starts by itself at
+        16:00 (Asia/Colombo); this is for an operator re-running a date the scheduler gave up on after
+        PLANNING_MAX_ATTEMPTS failures. Queues a run and returns immediately; poll GET /planning-runs/{runId}.
+        Without planDate, plans Order Management's next run date. A date with a queued, running or
+        completed run cannot be planned again (409).
       requestBody:
         required: false
         content:
@@ -110,6 +208,10 @@ paths:
             schema:
               $ref: '#/components/schemas/StartPlanningRequest'
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '202':
           description: Planning run queued
           content:
@@ -119,11 +221,66 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequest'
         '409':
-          description: A run for this plan date is already queued or running (returned in the body)
+          description: The date already has a queued, running or completed run (returned in the body)
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/PlanningRun'
+        '502':
+          description: Order Management could not say which date to plan
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    get:
+      tags: [Planning]
+      summary: Planning runs for a date, newest first
+      parameters:
+        - $ref: '#/components/parameters/Date'
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '200':
+          description: Runs, including failed attempts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PlanningRun'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /planning-runs/{runId}:
+    get:
+      tags: [Planning]
+      summary: One planning run
+      parameters:
+        - name: runId
+          in: path
+          required: true
+          schema:
+            type: string
+            example: run_402aec0787d4b1f8
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '200':
+          description: The run
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlanningRun'
+        '404':
+          description: Unknown run
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
 components:
   securitySchemes:
@@ -158,6 +315,22 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: Missing, invalid or expired access token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: access token has expired
+    Forbidden:
+      description: The token's role may not use this endpoint, or a loader asked for another depot
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: 'role "dispatcher" may not do this; requires one of: system'
 
   schemas:
     Error:
@@ -211,9 +384,22 @@ components:
             $ref: '#/components/schemas/DepotSummary'
         totals:
           $ref: '#/components/schemas/DepotSummary'
+    StopItem:
+      type: object
+      properties:
+        sku:
+          type: string
+          example: MLK-1L
+        description:
+          type: string
+        qty:
+          type: integer
     Stop:
       type: object
       properties:
+        stopId:
+          type: string
+          example: 20261005-VEH003-T1-S1
         sequence:
           type: integer
         orderRef:
@@ -239,12 +425,21 @@ components:
         windowClose:
           type: string
           example: '07:30'
+        lateMin:
+          type: number
+          description: Minutes after windowClose the vehicle is planned to arrive (0 = on time)
+        items:
+          type: array
+          description: Only on the /trips endpoints
+          items:
+            $ref: '#/components/schemas/StopItem'
     Trip:
       type: object
       properties:
         tripId:
           type: string
-          example: VEH003-T1
+          example: 20261005-VEH003-T1
+          description: <YYYYMMDD>-<vehicleId>-T<tripNumber>
         tripNumber:
           type: integer
           enum: [1, 2]
@@ -277,6 +472,30 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Stop'
+    TripDetail:
+      allOf:
+        - $ref: '#/components/schemas/Trip'
+        - type: object
+          properties:
+            planDate:
+              type: string
+              format: date
+            depot:
+              type: string
+            vehicleId:
+              type: string
+            vehicleType:
+              type: string
+              enum: [truck, van]
+            vehicleTemperature:
+              type: string
+              enum: [reefer, ambient]
+            weightCapacityKg:
+              type: number
+            volumeCapacityM3:
+              type: number
+            planRunId:
+              type: string
     VehicleSchedule:
       type: object
       properties:
@@ -338,10 +557,11 @@ components:
           description: How many earlier days this order was already deferred
         reason:
           type: string
-          enum: [NO_REEFER_CAPACITY, NO_VEHICLE_CAPACITY, TIME_BUDGET_EXCEEDED, NO_VAN_AVAILABLE, EXCEEDS_LARGEST_VEHICLE, FUEL_QUOTA_EXHAUSTED]
+          description: Order Management deferral reason code, as written back with status-batch
+          enum: [CAPACITY_WEIGHT, CAPACITY_VOLUME, NO_REEFER_AVAILABLE, NO_VAN_FOR_VAN_ONLY_OUTLET, TIME_BUDGET_EXCEEDED, FUEL_QUOTA_EXCEEDED, VEHICLE_UNAVAILABLE]
         reasonDetail:
           type: string
-          example: All available reefers are fully booked within the 270-minute Fresh window.
+          example: All refrigerated vehicles at Peliyagoda are fully booked within the 270-minute Fresh budget.
     DeferralList:
       type: object
       properties:
@@ -362,11 +582,11 @@ components:
         planDate:
           type: string
           format: date
-          description: Day to plan; defaults to tomorrow (Asia/Colombo). Must not be in the past.
+          description: Day to plan; defaults to Order Management's next run date. Must not be in the past.
         trigger:
           type: string
           enum: [cron, manual]
-          default: cron
+          default: manual
     PlanningRun:
       type: object
       properties:
@@ -381,6 +601,8 @@ components:
           enum: [QUEUED, RUNNING, COMPLETED, FAILED]
         trigger:
           type: string
+          enum: [cron, manual, catchup]
+          description: cron = the daily 16:00 run; catchup = a past day or today planned when the service starts; manual = POST /planning-runs
         requestedAt:
           type: string
           format: date-time
@@ -392,6 +614,35 @@ components:
           format: date-time
         error:
           type: string
+        stats:
+          $ref: '#/components/schemas/RunStats'
+    RunStats:
+      type: object
+      properties:
+        orders:
+          type: integer
+          description: Confirmed orders in the pool
+        served:
+          type: integer
+        deferred:
+          type: integer
+        trips:
+          type: integer
+        vehiclesUsed:
+          type: integer
+        iterations:
+          type: integer
+          description: ALNS iterations per seed
+        seeds:
+          type: integer
+          description: ALNS runs with different seeds, best kept (PLANNING_SEEDS, default 5; PLANNING_CATCHUP_SEEDS, default 1, for catch-up runs)
+        bestSeed:
+          type: integer
+        objective:
+          type: number
+          description: Plan cost of the chosen solution (without the lost-second-trip term)
+        solveMs:
+          type: integer
     Health:
       type: object
       properties:
@@ -400,6 +651,9 @@ components:
         status:
           type: string
           example: healthy
+        db:
+          type: string
+          enum: [up, down]
         timestamp:
           type: string
           format: date-time

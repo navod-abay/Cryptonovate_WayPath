@@ -36,7 +36,8 @@ TeamName_SolutionName/
     ├── planning-allocation/ # Route optimization service (Go, port 5003)
     ├── fleet-directory/     # Vehicles & drivers registry (Node, port 5004)
     ├── execution-sync/      # Telemetry & GPS sync service (Node, port 5005)
-    └── analytics-prediction/# Predictive ETA & analytics service (Node, port 5006)
+    ├── analytics-prediction/# Predictive ETA & analytics service (Node, port 5006)
+    └── notification-service/# Dashboard alerts: NATS consumer, REST + SSE (Node, port 5007)
 ```
 
 ---
@@ -71,6 +72,8 @@ Every service builds from its own folder (`services/<name>/`), so there is no ro
 | **Fleet Directory** | `5004` | `http://localhost/api/fleet/` |
 | **Execution Sync** | `5005` | `http://localhost/api/execution/` |
 | **Analytics & Prediction** | `5006` | `http://localhost/api/analytics/` |
+| **Notification Service** | `5007` | `http://localhost/api/notifications/` |
+| **NATS JetStream** | `4222` (monitoring `8222`) | internal broker, not via gateway |
 | **PostgreSQL Database** | `5432` | `localhost:5432` |
 
 ---

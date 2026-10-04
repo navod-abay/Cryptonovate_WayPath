@@ -8,8 +8,9 @@ import ReportIssueModal from '@/components/ReportIssueModal';
 import ConfirmationCodeModal from '@/components/ConfirmationCodeModal';
 import CarouselNav from '@/components/Carousel';
 import { useAppStore } from '@/state/store';
-import { removeReport } from '@/api/storeManagerApi';
-import { showError } from '@/state/toasts';
+import { queueReceipt, removeReport } from '@/api/storeManagerApi';
+import { USE_MOCK } from '@/api/config';
+import { showError, showToast } from '@/state/toasts';
 import type { DeliveryItem } from '@/types';
 import { formatHHmm, ORDER_TYPE_LABEL, pad2 } from '@/utils/date';
 import { describeReport, unitName } from '@/utils/text';
@@ -33,6 +34,15 @@ export default function ReceiveDeliveryPage() {
     setCodeOpen(false);
     navigate('/');
   }, [navigate]);
+
+  // Network outage: the driver recorded the delivery offline. The receipt goes out once their proof syncs.
+  const onDriverLeft = useCallback(() => {
+    if (!deliveryId) return;
+    setCodeOpen(false);
+    queueReceipt(deliveryId)
+      .then(() => showToast('Receipt saved. It will be sent when the driver’s delivery proof reaches the server.', 'success'))
+      .catch((e) => showError(e, 'Could not save the receipt.'));
+  }, [deliveryId]);
 
   if (!delivery) {
     return <main className="sm-page"><Card><p className="sm-section-title">Delivery not found.</p></Card></main>;
@@ -145,6 +155,8 @@ export default function ReceiveDeliveryPage() {
 
         {done ? (
           <p className="sm-receive__done">Confirmed{issues ? ` with ${issues} issue${issues > 1 ? 's' : ''}` : ''}.</p>
+        ) : delivery.receiptQueued ? (
+          <p className="sm-receive__done">Waiting for the driver’s delivery proof to sync. Your receipt{issues ? ` with ${issues} issue${issues > 1 ? 's' : ''}` : ''} will be sent automatically.</p>
         ) : (
           <PrimaryButton
             title={issues ? `Confirm Receipt with ${issues} Issue${issues > 1 ? 's' : ''}` : 'Confirm Receipt'}
@@ -163,7 +175,7 @@ export default function ReceiveDeliveryPage() {
       </div>
 
       <ReportIssueModal deliveryId={delivery.id} item={reporting} onClose={() => setReporting(null)} />
-      <ConfirmationCodeModal deliveryId={delivery.id} open={codeOpen} onClose={closeCode} onVerified={onVerified} />
+      <ConfirmationCodeModal deliveryId={delivery.id} open={codeOpen} onClose={closeCode} onVerified={onVerified} onDriverLeft={USE_MOCK ? undefined : onDriverLeft} />
     </main>
   );
 }

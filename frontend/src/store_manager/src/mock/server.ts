@@ -90,9 +90,17 @@ export function logout() {
 
 export async function getOutlet(outletId: string): Promise<Outlet> {
   await latency(150);
-  const a = MOCK_ACCOUNTS.find((x) => x.outlet.id === outletId);
-  if (!a) throw new ApiError('Outlet not found', 404);
-  return clone(a.outlet);
+  const a = MOCK_ACCOUNTS.find((x) => x.outlet.id.toLowerCase() === outletId.toLowerCase());
+  if (a) return clone(a.outlet);
+  return {
+    id: outletId,
+    city: 'Colombo',
+    managerName: 'Store Manager',
+    storeName: `Waypoint Store – ${outletId}`,
+    storeType: 'grocery',
+    categories: ['chilled', 'dry'],
+    address: 'Commercial Center, Colombo 01',
+  };
 }
 
 export async function getProducts(categories: OrderType[]): Promise<Product[]> {

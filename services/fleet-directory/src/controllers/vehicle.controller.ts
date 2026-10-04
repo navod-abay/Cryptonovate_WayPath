@@ -312,7 +312,7 @@ export class VehicleController {
 
       res.status(200).json({
         success: true,
-        data: result.rows.map((row) => ({
+        data: result.rows.map((row: any) => ({
           vehicle_id:          row.vehicle_id,
           weekly_fuel_quota_l: Number(row.weekly_fuel_quota_l),
           fuel_used_l:         Number(Number(row.fuel_used_l).toFixed(2)),

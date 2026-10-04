@@ -1,5 +1,5 @@
 import bcrypt from 'bcryptjs';
-import { pool } from './pool.js';
+import { pool } from './pool';
 
 export async function initDatabaseAndSeed(): Promise<void> {
   const client = await pool.connect();
@@ -27,6 +27,19 @@ export async function initDatabaseAndSeed(): Promise<void> {
         is_active BOOLEAN DEFAULT true,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
       );
+
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS full_name VARCHAR(100);
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS outlet_id VARCHAR(20);
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS depot VARCHAR(50);
+      -- Older databases had a required email column; only relax it where it still exists.
+      DO $$ BEGIN
+        IF EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_schema = current_schema() AND table_name = 'users' AND column_name = 'email'
+        ) THEN
+          ALTER TABLE users ALTER COLUMN email DROP NOT NULL;
+        END IF;
+      END $$;
     `);
 
     // Check if seeding is necessary or idempotent update

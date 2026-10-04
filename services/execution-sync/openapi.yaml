@@ -202,10 +202,56 @@ paths:
         '201':
           description: Proof of delivery recorded
 
+  /driver/incidents:
+    post:
+      tags: [Driver Execution]
+      summary: Report driver incidents (single report or queued batch)
+      description: >-
+        Role driver. Send one incident, or `{ incidents: [...] }` to flush reports queued while offline.
+        `clientEventId` is generated on the device; re-sending a report is a no-op and comes back under `duplicates`.
+        Each new report raises a `driver.incident` dashboard alert (dispatcher, and the store manager of `outletId`).
+        A `capturedAt` more than 5 minutes in the future is treated as the time it was received.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: '#/components/schemas/DriverIncident'
+                - type: object
+                  required: [incidents]
+                  properties:
+                    incidents:
+                      type: array
+                      minItems: 1
+                      maxItems: 100
+                      items:
+                        $ref: '#/components/schemas/DriverIncident'
+      responses:
+        '201':
+          description: At least one report was new
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DriverIncidentResult'
+        '200':
+          description: Every report had already been received
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DriverIncidentResult'
+        '400':
+          description: Validation error
+
   /sync:
     post:
       tags: [Offline Sync]
       summary: Bulk Sync Offline Telemetry & Delivery Events
+      description: >-
+        Every delivery event stored or updated here was captured offline (photo proof, no handover code),
+        so each one raises a `driver.offline_delivery` dashboard alert for the dispatcher.
       security:
         - BearerAuth: []
       requestBody:
@@ -291,14 +337,15 @@ paths:
         '200':
           description: Order receipt confirmed
 
-  /orders/{orderRef}/dispute:
+  /deliveries/{deliveryId}/problems:
     post:
       tags: [Store Manager Confirmation]
-      summary: Store Manager Order Dispute Registration
+      summary: Report a problem with a delivery that is still on the way
+      description: Role store_manager. The outlet is taken from the token. Raises a `store.delivery_problem` dashboard alert for the dispatcher.
       security:
         - BearerAuth: []
       parameters:
-        - name: orderRef
+        - name: deliveryId
           in: path
           required: true
           schema:
@@ -309,17 +356,83 @@ paths:
           application/json:
             schema:
               type: object
-              required: [discrepancyType, description]
+              required: [problems]
               properties:
-                discrepancyType:
-                  type: string
-                description:
+                problems:
+                  type: array
+                  minItems: 1
+                  maxItems: 10
+                  items:
+                    type: string
+                  example: [Vehicle is late, Can’t reach the driver]
+                orderRef:
                   type: string
       responses:
         '201':
-          description: Order dispute logged
+          description: Problem recorded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
 
 components:
+  schemas:
+    DriverIncident:
+      type: object
+      required: [clientEventId, issue, capturedAt]
+      properties:
+        clientEventId:
+          type: string
+          format: uuid
+        tripId:
+          type: string
+        stopId:
+          type: string
+        outletId:
+          type: string
+        orderRef:
+          type: string
+        vehicleId:
+          type: string
+        issue:
+          type: string
+          enum: [no_receive, closed, refused, blocked]
+        action:
+          type: string
+          example: alt_route
+        notes:
+          type: string
+          maxLength: 1000
+        capturedAt:
+          type: string
+          format: date-time
+    DriverIncidentResult:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            accepted:
+              type: array
+              items:
+                type: string
+                format: uuid
+            duplicates:
+              type: array
+              items:
+                type: string
+                format: uuid
   securitySchemes:
     BearerAuth:
       type: http

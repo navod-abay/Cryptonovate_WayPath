@@ -27,7 +27,7 @@ With `VITE_USE_MOCK_API=true` (the default), nothing touches the network and the
 | `src/api/config.ts` | Env vars, timeouts, polling intervals |
 | `src/api/http.ts` | `fetch` wrapper: base URL, `Authorization: Bearer`, `{ success, data }` unwrapping, 10 s timeout, refresh-on-401 |
 | `src/api/authApi.ts` | Login, logout, change password |
-| `src/api/storeManagerApi.ts` | Everything else: load data, orders, deliveries, disputes, handover code, updates |
+| `src/api/storeManagerApi.ts` | Everything else: load data, orders, deliveries, item reports and receipt, handover code, updates |
 | `src/mock/server.ts` | The fake backend: one function per endpoint, same JSON as the real one should return |
 | `src/types.ts` | TypeScript types for every request and response (the contract) |
 | `src/state/store.ts` | Client cache of API results; pages only read from here |
@@ -83,12 +83,12 @@ Status: ✅ exists, ⚠️ exists but needs a change, 🆕 to build.
 | 12 | `GET /api/execution/outlets/:outletId/deliveries` | 🆕 | `loadStoreData`, `refreshLiveData` | Home, Deliveries today/past, Receive |
 | 13 | `GET /api/execution/deliveries/:deliveryId` | 🆕 | `checkHandover` | Confirmation code dialog (polled) |
 | 14 | `POST /api/execution/deliveries/:deliveryId/unloading` | 🆕 | `startUnloading` | Deliveries today |
-| 15 | `POST /api/execution/orders/:orderRef/dispute` | ⚠️ accept + return structured fields | `reportIssue` | Receive ("What's Wrong ?") |
-| 16 | `DELETE /api/execution/disputes/:reportId` | 🆕 | `removeReport` | Receive (remove a report) |
-| 17 | `POST /api/execution/deliveries/:deliveryId/problems` | 🆕 | `reportDeliveryProblem` | Deliveries today (Report button) |
+| 15 | `POST /api/orders/:orderRef/receipt` | ✅ (order-management, with `lines`) | `reportIssue` (kept on device), `checkHandover`, `queueReceipt` | Receive ("What's Wrong ?", Confirm Receipt) |
+| 16 | — (reports are removed on the device before the receipt is sent) | ✅ | `removeReport` | Receive (remove a report) |
+| 17 | `POST /api/execution/deliveries/:deliveryId/problems` | ✅ | `reportDeliveryProblem` | Deliveries today (Report button) |
 | 18 | `POST /api/execution/orders/:orderRef/confirm` | ⚠️ must return the handover code | `requestConfirmationCode` | Receive (Confirm Receipt) |
-| 19 | `GET /api/execution/outlets/:outletId/updates` | 🆕 | `loadStoreData`, `refreshLiveData` | Home (Recent Updates, alert counts) |
-| 20 | `POST /api/execution/updates/read` | 🆕 | `markUpdatesRead` | Home |
+| 19 | `GET /api/notifications/outlets/:outletId/updates` + `GET /api/notifications/stream` | ✅ (notification-service) | `loadStoreData`, `refreshLiveData`, `subscribeUpdates` | Home (Recent Updates, alert counts) |
+| 20 | `POST /api/notifications/read` | ✅ (notification-service) | `markUpdatesRead` | Home |
 
 `:outletId` is the signed-in user's `outletId`. The backend should also check it matches the JWT's `outlet_id`, and return 403 if not.
 
@@ -209,7 +209,7 @@ Response `Delivery[]` covering today and past deliveries (the last 14 days is fi
 - **Buttons:** Start Unloading is enabled only when the status is `arrived`, and Confirm Receipt only after it.
 - **`stops`** are the stops before this outlet, shown as Warehouse ✓ → Outlet 1 ✓ → You.
 - **Loader shortfalls:** `ordered − sent` is shown as "01 chicken tray was removed at loading !" under Past Data.
-- **`reports`** are the store manager's own disputes for this delivery (see #15).
+- **`reports`** are the store manager's item reports for this delivery (see #15); the app adds the ones still held on the device.
 
 ### 13. `GET /api/execution/deliveries/:deliveryId` 🆕
 Same shape as one item of #12. Polled **every 3 s** while the confirmation code is on screen. When `status` becomes `delivered` (the driver typed the code), the dialog closes and Home shows DELIVERED.
@@ -217,27 +217,25 @@ Same shape as one item of #12. Polled **every 3 s** while the confirmation code 
 ### 14. `POST /api/execution/deliveries/:deliveryId/unloading` 🆕
 No body. Moves `arrived` → `unloading`. Response: the updated `Delivery`.
 
-### 15. `POST /api/execution/orders/:orderRef/dispute` ⚠️
-Exists today with `{ discrepancyType, description }`. The frontend sends those **plus** the structured fields it needs to show the report again:
+### 15. `POST /api/orders/:orderRef/receipt` ✅
+Item reports ("What's Wrong ?") are **kept on the device** (localStorage, per outlet) while unloading, so they can still be removed, and are sent together as one receipt to order-management once the order is `delivered` — right after the driver enters the handover code (`checkHandover`). Request:
 ```json
-{ "discrepancyType": "damaged", "description": "01 yoghurt crate damaged - crushed / leaking",
-  "deliveryId": "DEL-0412", "productId": "CH-YOG", "kind": "damaged", "reasons": ["Crushed", "Leaking"], "quantity": 1 }
+{ "received_units": 11, "missing_units": 2, "rejected_units": 1,
+  "lines": [ { "sku": "CH-MILK", "kind": "missing", "quantity": 1, "reasons": ["Removed at loading"] },
+             { "sku": "CH-MILK", "kind": "missing", "quantity": 1, "reasons": [] },
+             { "sku": "CH-YOG",  "kind": "damaged", "quantity": 1, "reasons": ["Crushed", "Leaking"] } ] }
 ```
-- **`kind`** is `damaged` or `missing`.
-- **`reasons`** are chips the user selected, and only apply to `damaged`.
+- `received + missing + rejected` must equal the order's units (the app sums `items[].ordered`); damaged counts as rejected.
+- Items the loader removed (`ordered − sent`) are sent as `missing` lines with the reason "Removed at loading".
+- A short receipt sets the order to `disputed` and raises a `store.discrepancy` alert for the dispatcher.
+- **Network outage:** if the driver had no signal, they record the delivery offline and cannot enter the code. The code dialog offers "Send my receipt later" (`queueReceipt`); the receipt is then sent by the next poll after the driver's offline proof syncs and the delivery becomes `delivered`.
+- `Delivery.reports` (#12) should list the receipt's lines once it is recorded.
 
-Please store them and return an `IssueReport` (201):
-```json
-{ "id": "REP-1", "deliveryId": "DEL-0412", "productId": "CH-YOG", "itemName": "Yoghurt Crates",
-  "kind": "damaged", "reasons": ["Crushed", "Leaking"], "quantity": 1, "createdAt": "2026-10-04T08:20:00+05:30" }
-```
-The same objects should appear in `Delivery.reports` (#12).
+### 16. Removing a report
+No endpoint: reports are only on the device until the receipt is sent.
 
-### 16. `DELETE /api/execution/disputes/:reportId` 🆕
-Removes a report made by mistake, before the receipt is confirmed. Returns `204`.
-
-### 17. `POST /api/execution/deliveries/:deliveryId/problems` 🆕
-The Report button on a delivery that's still on the way. Request `{ "problems": ["Vehicle is late", "Can’t reach the driver"] }` → `{ "id": "PRB-1" }`. This should notify the dispatcher.
+### 17. `POST /api/execution/deliveries/:deliveryId/problems` ✅
+The Report button on a delivery that's still on the way. Request `{ "problems": ["Vehicle is late", "Can’t reach the driver"], "orderRef": "ORD-…" }` → `{ "id": "<uuid>" }` (201). Raises a `store.delivery_problem` alert for the dispatcher.
 
 ### 18. `POST /api/execution/orders/:orderRef/confirm` ⚠️
 Store manager presses **Confirm Receipt**. The request is `{ "deliveryId": "DEL-0412" }`; the existing optional `notes` can stay. The response must be the **handover code** the manager reads to the driver:
@@ -246,26 +244,25 @@ Store manager presses **Confirm Receipt**. The request is `{ "deliveryId": "DEL-
 ```
 The dialog counts down to `expiresAt` and offers "Get a new code", which calls this again. The driver app submits the code; once it matches, set the delivery to `delivered` and `confirmedAt`, and the order to `delivered` and `receivedAt`. #13 picks that up.
 
-### 19. `GET /api/execution/outlets/:outletId/updates` 🆕
-Recent Updates feed and alert counts. **Polled every 60 s.** Newest first is fine; the UI sorts by `at` anyway.
+### 19. `GET /api/notifications/outlets/:outletId/updates` ✅
+Recent Updates feed and alert counts, from notification-service. `:outletId` must match the token's `outlet_id` (403 otherwise). Polled every 60 s, and pushed live by `GET /api/notifications/stream` (Server-Sent Events, `src/api/updateStream.ts`; frames `ready` and `alerts`, reconnect with `Last-Event-ID`).
 ```json
-[{ "id": "U1", "source": "driver", "message": "Road is blocked ! Driver has changed the route.",
-   "at": "2026-10-04T07:10:00+05:30", "link": "/deliveries/today?d=DEL-0413", "read": false }]
+[{ "id": "7f0c…", "source": "driver", "message": "Road access blocked at OUT001 (Trip 1). Driver: Took an alternative route.",
+   "at": "2026-10-04T07:10:00.000Z", "link": "/deliveries/today", "read": false, "syncedLate": false }]
 ```
-- **`source`** is `driver`, `dispatcher` or `loader`, and picks the icon and which Alerts button counts it.
-- **`link`** is optional: an in-app path opened on click (`/orders/:id`, `/deliveries/today?d=:id`, `/deliveries/:id/receive`).
-- **`read`**: unread items get an amber marker and count as `(n)` on the Alerts buttons.
+- **`source`** is `driver`, `dispatcher` or `loader`, and picks the icon and which Alerts button counts it. Today drivers' incident reports about this outlet are what arrives.
+- **`at`** is when it happened; **`syncedLate`** is true when it reached the server more than 5 minutes later (sent from the driver's offline queue).
+- **`read`** is per user.
 
-### 20. `POST /api/execution/updates/read` 🆕
-Request `{ "ids": ["U1", "U4"] }` → `204`. Called when the user opens an update or an Alerts filter.
+### 20. `POST /api/notifications/read` ✅
+Request `{ "ids": ["7f0c…"] }` → `204`. Called when the user opens an update or an Alerts filter.
 
 ---
 
 ## 5. Things to fix in the current backend
 
-- **execution-sync user id:** the controllers (`src/controllers/execution.controller.ts`) read `req.user.userId`, but auth-rbac tokens carry the user id in `sub`. Confirm and dispute will fail to record the user until this matches.
 - **Outlet details:** login only returns `outletId`. #5 is needed for the store name, type, categories and city.
-- **Dispute and confirm shapes:** see #15 and #18.
+- **Confirm shape:** see #18.
 - **Dates:** return delivery dates in Asia/Colombo local time (see section 3).
 - **CORS:** when running `npm run dev` (port 5173) against the gateway (port 80), the services or NGINX must allow that origin, or set `VITE_API_BASE_URL=/api` and serve the app behind the gateway.
 

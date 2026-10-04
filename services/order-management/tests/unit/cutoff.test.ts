@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { earliestDeliveryDate, isDateOpen, isPastCutoff, resolveConfirmDate } from '../../src/domain/cutoff.js';
+import { cutoffInstant, earliestDeliveryDate, isDateOpen, isPastCutoff, resolveConfirmDate } from '../../src/domain/cutoff.js';
 import { AppError } from '../../src/domain/errors.js';
 
 const colombo = (isoLocal: string) => new Date(`${isoLocal}+05:30`);
@@ -13,6 +13,9 @@ const TABLE = [
   { label: 'Fri 17:00 + accept_next_run', at: '2026-10-02T17:00:00', accept: true, expected: '2026-10-05', rolled: true },
   { label: 'Sat 15:00', at: '2026-10-03T15:00:00', accept: false, expected: '2026-10-05', rolled: false },
   { label: 'Sat 17:00 + accept_next_run', at: '2026-10-03T17:00:00', accept: true, expected: '2026-10-06', rolled: true },
+  // Sunday has no run: Monday closed at Saturday's cutoff, so all of Sunday orders for Tuesday.
+  { label: 'Sun 10:00 + accept_next_run', at: '2026-10-04T10:00:00', accept: true, expected: '2026-10-06', rolled: true },
+  { label: 'Sun 17:00 + accept_next_run', at: '2026-10-04T17:00:00', accept: true, expected: '2026-10-06', rolled: true },
 ];
 
 for (const row of TABLE) {
@@ -70,4 +73,21 @@ test('earliestDeliveryDate and isDateOpen agree', () => {
   assert.equal(earliestDeliveryDate(at), '2026-10-06');
   assert.equal(isDateOpen('2026-10-05', at), false);
   assert.equal(isDateOpen('2026-10-06', at), true);
+});
+
+test('cutoffInstant is the cutoff hour on the previous operating day, skipping Sundays', () => {
+  // Tue 2026-09-29 closes Mon 16:00; Mon 2026-10-05 closes Sat 2026-10-03 16:00 (Sunday has no run).
+  assert.equal(cutoffInstant('2026-09-29').toISOString(), colombo('2026-09-28T16:00:00').toISOString());
+  assert.equal(cutoffInstant('2026-10-05').toISOString(), colombo('2026-10-03T16:00:00').toISOString());
+});
+
+test('Monday stays closed all Sunday, before and after the cutoff hour', () => {
+  for (const at of ['2026-10-04T00:00:00', '2026-10-04T10:00:00', '2026-10-04T15:59:59', '2026-10-04T16:00:00']) {
+    assert.equal(isDateOpen('2026-10-05', colombo(at)), false, at);
+    assert.equal(earliestDeliveryDate(colombo(at)), '2026-10-06', at);
+  }
+  assert.throws(
+    () => resolveConfirmDate({ requestedDate: '2026-10-05', acceptNextRun: false, at: colombo('2026-10-04T10:00:00') }),
+    (err: unknown) => err instanceof AppError && err.code === 'CUTOFF_PASSED',
+  );
 });

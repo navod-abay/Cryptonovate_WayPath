@@ -1,9 +1,9 @@
 import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
-import { pool } from '../db/pool.js';
-import { TokenService } from '../services/token.service.js';
-import { User } from '../types/auth.types.js';
+import { pool } from '../db/pool';
+import { TokenService } from '../services/token.service';
+import { User } from '../types/auth.types';
 
 export const loginSchema = z.object({
   username: z.string().min(1, 'Username is required'),
@@ -12,6 +12,11 @@ export const loginSchema = z.object({
 
 export const refreshSchema = z.object({
   refresh_token: z.string().min(1, 'Refresh token is required'),
+});
+
+export const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1, 'Current password is required'),
+  newPassword: z.string().min(8, 'New password must be at least 8 characters long'),
 });
 
 export class AuthController {
@@ -192,4 +197,84 @@ export class AuthController {
       service: 'auth-rbac',
     });
   }
+
+  /**
+   * POST /change-password
+   */
+  static async changePassword(req: Request, res: Response): Promise<void> {
+    if (!req.user) {
+      res.status(401).json({
+        success: false,
+        error: {
+          code: 'UNAUTHORIZED',
+          message: 'Unauthenticated context',
+        },
+      });
+      return;
+    }
+
+    const { currentPassword, newPassword } = req.body;
+
+    try {
+      const result = await pool.query<User>(
+        'SELECT id, password_hash FROM users WHERE id = $1',
+        [req.user.sub]
+      );
+
+      const user = result.rows[0];
+      if (!user) {
+        res.status(404).json({
+          success: false,
+          error: {
+            code: 'USER_NOT_FOUND',
+            message: 'User record not found',
+          },
+        });
+        return;
+      }
+
+      const isValidPassword = await bcrypt.compare(currentPassword, user.password_hash);
+      if (!isValidPassword) {
+        res.status(400).json({
+          success: false,
+          error: {
+            code: 'INVALID_PASSWORD',
+            message: 'Current password is incorrect',
+          },
+        });
+        return;
+      }
+
+      const newPasswordHash = await bcrypt.hash(newPassword, 10);
+      await pool.query('UPDATE users SET password_hash = $1 WHERE id = $2', [
+        newPasswordHash,
+        user.id,
+      ]);
+
+      res.status(200).json({
+        success: true,
+        message: 'Password changed successfully',
+      });
+    } catch (error) {
+      console.error('Error changing password:', error);
+      res.status(500).json({
+        success: false,
+        error: {
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to change password',
+        },
+      });
+    }
+  }
+
+  /**
+   * POST /logout
+   */
+  static logout(req: Request, res: Response): void {
+    res.status(200).json({
+      success: true,
+      message: 'Logged out successfully',
+    });
+  }
 }
+

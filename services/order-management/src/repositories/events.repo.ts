@@ -21,6 +21,8 @@ export interface NewStatusEvent {
   reasonNote?: string | null;
   actorId?: string | null;
   actorRole?: string | null;
+  /** When it happened; defaults to now. Only demo history backfills past times. */
+  at?: Date | null;
 }
 
 /**
@@ -30,7 +32,7 @@ export interface NewStatusEvent {
 export async function appendEvent(event: NewStatusEvent, db: Queryable): Promise<void> {
   await db.query(
     `INSERT INTO order_status_events (order_ref, from_status, to_status, reason_code, reason_note, actor_id, actor_role, occurred_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, clock_timestamp())`,
+     VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8::timestamptz, clock_timestamp()))`,
     [
       event.orderRef,
       event.from,
@@ -39,6 +41,7 @@ export async function appendEvent(event: NewStatusEvent, db: Queryable): Promise
       event.reasonNote ?? null,
       event.actorId ?? null,
       event.actorRole ?? null,
+      event.at ?? null,
     ],
   );
 }

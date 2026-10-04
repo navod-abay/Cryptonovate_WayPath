@@ -1,6 +1,6 @@
 import { request } from './http';
 import { today } from './presentation';
-import { availabilityOn,normalizePeriods,readLocalAvailability } from './availability';
+import { availabilityOn,normalizePeriods } from './availability';
 import type { AvailabilityUpdate, Category, Incident, Order, Trip, Vehicle, Warehouse } from './types';
 
 export interface ApiOrder {
@@ -55,11 +55,9 @@ async function getOrder(id:string,signal?:AbortSignal) {
 }
 async function getVehicles(signal?:AbortSignal):Promise<Vehicle[]> {
   const rows=await request<ApiVehicle[]>('/fleet/vehicles',signal);
-  const local=readLocalAvailability();
   return rows.map(v=>{
-    const override=v.unavailable_periods===undefined ? local[v.vehicle_id] : undefined;
-    const periods=normalizePeriods(override?.unavailable_periods || v.unavailable_periods || []);
-    return {id:v.vehicle_id,warehouse:v.depot,kind:v.type,refrigerated:v.temp==='reefer',...availabilityOn(override?.status || v.status,periods),
+    const periods=normalizePeriods(v.unavailable_periods || []);
+    return {id:v.vehicle_id,warehouse:v.depot,kind:v.type,refrigerated:v.temp==='reefer',...availabilityOn(v.status,periods),
       unavailablePeriods:periods,weightCapacityKg:v.weight_cap_kg ?? null,volumeCapacityM3:v.volume_cap_m3 ?? null,weeklyFuelQuotaLitres:v.weekly_fuel_quota_l ?? null,
       trips:(v.trips || []).map(mapTrip),tripsLoaded:Array.isArray(v.trips)};
   });
@@ -72,14 +70,19 @@ async function getSchedule(date:string,depot:Warehouse,signal?:AbortSignal) {
     request<{utilization:number|null}>(`/fleet/fuel-usage/weekly?date=${date}&depot=${depot}`,signal).then(data=>({data,error:undefined})).catch((e:Error)=>({data:null,error:e.message})),
   ]);
   return { date,vehicles:mapSchedule(schedule),summaries:summary.depots,fuel:fuel.data?.utilization ?? null,fuelError:fuel.error,
-    sample:schedule.planRunId==='stub',deferred:deferrals.orders.map((o):Order=>({ id:o.orderRef,outletId:o.outletId,date,warehouse:o.depot,destination:o.district,
+    // Planning only reports a run id once a completed run exists for the date.
+    prepared:!!schedule.planRunId,deferred:deferrals.orders.map((o):Order=>({ id:o.orderRef,outletId:o.outletId,date,warehouse:o.depot,destination:o.district,
       category:categoryOf(o.brand,o.temperature),status:'Deferred',reason:o.reasonDetail,items:[],itemsLoaded:false })) };
 }
-interface ApiIncident extends Omit<Incident,'minutesAgo'> { createdAt:string }
-function mapIncident(i:ApiIncident):Incident { return {...i,minutesAgo:Math.max(0,Math.floor((Date.now()-Date.parse(i.createdAt))/60000))}; }
+/** notification-service alert; createdAt is when it happened, receivedAt when the server got it. */
+export interface ApiIncident extends Omit<Incident,'minutesAgo'|'receivedMinutesAgo'> { createdAt:string;receivedAt?:string }
+const minutesSince=(iso:string)=>Math.max(0,Math.floor((Date.now()-Date.parse(iso))/60000));
+export function mapIncident({receivedAt,...i}:ApiIncident):Incident {
+  return {...i,minutesAgo:minutesSince(i.createdAt),...(receivedAt ? {receivedMinutesAgo:minutesSince(receivedAt)} : {})};
+}
 export const dispatcherRepository = {
   getOrders,getOrder,getVehicles,getSchedule,
-  login:(username:string,password:string,signal?:AbortSignal)=>request('/auth/login',signal,{method:'POST',body:JSON.stringify({username,password}),fileFallback:false}),
+  login:(username:string,password:string,signal?:AbortSignal)=>request('/auth/login',signal,{method:'POST',body:JSON.stringify({username,password})}),
   updateAvailability:(id:string,update:AvailabilityUpdate,signal?:AbortSignal)=>request<AvailabilityUpdate>(`/fleet/vehicles/${encodeURIComponent(id)}/availability`,signal,{method:'PUT',body:JSON.stringify({...update,unavailable_periods:normalizePeriods(update.unavailable_periods)})}),
   getVehicleFuel:async(id:string,date:string,depot:Warehouse,signal?:AbortSignal)=>{
     const result=await request<{vehicles?:{vehicle_id:string;quota_litres:number;consumed_litres:number}[]}>(`/fleet/fuel-usage/weekly?date=${date}&depot=${depot}`,signal);
@@ -90,6 +93,6 @@ export const dispatcherRepository = {
   getWindows:(from:string,to:string,signal?:AbortSignal)=>request<Windows>(`/orders/dispatcher/windows?from=${from}&to=${to}`,signal),
   getStatistics:(date:string,signal?:AbortSignal)=>request<Statistics>(`/analytics/dispatcher/statistics?date=${date}`,signal),
   getForecast:(date:string,signal?:AbortSignal)=>request<Forecast>(`/analytics/forecast/demand?date=${date}`,signal),
-  getIncidents:async(signal?:AbortSignal)=>(await request<ApiIncident[]>('/execution/incidents',signal)).map(mapIncident),
-  getIncident:async(id:string,signal?:AbortSignal)=>mapIncident(await request<ApiIncident>(`/execution/incidents/${encodeURIComponent(id)}`,signal)),
+  getIncidents:async(signal?:AbortSignal)=>(await request<ApiIncident[]>('/notifications/alerts?limit=50',signal)).map(mapIncident),
+  getIncident:async(id:string,signal?:AbortSignal)=>mapIncident(await request<ApiIncident>(`/notifications/alerts/${encodeURIComponent(id)}`,signal)),
 };

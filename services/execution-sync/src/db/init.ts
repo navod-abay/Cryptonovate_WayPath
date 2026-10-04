@@ -74,17 +74,53 @@ export async function initDb() {
       );
     `);
 
-    // Delivery Disputes
+    // Driver Incidents (roadside / at-outlet reports). id is generated on the device, so a report
+    // re-sent after a dropped connection is recognised instead of stored twice.
     await client.query(`
-      CREATE TABLE IF NOT EXISTS delivery_disputes (
+      CREATE TABLE IF NOT EXISTS driver_incidents (
+        id UUID PRIMARY KEY,
+        driver_id UUID,
+        driver_username VARCHAR(100),
+        depot VARCHAR(50),
+        trip_id VARCHAR(50),
+        stop_id VARCHAR(50),
+        outlet_id VARCHAR(50),
+        order_ref VARCHAR(50),
+        vehicle_id VARCHAR(50),
+        issue VARCHAR(30) NOT NULL,
+        action VARCHAR(40),
+        notes TEXT,
+        captured_at TIMESTAMP WITH TIME ZONE NOT NULL,
+        received_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    // Problems a store manager reports about a delivery that has not arrived yet
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS delivery_problems (
         id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-        order_ref VARCHAR(50) NOT NULL,
+        delivery_id VARCHAR(50) NOT NULL,
+        order_ref VARCHAR(50),
+        outlet_id VARCHAR(50),
         store_manager_id UUID,
-        discrepancy_type VARCHAR(50) NOT NULL,
-        description TEXT,
+        problems JSONB NOT NULL,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
     `);
+
+    // Dashboard alerts waiting to be relayed to NATS (see services/alertOutbox.ts)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS execution_alert_outbox (
+        id UUID PRIMARY KEY,
+        subject VARCHAR(100) NOT NULL,
+        envelope JSONB NOT NULL,
+        created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        published_at TIMESTAMP WITH TIME ZONE
+      );
+    `);
+    await client.query(
+      'CREATE INDEX IF NOT EXISTS ix_execution_alert_outbox_pending ON execution_alert_outbox (created_at) WHERE published_at IS NULL;'
+    );
 
     await client.query('COMMIT');
     console.log('[db/init] Execution Sync database schema initialized successfully.');

@@ -11,11 +11,14 @@ import {
   AtRiskQuerySchema,
   CancelOrderSchema,
   CloseWindowSchema,
+  SimulateDeliverySchema,
   ConfirmedQuerySchema,
   ConfirmOrderSchema,
   CreateOrderSchema,
   DeferOrderSchema,
+  DispatcherOverviewQuerySchema,
   ListOrdersQuerySchema,
+  OrderWindowsQuerySchema,
   ReceiptSchema,
   ReplaceItemsSchema,
   StatusBatchSchema,
@@ -47,25 +50,32 @@ router.use(verifyToken(env.JWT_ACCESS_SECRET));
 const dispatcher = requireRole(['dispatcher']);
 const orderWriters = requireRole(['store_manager', 'dispatcher']);
 const orderReaders = requireRole(['store_manager', 'dispatcher', 'loader']);
+// Planning & Allocation (role 'system') reads the pool and order lines, and writes allocations back.
+const dispatcherOrPlanning = requireRole(['dispatcher', 'system']);
 
 // Literal paths MUST be registered before '/:order_ref' or Express treats them as refs.
-router.get('/confirmed', requireRole(['dispatcher', 'loader']), validateQuery(ConfirmedQuerySchema), asyncHandler(ctrl.getConfirmed));
+router.get('/confirmed', requireRole(['dispatcher', 'loader', 'system']), validateQuery(ConfirmedQuerySchema), asyncHandler(ctrl.getConfirmed));
 router.get('/at-risk', dispatcher, validateQuery(AtRiskQuerySchema), asyncHandler(ctrl.getAtRisk));
 router.get('/summary', dispatcher, validateQuery(SummaryQuerySchema), asyncHandler(ctrl.getSummary));
-router.patch('/status-batch', dispatcher, validateRequest(StatusBatchSchema), asyncHandler(ctrl.statusBatch));
-router.post('/close-window', dispatcher, validateRequest(CloseWindowSchema), asyncHandler(ctrl.closeWindow));
+router.get('/dispatcher/overview', dispatcher, validateQuery(DispatcherOverviewQuerySchema), asyncHandler(ctrl.getDispatcherOverview));
+router.get('/dispatcher/windows', dispatcher, validateQuery(OrderWindowsQuerySchema), asyncHandler(ctrl.getOrderWindows));
+router.patch('/status-batch', dispatcherOrPlanning, validateRequest(StatusBatchSchema), asyncHandler(ctrl.statusBatch));
+router.post('/close-window', dispatcherOrPlanning, validateRequest(CloseWindowSchema), asyncHandler(ctrl.closeWindow));
+// Demo history only (SEED_DEMO_DATA): Planning marks the past days it planned at startup as delivered and received.
+router.post('/simulate-delivery', requireRole(['system']), validateRequest(SimulateDeliverySchema), asyncHandler(ctrl.simulateDelivery));
 
 router.get('/', orderReaders, validateQuery(ListOrdersQuerySchema), asyncHandler(ctrl.listOrders));
 router.post('/', orderWriters, resolveCreateOutlet, validateRequest(CreateOrderSchema), asyncHandler(ctrl.createOrder));
 
-router.get('/:order_ref', orderReaders, asyncHandler(ctrl.getOrder));
+router.get('/:order_ref', requireRole(['store_manager', 'dispatcher', 'loader', 'system']), asyncHandler(ctrl.getOrder));
 router.delete('/:order_ref', orderWriters, validateRequest(CancelOrderSchema), asyncHandler(ctrl.cancelOrder));
 router.put('/:order_ref/items', orderWriters, validateRequest(ReplaceItemsSchema), asyncHandler(ctrl.replaceItems));
 router.post('/:order_ref/confirm', orderWriters, validateRequest(ConfirmOrderSchema), asyncHandler(ctrl.confirmOrder));
 router.get('/:order_ref/history', orderWriters, asyncHandler(ctrl.getHistory));
 router.patch(
   '/:order_ref/status',
-  requireRole(['dispatcher', 'loader', 'driver']),
+  // 'system' is Execution & Sync relaying loader and driver events.
+  requireRole(['dispatcher', 'loader', 'driver', 'system']),
   validateRequest(StatusChangeSchema),
   asyncHandler(ctrl.changeStatus),
 );

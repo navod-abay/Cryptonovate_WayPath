@@ -35,21 +35,21 @@ variable "instance_type" {
 }
 
 variable "admin_ssh_cidr" {
-  description = "CIDR block permitted for SSH management (Replace YOUR_IP_ADDRESS with your public IP)"
+  description = "CIDR block permitted for SSH management"
   type        = string
-  default     = "YOUR_IP_ADDRESS/32"
+  default     = "0.0.0.0/0"
 }
 
 variable "key_pair_name" {
-  description = "Name of existing EC2 Key Pair for SSH access (optional, leave empty if not using SSH key)"
+  description = "Name of existing EC2 Key Pair for SSH access"
   type        = string
-  default     = ""
+  default     = "Tech3"
 }
 
 variable "github_repo_url" {
   description = "Public Git repository URL containing the docker-compose.yml and microservices"
   type        = string
-  default     = "https://github.com/your-org/TeamName_SolutionName.git"
+  default     = "https://github.com/navod-abay/Cryptonovate_WayPath.git"
 }
 
 # ------------------------------------------------------------------------------
@@ -114,6 +114,36 @@ resource "aws_security_group" "app_sg" {
     description      = "HTTP public gateway entrypoint"
     from_port        = 80
     to_port          = 80
+    protocol         = "tcp"
+    cidr_blocks      = ["0.0.0.0/0"]
+    ipv6_cidr_blocks = ["::/0"]
+  }
+
+  # Ingress: Secure HTTPS to NGINX Reverse Proxy
+  ingress {
+    description      = "HTTPS public gateway entrypoint"
+    from_port        = 443
+    to_port          = 443
+    protocol         = "tcp"
+    cidr_blocks      = ["0.0.0.0/0"]
+    ipv6_cidr_blocks = ["::/0"]
+  }
+
+  # Ingress: Dispatcher Web Application
+  ingress {
+    description      = "Dispatcher Web Application"
+    from_port        = 4173
+    to_port          = 4173
+    protocol         = "tcp"
+    cidr_blocks      = ["0.0.0.0/0"]
+    ipv6_cidr_blocks = ["::/0"]
+  }
+
+  # Ingress: Store Manager Web Application
+  ingress {
+    description      = "Store Manager Web Application"
+    from_port        = 4174
+    to_port          = 4174
     protocol         = "tcp"
     cidr_blocks      = ["0.0.0.0/0"]
     ipv6_cidr_blocks = ["::/0"]
@@ -282,6 +312,18 @@ resource "aws_instance" "app_server" {
 }
 
 # ------------------------------------------------------------------------------
+# Elastic IP (Fixed Public IP)
+# ------------------------------------------------------------------------------
+resource "aws_eip" "app_eip" {
+  instance = aws_instance.app_server.id
+  domain   = "vpc"
+
+  tags = {
+    Name = "cryptonovate-fixed-ip"
+  }
+}
+
+# ------------------------------------------------------------------------------
 # Outputs
 # ------------------------------------------------------------------------------
 output "instance_id" {
@@ -299,6 +341,11 @@ output "application_url" {
   value       = "http://${aws_instance.app_server.public_ip}"
 }
 
+output "fixed_application_url" {
+  description = "Permanent Public HTTP URL"
+  value       = "http://${aws_eip.app_eip.public_ip}"
+}
+
 output "ssh_connection_command" {
   description = "Command to SSH into the instance (requires matching private key and admin_ssh_cidr)"
   value       = var.key_pair_name != "" ? "ssh -i <path-to-${var.key_pair_name}.pem> ubuntu@${aws_instance.app_server.public_ip}" : "SSH Key not configured in variables"
@@ -308,3 +355,4 @@ output "bootstrap_log_command" {
   description = "Command to inspect user_data bootstrap execution logs"
   value       = "ssh ubuntu@${aws_instance.app_server.public_ip} 'sudo tail -f /var/log/user-data.log'"
 }
+

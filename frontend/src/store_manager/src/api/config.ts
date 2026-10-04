@@ -7,7 +7,13 @@
  */
 export const USE_MOCK = (import.meta.env.VITE_USE_MOCK_API ?? 'true') !== 'false';
 
+/** Dedicated auth mock toggle: if set, overrides USE_MOCK for auth calls */
+export const USE_MOCK_AUTH = import.meta.env.VITE_USE_MOCK_AUTH !== undefined
+  ? import.meta.env.VITE_USE_MOCK_AUTH === 'true'
+  : USE_MOCK;
+
 export const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? '/api').replace(/\/$/, '');
+export const AUTH_API_BASE_URL = (import.meta.env.VITE_AUTH_API_BASE_URL ?? API_BASE_URL).replace(/\/$/, '');
 
 /** Request timeout (ms). */
 export const REQUEST_TIMEOUT_MS = 10_000;
