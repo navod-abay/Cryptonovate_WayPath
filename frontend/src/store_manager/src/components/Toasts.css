@@ -1,0 +1,10 @@
+.sm-toasts { position: fixed; right: 24px; bottom: 24px; z-index: 200; display: flex; flex-direction: column; gap: 8px; max-width: 420px; }
+.sm-toast {
+  display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-radius: 12px;
+  background: var(--sm-white); box-shadow: var(--sm-shadow-pop); font-size: 16px; font-weight: 500;
+  animation: sm-pop .18s ease-out;
+}
+.sm-toast--error { color: var(--sm-maroon-500); border-left: 4px solid var(--sm-maroon-500); }
+.sm-toast--success { color: var(--sm-green-600); border-left: 4px solid var(--sm-green-600); }
+.sm-toast span { flex: 1; color: var(--sm-gray-900); }
+.sm-toast button { border: 0; background: none; color: var(--sm-gray-500); padding: 4px; border-radius: 6px; display: inline-flex; }

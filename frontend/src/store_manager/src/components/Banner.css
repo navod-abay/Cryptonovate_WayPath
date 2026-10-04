@@ -1,0 +1,6 @@
+.sm-banner { border-radius: var(--sm-radius); padding: 14px 24px; text-align: center; font-size: 20px; }
+.sm-banner strong { font-weight: 500; font-size: 22px; }
+.sm-banner--green { background: var(--sm-green-100); }
+.sm-banner--pink { background: var(--sm-maroon-100); }
+.sm-banner--amber { background: var(--sm-amber-100); }
+.sm-banner--cream { background: var(--sm-amber-50); }
