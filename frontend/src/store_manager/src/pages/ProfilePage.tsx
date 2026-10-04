@@ -30,7 +30,7 @@ export default function ProfilePage() {
     if (next !== confirm) { setMsg({ ok: false, text: 'New passwords do not match.' }); return; }
     setBusy(true);
     try {
-      await changePassword(current, next);
+      await changePassword(current, next, confirm);
       setMsg({ ok: true, text: 'Password changed.' });
       setCurrent(''); setNext(''); setConfirm('');
     } catch (err) {
@@ -90,7 +90,7 @@ export default function ProfilePage() {
             rows={[
               { key: 'o', label: 'Outlet', value: outlet.id },
               { key: 'c', label: 'City', value: outlet.city },
-              { key: 'a', label: 'Address', value: outlet.address },
+              { key: 'a', label: 'Address', value: outlet.address || '–' },
               { key: 'k', label: 'Order types', value: outlet.categories.map((c) => CATEGORY[c].short).join(', ') },
             ]}
           />

@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react';
 import type {
-  Delivery, Order, OrderLine, OrderType, Outlet, Product, Session, TruckCapacity, Update,
+  Delivery, DraftOrder, Order, OrderLine, OrderType, Outlet, Product, Session, TruckCapacity, Update,
 } from '@/types';
 
 /**
@@ -17,6 +17,8 @@ export interface AppState {
   products: Product[];
   capacity: Partial<Record<OrderType, TruckCapacity>>;
   orders: Order[];
+  /** Unconfirmed drafts: they pre-fill the cart for their day and category. */
+  drafts: DraftOrder[];
   deliveries: Delivery[];
   updates: Update[];
   lastOrderQty: Record<string, number>;
@@ -32,6 +34,7 @@ export const emptyData = () => ({
   products: [] as Product[],
   capacity: {},
   orders: [] as Order[],
+  drafts: [] as DraftOrder[],
   deliveries: [] as Delivery[],
   updates: [] as Update[],
   lastOrderQty: {},

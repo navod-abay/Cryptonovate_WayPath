@@ -9,6 +9,8 @@ export interface User {
   outlet_id: string | null;
   depot: string | null;
   vehicle_id: string | null; // drivers: the vehicle they drive
+  email?: string | null;
+  phone?: string | null;
   is_active: boolean;
   created_at: Date;
 }

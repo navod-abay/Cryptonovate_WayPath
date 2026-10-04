@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { ExecutionSyncService, HttpError } from '../services/sync.service';
+import { ExecutionError, ExecutionSyncService, HttpError } from '../services/sync.service';
 import { LoadingService } from '../services/loading.service';
 import {
   ShortfallSchema,
@@ -8,7 +8,7 @@ import {
   TelemetrySchema,
   PodSchema,
   BulkSyncSchema,
-  ConfirmOrderSchema,
+  HandoverSchema,
   DriverIncidentsSchema,
   DeliveryProblemSchema,
 } from '../schemas/execution.schema';
@@ -133,7 +133,7 @@ export class ExecutionController {
       const { stopId } = req.params;
       const validatedData = PodSchema.parse(req.body);
       const driverId = req.user?.userId;
-      const podResult = await ExecutionSyncService.recordPod(stopId, validatedData, driverId);
+      const podResult = await ExecutionSyncService.recordPod(stopId, validatedData, driverId, req.headers.authorization);
       return res.status(201).json({ success: true, data: podResult });
     } catch (err: any) {
       if (err.name === 'ZodError') {
@@ -147,7 +147,7 @@ export class ExecutionController {
   static async bulkSync(req: Request, res: Response) {
     try {
       const validatedData = BulkSyncSchema.parse(req.body);
-      const syncSummary = await ExecutionSyncService.processBulkSync(validatedData, req.user);
+      const syncSummary = await ExecutionSyncService.processBulkSync(validatedData, req.user, req.headers.authorization);
       return res.json({ success: true, data: syncSummary });
     } catch (err: any) {
       if (err.name === 'ZodError') {
@@ -157,16 +157,57 @@ export class ExecutionController {
     }
   }
 
-  // D1. Confirm Order Receipt
-  static async confirmOrder(req: Request, res: Response) {
+  // D0. Store manager starts unloading (vehicle at the outlet)
+  static async startUnloading(req: Request, res: Response) {
     try {
       const { orderRef } = req.params;
-      const validatedData = ConfirmOrderSchema.parse(req.body);
-      const storeManagerId = req.user?.userId;
-      const confirmation = await ExecutionSyncService.confirmOrder(orderRef, storeManagerId, validatedData.notes);
+      const { created, unloading } = await ExecutionSyncService.startUnloading(orderRef, req.headers.authorization, req.user?.userId);
+      return res.status(created ? 201 : 200).json({ success: true, data: unloading });
+    } catch (err: any) {
+      if (err instanceof ExecutionError) {
+        return res.status(err.status).json({ success: false, error: { code: err.code, message: err.message, details: err.details } });
+      }
+      return res.status(500).json({ success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: err.message } });
+    }
+  }
+
+  // D0b. Orders of an outlet whose unloading has started
+  static async listUnloadings(req: Request, res: Response) {
+    try {
+      const rows = await ExecutionSyncService.listUnloadings(req.params.outletId);
+      return res.json({ success: true, data: rows });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: err.message } });
+    }
+  }
+
+  // D1. Store manager taps Confirm Receipt: issue the handover code for the driver
+  static async confirmOrder(req: Request, res: Response) {
+    try {
+      const confirmation = await ExecutionSyncService.confirmOrder(req.params.orderRef, req.headers.authorization);
       return res.json({ success: true, data: confirmation });
     } catch (err: any) {
-      return res.status(500).json({ success: false, error: err.message });
+      if (err instanceof ExecutionError) {
+        return res.status(err.status).json({ success: false, error: { code: err.code, message: err.message, details: err.details } });
+      }
+      return res.status(500).json({ success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: err.message } });
+    }
+  }
+
+  // D1b. Driver enters the handover code at the outlet
+  static async handover(req: Request, res: Response) {
+    try {
+      const { code } = HandoverSchema.parse(req.body);
+      const result = await ExecutionSyncService.completeHandover(req.params.orderRef, code, req.headers.authorization);
+      return res.json({ success: true, data: result });
+    } catch (err: any) {
+      if (err.name === 'ZodError') {
+        return res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: err.errors?.[0]?.message || 'Validation Error', details: err.errors } });
+      }
+      if (err instanceof ExecutionError) {
+        return res.status(err.status).json({ success: false, error: { code: err.code, message: err.message, details: err.details } });
+      }
+      return res.status(500).json({ success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: err.message } });
     }
   }
 

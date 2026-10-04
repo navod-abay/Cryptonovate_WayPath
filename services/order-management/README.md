@@ -198,6 +198,7 @@ work with or without the `/api/orders` prefix. Every route except `/health` requ
 | POST | `/api/orders/:ref/confirm` | store_manager (own), dispatcher | Confirm under the 16:00 cutoff; `{accept_next_run}` |
 | DELETE | `/api/orders/:ref` | store_manager (own), dispatcher | Soft-cancel (draft/confirmed only) |
 | GET | `/api/orders/` | store_manager (own), dispatcher, loader | List with filters and pagination |
+| GET | `/api/orders/products?categories=&search=` | store_manager (own brand), dispatcher | Product catalogue (SKU, per-unit weight and volume, chilled flag); `categories` = chilled, dry, tech, style |
 | GET | `/api/orders/:ref` | store_manager (own), dispatcher, loader | Order with items and the latest 20 events |
 | GET | `/api/orders/:ref/history` | store_manager (own), dispatcher | Full audit trail, oldest first |
 | GET | `/api/orders/confirmed?date=&depot=` | dispatcher, loader | **Planning contract**: confirmed pool with outlet access fields and totals |

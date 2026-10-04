@@ -8,7 +8,7 @@ import ReportIssueModal from '@/components/ReportIssueModal';
 import ConfirmationCodeModal from '@/components/ConfirmationCodeModal';
 import CarouselNav from '@/components/Carousel';
 import { useAppStore } from '@/state/store';
-import { queueReceipt, removeReport } from '@/api/storeManagerApi';
+import { confirmReceipt, queueReceipt, removeReport } from '@/api/storeManagerApi';
 import { USE_MOCK } from '@/api/config';
 import { showError, showToast } from '@/state/toasts';
 import type { DeliveryItem } from '@/types';
@@ -92,7 +92,7 @@ export default function ReceiveDeliveryPage() {
                 <span role="cell" className="sm-table__name">{item.name}</span>
                 <span role="cell">{item.ordered}</span>
                 <span role="cell">{item.sent}</span>
-                <span role="cell">{item.received}</span>
+                <span role="cell">{done ? item.received : Math.max(0, item.sent - flagged)}</span>
                 <span role="cell">
                   {!done && (
                     <button
@@ -160,7 +160,10 @@ export default function ReceiveDeliveryPage() {
         ) : (
           <PrimaryButton
             title={issues ? `Confirm Receipt with ${issues} Issue${issues > 1 ? 's' : ''}` : 'Confirm Receipt'}
-            onClick={() => setCodeOpen(true)}
+            onClick={() => {
+              if (!delivery.driverDone) { setCodeOpen(true); return; }
+              confirmReceipt(delivery.id).then(() => navigate('/')).catch((e) => showError(e, 'Could not record the receipt.'));
+            }}
             style={{ borderRadius: 16, minHeight: 84, fontSize: 22 }}
           />
         )}

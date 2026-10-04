@@ -42,6 +42,8 @@ export async function initDatabaseAndSeed(): Promise<void> {
       ALTER TABLE users ADD COLUMN IF NOT EXISTS full_name VARCHAR(100);
       ALTER TABLE users ADD COLUMN IF NOT EXISTS outlet_id VARCHAR(20);
       ALTER TABLE users ADD COLUMN IF NOT EXISTS depot VARCHAR(50);
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS email VARCHAR(100);
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(30);
       -- Loaders (depot kiosk) and drivers (their phone) sign in with a 4-digit PIN (POST /pin-login),
       -- stored as a keyed hash that is unique per role and depot (services/pin.service.ts).
       ALTER TABLE users ADD COLUMN IF NOT EXISTS pin_lookup VARCHAR(64);
@@ -67,6 +69,8 @@ export async function initDatabaseAndSeed(): Promise<void> {
         username: 'dispatcher_admin',
         password_hash: passwordHash,
         full_name: 'System Dispatcher Admin',
+        email: 'dispatcher.admin@waypath.example',
+        phone: '+94 70 000 0001',
         role: 'dispatcher',
         outlet_id: null,
         depot: 'Peliyagoda',
@@ -85,6 +89,8 @@ export async function initDatabaseAndSeed(): Promise<void> {
         username: 'driver_colombo',
         password_hash: passwordHash,
         full_name: 'Colombo Route Driver',
+        email: 'driver.colombo@waypath.example',
+        phone: '+94 70 000 0003',
         role: 'driver',
         outlet_id: null,
         depot: 'Peliyagoda',
@@ -103,7 +109,9 @@ export async function initDatabaseAndSeed(): Promise<void> {
       {
         username: 'manager_out001',
         password_hash: passwordHash,
-        full_name: 'OUT001 Store Manager',
+        full_name: 'Nimal Fernando',
+        email: 'manager.out001@waypath.example',
+        phone: '+94 70 000 0004',
         role: 'store_manager',
         outlet_id: 'OUT001',
         depot: null,
@@ -121,17 +129,18 @@ export async function initDatabaseAndSeed(): Promise<void> {
       }
       await client.query(
         `
-        INSERT INTO users (username, password_hash, full_name, role, outlet_id, depot, vehicle_id, pin_lookup)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        INSERT INTO users (username, password_hash, full_name, role, outlet_id, depot, vehicle_id, pin_lookup, email, phone)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         ON CONFLICT (username) 
         DO UPDATE SET 
-          password_hash = EXCLUDED.password_hash,
           full_name = EXCLUDED.full_name,
           role = EXCLUDED.role,
           outlet_id = EXCLUDED.outlet_id,
           depot = EXCLUDED.depot,
           vehicle_id = EXCLUDED.vehicle_id,
-          pin_lookup = EXCLUDED.pin_lookup;
+          pin_lookup = EXCLUDED.pin_lookup,
+          email = COALESCE(users.email, EXCLUDED.email),
+          phone = COALESCE(users.phone, EXCLUDED.phone);
         `,
         [
           account.username,
@@ -142,6 +151,8 @@ export async function initDatabaseAndSeed(): Promise<void> {
           account.depot,
           'vehicle_id' in account ? account.vehicle_id : null,
           pin === null || !account.depot ? null : pinLookup(role, account.depot, pin),
+          'email' in account ? account.email : null,
+          'phone' in account ? account.phone : null,
         ]
       );
     }
