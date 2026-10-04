@@ -58,6 +58,114 @@ docker compose up --build
 
 Every service builds from its own folder (`services/<name>/`), so there is no root `package.json` and no shared workspace. To work on one service outside Docker, run `npm install` (Node) or `go run .` (Go) inside its folder.
 
+### 3. Driver Mobile App (Android)
+
+The driver app (`frontend/src/driver_mobile`, React Native) is not part of the Docker stack; build it on your machine and install it on an Android phone.
+
+**Prerequisites** (the versions our working build used)
+
+| Tool | Version |
+| :--- | :--- |
+| Node.js | 26.7.0 (the app needs ≥ 22.11), npm 12.0.2 |
+| JDK | OpenJDK 26.0.2 |
+| Gradle | 9.4.1 (downloaded by `./gradlew`; nothing to install) |
+| Android SDK platform | 37 (`compileSdk 37`, `targetSdk 36`, `minSdk 24`) |
+| Android SDK build-tools | 37.0.0 |
+| Android NDK | 27.1.12297006 |
+| React Native | 0.87.1 (installed by `npm install`) |
+
+Install the SDK pieces with Android Studio's SDK Manager (or `sdkmanager`) and set `ANDROID_HOME`, e.g. `export ANDROID_HOME=$HOME/Android/Sdk`. You also need an Android phone with USB debugging on, connected by USB (`adb devices` should list it).
+
+```bash
+cd frontend/src/driver_mobile
+npm install
+```
+
+The app calls the API gateway at the address in `src/api/gateway.ts` (`http://localhost` by default). With `adb reverse`, the phone's `localhost` is your machine, so the app reaches the stack you started above.
+
+**Option A: run in development (live reload)**
+
+```bash
+adb reverse tcp:80 tcp:80       # phone's localhost:80   -> the gateway on this machine
+adb reverse tcp:8081 tcp:8081   # phone's localhost:8081 -> Metro (the JavaScript bundler)
+npm start                        # Metro; leave it running
+npm run android                  # in a second terminal: builds, installs and opens the app
+```
+
+Run the two `adb reverse` commands again whenever the phone is reconnected.
+
+**Option B: build standalone APKs**
+
+```bash
+./scripts/build-apks.sh
+```
+
+This builds two release APKs, with the JavaScript bundled in so no Metro is needed, into `build/apks/`:
+
+| APK | App name | Talks to |
+| :--- | :--- | :--- |
+| `WayPath-server.apk` | WayPath | `SERVER_URL` (default `http://13.234.125.157`) |
+| `WayPath-local.apk` | WayPath (local) | `http://localhost`: needs `adb reverse tcp:80 tcp:80` and the stack running |
+
+They have different app ids, so both can be installed at the same time. Install with `adb install build/apks/WayPath-server.apk`, or copy the file to the phone and open it (allow installs from that source when asked).
+
+- `SERVER_URL=http://<host>` builds the server APK for another gateway.
+- Native code is built for 64-bit ARM only (all current phones). For an older 32-bit phone, add `ARCHS=arm64-v8a,armeabi-v7a`.
+- The first build takes about 7 minutes; later builds are much faster.
+- The APKs are signed with the debug key: fine for testing, not for the Play Store.
+
+**Signing in:** choose the depot and enter a driver PIN, e.g. Peliyagoda and `1001` for VEH001 (see [Drivers](#drivers-driver-mobile-app-pin-sign-in)). The app then shows that vehicle's trips for today.
+
+---
+
+## ☁️ AWS Deployment
+
+The live stack runs at **13.234.125.157** (AWS `ap-south-1`, Mumbai):
+
+| App | URL |
+| :--- | :--- |
+| Dispatcher | http://13.234.125.157:4173/ |
+| Store Manager | http://13.234.125.157:4174/ |
+| Loader (Peliyagoda kiosk) | http://13.234.125.157:4175/ |
+| API gateway | http://13.234.125.157/api/... (health check: `/health`) |
+| Driver app | `WayPath-server.apk` in the repository root |
+
+[infrastructure/terraform/main.tf](infrastructure/terraform/main.tf) creates the whole deployment: a single
+EC2 instance running the same Docker Compose stack as local development. There is no load balancer: the
+address above is an **Elastic IP** attached directly to the instance, so it survives a stop and start.
+
+- **Instance:** `m7i-flex.large`, Ubuntu 24.04 LTS, 30 GB encrypted gp3 disk, in the default VPC.
+- **Bootstrap (first boot only):** adds 4 GB of swap, installs Docker and the Compose plugin, clones this
+  repository's default branch into `/home/ubuntu/app`, copies `.env.example` to `.env` and runs
+  `docker compose up -d --build`. The log is in `/var/log/user-data.log`.
+- **Open ports:** 80 and 443 (gateway), 4173–4175 (web apps) and 22 (SSH, key pair `Tech3`). Everything else,
+  including PostgreSQL, NATS and the API docs, is not reachable from outside.
+
+**Creating it:**
+
+```bash
+cd infrastructure/terraform
+terraform init
+terraform apply        # prints the Elastic IP (fixed_application_url) and the SSH command
+```
+
+**Updating it:** the bootstrap only runs once, so later changes are pulled and rebuilt by hand:
+
+```bash
+ssh -i Tech3.pem ubuntu@13.234.125.157
+cd ~/app && git pull && docker compose up -d --build
+```
+
+**API address of the web apps:** the dispatcher, store manager and loader apps have the API address built
+in at build time, and `.env.example` sets it to `http://localhost`. On the server, set it to the server's
+address in `~/app/.env` before building, or the apps call the visitor's own machine:
+
+```bash
+DISPATCHER_API_BASE_URL=http://13.234.125.157
+STORE_MANAGER_API_BASE_URL=http://13.234.125.157
+LOADER_API_GATEWAY_URL=http://13.234.125.157
+```
+
 ---
 
 ## 🌐 Endpoint & Gateway Routing Map
