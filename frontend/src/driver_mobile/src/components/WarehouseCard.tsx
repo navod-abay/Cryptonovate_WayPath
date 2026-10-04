@@ -48,7 +48,7 @@ const styles = StyleSheet.create({
     padding: SPACING.md,
     borderWidth: 1,
     borderColor: COLORS.shade,
-    marginBottom: SPACING.lg,
+    marginBottom: SPACING.xsm,
     // elevation: 2, // Android shadow
   },
   cardHeader: { marginBottom: SPACING.md },

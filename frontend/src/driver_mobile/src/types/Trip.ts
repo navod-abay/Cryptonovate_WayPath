@@ -23,6 +23,7 @@ export interface TripNode {
   logs: TripLog[];
   inventory: InventoryItem[];
   reportCount?: number;
+  estimatedArrival?: string;
 }
 
 export interface TripPayload {

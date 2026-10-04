@@ -36,7 +36,7 @@ const styles = StyleSheet.create({
     padding: SPACING.md,
     borderWidth: 1,
     borderColor: COLORS.border,
-    marginBottom: SPACING.md,
+    marginBottom: 0, // Margin is handled by the wrapper now
     alignItems: 'center',
   },
   outletIndex: {

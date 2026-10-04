@@ -21,7 +21,7 @@ import Feather from 'react-native-vector-icons/Feather';
 import CarrotIcon from '../../components/CarrotIcon';
 import FontAwesome from 'react-native-vector-icons/FontAwesome';
 import AntDesign from 'react-native-vector-icons/AntDesign';
-
+import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'ActiveTrip'>;
@@ -226,7 +226,8 @@ export default function ActiveTripScreen({ navigation, route }: Props) {
 
         {/* View Items Link */}
         <TouchableOpacity style={styles.itemsLinkRow} onPress={() => setItemsVisible(true)}>
-          <FontAwesome name="list-alt" style={styles.itemsIcon} />
+          {/* <FontAwesome name="list-alt" style={styles.itemsIcon} /> */}
+          <MaterialIcons name="checklist-rtl" style={styles.itemsIcon} />
           <CustomText style={styles.itemsText}>View Items List</CustomText>
         </TouchableOpacity>
 

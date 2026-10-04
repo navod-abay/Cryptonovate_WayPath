@@ -28,6 +28,7 @@ export const COLORS = {
 } as const;
 
 export const SPACING = {
+  xsm: scale(4),
   sm: scale(8),
   md: scale(16),
   lg: scale(24),

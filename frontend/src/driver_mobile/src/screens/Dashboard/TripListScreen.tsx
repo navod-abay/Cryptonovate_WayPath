@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import {View, StyleSheet, FlatList, StatusBar, TouchableOpacity, ActivityIndicator} from 'react-native';
+import {View, StyleSheet, FlatList, ScrollView, StatusBar, TouchableOpacity, ActivityIndicator} from 'react-native';
 import CustomText from '../../components/CustomText';
 import { useSafeAreaInsets, SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -19,7 +19,8 @@ type Props = {
 export default function TripListScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
   const [loading, setLoading] = useState(true);
-  const [tripData, setTripData] = useState<TripPayload | null>(null);
+  const [trips, setTrips] = useState<TripPayload[]>([]);
+  const [activeTripIndex, setActiveTripIndex] = useState(0);
 
   useEffect(() => {
     fetchCurrentTrip();
@@ -28,34 +29,30 @@ export default function TripListScreen({ navigation }: Props) {
   const fetchCurrentTrip = async () => {
     setLoading(true);
     setTimeout(() => {
-      // FULLY POPULATED MOCK DATA TO PREVENT CRASHES
-      setTripData({
-        activeTripId: "Trip 1",
-        isStarted: false, 
-        nodes: [
-          { 
-            id: 'w1', type: 'warehouse', sequence: 0, title: 'Peliyagoda Warehouse', badgeText: 'DOCK 3', location: 'Peliyagoda', scheduledStart: '02:30 AM', scheduledEnd: '03:30 AM', 
-            status: 'pending', logs: [], 
-            inventory: [] 
-          },
-          { 
-            id: 'o1', type: 'outlet', sequence: 1, title: 'OUT001', badgeText: 'MALL BAY DOCK', location: 'Colombo', scheduledStart: '05:30 AM', scheduledEnd: '08:30 AM', 
-            status: 'pending', logs: [], 
-            inventory: [
-              { id: '1', name: 'Diary Crates', expected: 6, actual: 5 }, // Mismatched for demo
-              { id: '2', name: 'Fresh Milk Crates', expected: 5, actual: 5 }
-            ] 
-          },
-          { 
-            id: 'o2', type: 'outlet', sequence: 2, title: 'OUT018', badgeText: 'STREET', location: 'Colombo', scheduledStart: '07:00 AM', scheduledEnd: '05:00 PM', 
-            status: 'pending', logs: [], 
-            inventory: [] 
-          },
-        ]
-      });
+      setTrips([
+        {
+          activeTripId: "Trip 1",
+          isStarted: false, 
+          nodes: [
+            { id: 'w1', type: 'warehouse', sequence: 0, title: 'Peliyagoda Warehouse', badgeText: 'DOCK 3', location: 'Peliyagoda', scheduledStart: '02:30 AM', scheduledEnd: '03:30 AM', status: 'pending', logs: [], inventory: [] },
+            { id: 'o1', type: 'outlet', sequence: 1, title: 'OUT001', badgeText: 'MALL BAY DOCK', location: 'Colombo', scheduledStart: '05:30 AM', scheduledEnd: '08:30 AM', estimatedArrival: '5:28 AM', status: 'pending', logs: [], inventory: [{ id: '1', name: 'Diary Crates', expected: 6, actual: 5 }, { id: '2', name: 'Fresh Milk Crates', expected: 5, actual: 5 }] },
+            { id: 'o2', type: 'outlet', sequence: 2, title: 'OUT018', badgeText: 'STREET', location: 'Colombo', scheduledStart: '07:00 AM', scheduledEnd: '05:00 PM', estimatedArrival: '7:05 AM', status: 'pending', logs: [], inventory: [] },
+          ]
+        },
+        {
+          activeTripId: "Trip 2",
+          isStarted: false, 
+          nodes: [
+            { id: 'w2', type: 'warehouse', sequence: 0, title: 'Kandy Warehouse', badgeText: 'DOCK 1', location: 'Kandy', scheduledStart: '01:00 PM', scheduledEnd: '02:00 PM', status: 'pending', logs: [], inventory: [] },
+            { id: 'o3', type: 'outlet', sequence: 1, title: 'OUT022', badgeText: 'STREET', location: 'Kandy', scheduledStart: '02:30 PM', scheduledEnd: '04:30 PM', estimatedArrival: '2:15 PM', status: 'pending', logs: [], inventory: [] },
+          ]
+        }
+      ]);
       setLoading(false);
     }, 1000);
   };
+  
+  const tripData = trips[activeTripIndex];
 
   if (loading || !tripData) {
     return (
@@ -79,27 +76,6 @@ export default function TripListScreen({ navigation }: Props) {
     navigation.navigate('ActiveTrip', { tripData: startedTrip, initialIndex: 0 });
   };
 
-  // Header wrapped in TouchableOpacity
-  const renderHeader = () => (
-    <TouchableOpacity activeOpacity={0.8} onPress={() => handleCardPress(0)} style={{ marginBottom: SPACING.md }}>
-      {warehouseNode && (
-        <WarehouseCard 
-          title={warehouseNode.title}
-          badgeText={warehouseNode.badgeText}
-          arriveTime={warehouseNode.scheduledStart}
-          departTime={warehouseNode.scheduledEnd}
-        />
-      )}
-    </TouchableOpacity>
-  );
-
-  const renderFooter = () => (
-    <PrimaryButton 
-      title={`Start ${tripData.activeTripId}`} 
-      onPress={handleStartTrip} 
-      style={{ marginTop: SPACING.lg, marginBottom: SPACING.xl }}
-    />
-  );
 
   return (
     <View style={styles.container}>
@@ -117,28 +93,45 @@ export default function TripListScreen({ navigation }: Props) {
 
       {/* TABS SECTION */}
       <View style={styles.tabContainer}>
-        <TouchableOpacity style={[styles.tab, styles.activeTab]}>
-          <CustomText style={styles.activeTabText}>{tripData.activeTripId}</CustomText>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.tab}>
-          <CustomText style={styles.inactiveTabText}>Trip 2</CustomText>
-        </TouchableOpacity>
+        {trips.map((trip, idx) => (
+          <TouchableOpacity 
+            key={idx} 
+            style={[styles.tab, activeTripIndex === idx && styles.activeTab]}
+            onPress={() => setActiveTripIndex(idx)}
+          >
+            <CustomText style={activeTripIndex === idx ? styles.activeTabText : styles.inactiveTabText}>
+              {trip.activeTripId}
+            </CustomText>
+          </TouchableOpacity>
+        ))}
       </View>
 
-      <FlatList
-        data={outletNodes}
-        keyExtractor={(item) => item.id}
-        // Outlet rows wrapped in TouchableOpacity
-        renderItem={({ item, index }) => (
-          <TouchableOpacity activeOpacity={0.8} onPress={() => handleCardPress(index + 1)}>
-            <OutletRow node={item} />
-          </TouchableOpacity>
-        )}
-        ListHeaderComponent={renderHeader}
-        ListFooterComponent={renderFooter}
-        contentContainerStyle={styles.listContent}
-        showsVerticalScrollIndicator={false}
-      />
+      <ScrollView contentContainerStyle={styles.listContent} showsVerticalScrollIndicator={false}>
+        <View style={styles.cardWrapper}>
+          {warehouseNode && (
+            <TouchableOpacity activeOpacity={0.8} onPress={() => handleCardPress(0)} style={{ marginBottom: SPACING.xsm }}>
+              <WarehouseCard 
+                title={warehouseNode.title}
+                badgeText={warehouseNode.badgeText}
+                arriveTime={warehouseNode.scheduledStart}
+                departTime={warehouseNode.scheduledEnd}
+              />
+            </TouchableOpacity>
+          )}
+          
+          {outletNodes.map((item, index) => (
+            <TouchableOpacity key={item.id} activeOpacity={0.8} onPress={() => handleCardPress(index + 1)} style={{ marginBottom: index === outletNodes.length - 1 ? 0 : SPACING.xsm }}>
+              <OutletRow node={item} />
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        <PrimaryButton 
+          title={`Start ${tripData.activeTripId}`} 
+          onPress={handleStartTrip} 
+          style={{ marginTop: SPACING.lg, marginBottom: SPACING.xl }}
+        />
+      </ScrollView>
 
       {/* BOTTOM NAV */}
       <View style={[styles.bottomNav, { paddingBottom: insets.bottom || SPACING.md }]}>
@@ -165,6 +158,7 @@ const styles = StyleSheet.create({
   activeTabText: { color: COLORS.primaryDark, fontWeight: FONT_WEIGHT.bold, fontSize: FONT_SIZE.md },
   inactiveTabText: { color: COLORS.tabInactive, fontWeight: FONT_WEIGHT.medium, fontSize: FONT_SIZE.md },
   listContent: { padding: SPACING.lg },
+  cardWrapper: { borderWidth: 1, borderColor: COLORS.border, borderRadius: scale(12), padding: SPACING.sm, backgroundColor: 'transparent' },
   bottomNav: { flexDirection: 'row', justifyContent: 'space-around', backgroundColor: COLORS.surface, paddingTop: SPACING.md, borderTopWidth: 1, borderTopColor: COLORS.border },
   navItem: { flex: 1, alignItems: 'center', justifyContent: 'center' }
 });
