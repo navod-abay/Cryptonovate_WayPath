@@ -13,7 +13,7 @@ app.use(express.json());
 // Health Check Endpoint
 app.get('/health', (req: Request, res: Response) => {
   res.json({
-    service: 'fleet-director',
+    service: 'fleet-directory',
     status: 'healthy',
     timestamp: new Date().toISOString(),
   });
