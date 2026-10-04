@@ -1,0 +1,10 @@
+.sm-update {
+  width: 100%; display: grid; grid-template-columns: 30px 1fr auto; align-items: center; gap: 16px;
+  padding: 16px 24px; border: 0; border-radius: var(--sm-radius);
+  background: var(--sm-gray-50); text-align: left; color: var(--sm-gray-900);
+}
+.sm-update.is-link:hover { background: var(--sm-cyan-50); }
+.sm-update__icon { color: var(--sm-gray-500); }
+.sm-update__msg { font-size: 18px; line-height: 1.65; }
+.sm-update__time { font-size: 15px; color: var(--sm-gray-600); white-space: nowrap; font-weight: 500; }
+.sm-update.is-unread { box-shadow: inset 4px 0 0 var(--sm-amber-500); }

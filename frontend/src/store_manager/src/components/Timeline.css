@@ -1,0 +1,12 @@
+.sm-timeline { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.sm-timeline__step { display: flex; align-items: center; gap: 32px; padding: 14px 16px; border-radius: var(--sm-radius); }
+.sm-timeline__step.is-current { background: #EFF3F6; }
+.sm-timeline__dot {
+  width: 56px; height: 56px; flex: none; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--sm-gray-200); color: var(--sm-white); font-size: 26px; font-weight: 500;
+}
+.sm-timeline__step.is-done .sm-timeline__dot { background: var(--sm-cyan-600); color: var(--sm-white); }
+.sm-timeline__step.is-alert .sm-timeline__dot { background: var(--sm-maroon-500); }
+.sm-timeline__label { display: block; font-size: 22px; font-weight: 500; }
+.sm-timeline__time { display: block; margin-top: 8px; font-size: 17px; font-weight: 500; color: var(--sm-gray-500); }

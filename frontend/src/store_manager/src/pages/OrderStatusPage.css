@@ -1,0 +1,25 @@
+.sm-status {
+  display: grid; grid-template-columns: minmax(0, 654fr) minmax(0, 400fr) 330px; gap: 16px; align-items: start;
+  min-height: calc(100vh - var(--sm-nav-h));
+}
+.sm-status__main, .sm-status__summary { min-height: calc(100vh - var(--sm-nav-h) - 32px); }
+.sm-status__main { padding: 34px 24px; }
+.sm-status__head { display: flex; align-items: center; gap: 10px; font-size: 36px; font-weight: 500; padding-bottom: 32px; border-bottom: 1px solid var(--sm-gray-200); }
+.sm-status__title { font-size: 30px; font-weight: 500; margin: 36px 0 24px; }
+.sm-status__summary { padding: 40px; display: flex; flex-direction: column; gap: 8px; }
+.sm-status__summary h2 { font-size: 30px; font-weight: 500; padding-bottom: 16px; }
+.sm-status__summary .sm-kv { padding: 0 12px; }
+.sm-status__items-title { margin-top: 40px; }
+.sm-status__ref { margin-top: auto; padding-top: 24px; font-size: 14px; color: var(--sm-gray-500); }
+.sm-status__side { display: flex; flex-direction: column; gap: 16px; }
+.sm-status__box { border-radius: var(--sm-radius); padding: 40px 24px; text-align: center; font-size: 18px; line-height: 1.6; display: flex; flex-direction: column; gap: 14px; align-items: center; }
+.sm-status__box a { color: var(--sm-cyan-600); font-weight: 500; }
+.sm-status__box-title { font-size: 22px; font-weight: 500; }
+.sm-status__big { font-size: 28px; font-weight: 500; }
+.sm-status__box--eta { background: var(--sm-cyan-100); border: 2px solid var(--sm-cyan-500); min-height: 200px; }
+.sm-status__box--vehicle { background: var(--sm-cyan-100); padding: 22px; }
+.sm-status__box--deferred { background: var(--sm-maroon-50); border: 2px solid var(--sm-maroon-500); padding: 32px 14px 14px; }
+.sm-status__why { background: var(--sm-white); border-radius: var(--sm-radius); padding: 20px 22px; text-align: left; }
+.sm-status__why-title { font-size: 22px; font-weight: 500; margin-bottom: 12px; }
+.sm-status__box--done { background: var(--sm-green-50); border: 2px solid var(--sm-green-600); }
+.sm-status__box--waiting { background: var(--sm-amber-50); border: 2px solid var(--sm-amber-200); }

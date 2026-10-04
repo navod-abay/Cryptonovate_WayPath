@@ -1,0 +1,5 @@
+.sm-type-icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  flex: none; border-radius: 12px;
+}
+.sm-type-icon--faded svg { opacity: .45; }
