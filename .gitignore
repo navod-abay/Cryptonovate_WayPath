@@ -45,3 +45,4 @@ infrastructure/terraform/terraform.tfstate.backup
 infrastructure/terraform/*.tfplan
 infrastructure/terraform/crash.log
 infrastructure/terraform/.terraform.tfstate.lock.info
+infrastructure/terraform/Tech3.pem
