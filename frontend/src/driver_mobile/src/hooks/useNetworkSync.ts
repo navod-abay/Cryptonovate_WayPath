@@ -21,7 +21,13 @@ export const useNetworkSync = () => {
 
     // Check initial network state
     NetInfo.fetch().then(state => {
-      setIsOnline(!!(state.isConnected && state.isInternetReachable !== false));
+      const currentlyOnline = !!(state.isConnected && state.isInternetReachable !== false);
+      setIsOnline(currentlyOnline);
+      
+      // Also attempt a sync right when the app opens, just in case there are leftover tasks!
+      if (currentlyOnline) {
+        syncOfflineDeliveries();
+      }
     });
 
     return () => {

@@ -14,6 +14,7 @@ import SuccessModal from '../../components/SuccessModal';
 import { ActivityIndicator } from 'react-native';
 import DeliveryConfirmationModal from '../../components/DeliveryConfirmationModal';
 import NetInfo from '@react-native-community/netinfo';
+import { launchCamera, CameraOptions } from 'react-native-image-picker';
 import { saveOfflineDelivery } from '../../services/SyncService';
 import { TripNode, TripLog } from '../../types/trip';
 import Feather from 'react-native-vector-icons/Feather';
@@ -52,6 +53,31 @@ export default function ActiveTripScreen({ navigation, route }: Props) {
   const [unloadedPhotos, setUnloadedPhotos] = useState<string[]>([]);
   const [paperPhotos, setPaperPhotos] = useState<string[]>([]);
 
+  const handleCapturePhoto = async (type: 'unloaded' | 'paper') => {
+    const options: CameraOptions = {
+      mediaType: 'photo',
+      cameraType: 'back',
+      saveToPhotos: true,
+      quality: 0.5,
+    };
+    
+    launchCamera(options, (response) => {
+      if (response.didCancel) return;
+      if (response.errorMessage) {
+        console.error('Camera Error: ', response.errorMessage);
+        return;
+      }
+      
+      const fileName = response.assets?.[0]?.fileName || `photo_${Date.now()}.jpg`;
+      
+      if (type === 'unloaded') {
+        setUnloadedPhotos(prev => [...prev, fileName]);
+      } else {
+        setPaperPhotos(prev => [...prev, fileName]);
+      }
+    });
+  };
+
   // Status computation
   const totalOutlets = nodes.filter(n => n.type === 'outlet').length;
   const currentOutletIndex = nodes.slice(0, currentIndex + 1).filter(n => n.type === 'outlet').length;
@@ -65,15 +91,25 @@ export default function ActiveTripScreen({ navigation, route }: Props) {
     setNodes(updatedNodes);
   };
 
-  const handleArrival = () => {
-    updateNodeState('arrived', { action: 'Arrival', time: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) });
-    
-    // Simulate loading/unloading confirmation for BOTH warehouse and outlets after 3 seconds
+  const handleArrival = async () => {
     setIsLoadingNetwork(true);
+    
+    // Check actual network status
+    const networkState = await NetInfo.fetch();
+    
     setTimeout(() => {
       setIsLoadingNetwork(false);
-      setNoNetworkModalVisible(true);
-    }, 2000);
+      
+      if (networkState.isConnected && networkState.isInternetReachable !== false) {
+        // Online: proceed as normal
+        updateNodeState('arrived', { action: 'Arrival', time: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) });
+        // Simulating the 3 second confirmation wait from backend
+        setTimeout(() => updateNodeState('ready_to_depart'), 3000);
+      } else {
+        // Offline: prompt user
+        setNoNetworkModalVisible(true);
+      }
+    }, 1000); // brief loader for UX
   };
 
   const handleOTPConfirm = (code: string) => {
@@ -203,7 +239,7 @@ export default function ActiveTripScreen({ navigation, route }: Props) {
           <View style={styles.proofContainer}>
             <CustomText style={styles.proofTitle}>Proof of Delivery</CustomText>
             
-            <TouchableOpacity style={styles.uploadBox} onPress={() => setUnloadedPhotos([...unloadedPhotos, `camera${Math.floor(10000 + Math.random() * 90000)}.png`])}>
+            <TouchableOpacity style={styles.uploadBox} onPress={() => handleCapturePhoto('unloaded')}>
               <Feather name="camera" size={scale(20)} color={COLORS.textSecondary} style={styles.uploadIcon} />
               <CustomText style={styles.uploadText}>Photo of unloaded items</CustomText>
             </TouchableOpacity>
@@ -218,7 +254,7 @@ export default function ActiveTripScreen({ navigation, route }: Props) {
               ))}
             </View>
 
-            <TouchableOpacity style={styles.uploadBox} onPress={() => setPaperPhotos([...paperPhotos, `camera${Math.floor(10000 + Math.random() * 90000)}.png`])}>
+            <TouchableOpacity style={styles.uploadBox} onPress={() => handleCapturePhoto('paper')}>
               <Feather name="camera" size={scale(20)} color={COLORS.textSecondary} style={styles.uploadIcon} />
               <CustomText style={styles.uploadText}>Paper confirmation by{'\n'}the store manager</CustomText>
             </TouchableOpacity>
