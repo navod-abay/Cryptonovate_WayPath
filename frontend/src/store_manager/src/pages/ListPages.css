@@ -1,0 +1,14 @@
+.sm-list { padding: 40px 24px; display: flex; flex-direction: column; gap: 6px; }
+.sm-list__title { font-size: 36px; font-weight: 500; padding-bottom: 24px; margin-bottom: 12px; border-bottom: 1px solid var(--sm-gray-200); }
+.sm-list__row {
+  display: grid; grid-template-columns: 1.4fr 2fr 1fr 1.2fr; align-items: center;
+  min-height: 72px; padding: 0 16px; border: 0; border-radius: var(--sm-radius);
+  background: none; text-align: left; font-size: 20px;
+}
+.sm-list__row--5 { grid-template-columns: 1.4fr 2fr 1.2fr 1.2fr 1.2fr; }
+button.sm-list__row:nth-child(even) { background: var(--sm-cyan-50); }
+button.sm-list__row:hover { background: var(--sm-cyan-100); }
+.sm-list__row--head { min-height: 56px; background: var(--sm-cyan-150); color: var(--sm-gray-500); font-weight: 500; }
+.sm-list__type { display: inline-flex; align-items: center; gap: 12px; }
+.sm-list__row .wp-badge { font-size: 13px !important; padding: 6px 12px !important; }
+.sm-list__empty { padding: 16px; color: var(--sm-gray-500); }
