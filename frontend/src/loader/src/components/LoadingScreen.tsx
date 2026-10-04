@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { CommonHeader } from './CommonHeader';
 import { VehicleCard, Vehicle } from './VehicleCard';
 import { MoveUpDown } from './MoveUpDown';
@@ -41,7 +41,7 @@ export function LoadingScreen({
     scrollRef.current?.scrollBy({ top: 200, behavior: 'smooth' });
   }, []);
 
-  React.useEffect(() => {
+  useEffect(() => {
     const interval = setInterval(() => {
       setCurrentTime(
         new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })
@@ -118,7 +118,7 @@ export function LoadingScreen({
             <div ref={scrollRef} className="flex-1 overflow-y-auto space-y-3">
               {vehicles.map((vehicle) => (
                 <VehicleCard
-                  key={vehicle.vehicle_id}
+                  key={vehicle.id}
                   vehicle={vehicle}
                   onStartLoading={onView}
                   actionLabel="View"

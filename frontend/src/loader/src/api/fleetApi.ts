@@ -1,4 +1,4 @@
-import { apiGet, apiPatch } from './clientApi';
+import { apiGet, apiPatch, apiPost } from './clientApi';
 import { Vehicle } from '../components/VehicleCard';
 
 function mapApiVehicle(apiVehicle: Record<string, unknown>): Vehicle {

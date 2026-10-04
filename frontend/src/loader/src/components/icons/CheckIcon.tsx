@@ -1,4 +1,3 @@
-import React from 'react';
 
 export function CheckIcon({ size = 24 }: { size?: number }) {
   return (

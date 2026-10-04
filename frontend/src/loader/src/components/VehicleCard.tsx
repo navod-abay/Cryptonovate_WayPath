@@ -1,4 +1,3 @@
-import React from 'react';
 import { ChilledIcon, CarrotIcon, TechIcon, TruckIcon, VanIcon } from './icons';
 
 export interface Vehicle {

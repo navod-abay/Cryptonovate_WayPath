@@ -1,5 +1,6 @@
 import { apiGet, apiPost } from './clientApi';
 import { Vehicle } from '../components/VehicleCard';
+export type { Vehicle } from '../components/VehicleCard';
 
 export interface LoadingItem {
   id: string;

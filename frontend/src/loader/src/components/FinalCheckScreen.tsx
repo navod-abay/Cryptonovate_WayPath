@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { TickIcon, ContainerIcon } from './icons';
 import { Vehicle } from './VehicleCard';
 import { CommonHeader } from './CommonHeader';
-import { getManifest, dispatchTrip } from '../api/executionApi';
+import { dispatchTrip } from '../api/executionApi';
 import truckIllustration from './icons/TruckIllustration.png';
 
 interface FinalCheckScreenProps {
@@ -25,7 +25,7 @@ export function FinalCheckScreen({
   onRelease,
 }: FinalCheckScreenProps) {
   const [activeOutlet, setActiveOutlet] = useState(outlets.length); // Container icon selected by default
-  const [departMinutes, setDepartMinutes] = useState(5);
+  const departMinutes = 5;
   const [checkedItems, setCheckedItems] = useState<boolean[]>([true, true, true]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');

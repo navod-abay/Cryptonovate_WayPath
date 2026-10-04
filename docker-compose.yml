@@ -216,8 +216,22 @@ services:
       gateway:
         condition: service_healthy
 
-  # loader: add once the loader web app is merged — same shape as store-manager,
-  # dockerfile src/loader/Dockerfile, host port 4175.
+  loader:
+    build:
+      context: ./frontend
+      dockerfile: src/loader/Dockerfile
+      args:
+        VITE_API_GATEWAY_URL: ${LOADER_API_GATEWAY_URL:-http://localhost}
+    container_name: app_loader
+    restart: unless-stopped
+    ports:
+      - "4175:4173"
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:4173/"]
+    depends_on:
+      gateway:
+        condition: service_healthy
 
   # ============================================================================
   # API GATEWAY (NGINX Reverse Proxy)

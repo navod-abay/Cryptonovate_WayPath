@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { CommonHeader } from './CommonHeader';
 import { VehicleCard, Vehicle } from './VehicleCard';
 import { MoveUpDown } from './MoveUpDown';
@@ -39,31 +39,13 @@ export function ReadyToLoadScreen({
     setVehicles(initialVehicles);
   }, [initialVehicles]);
 
-  React.useEffect(() => {
+  useEffect(() => {
     const interval = setInterval(() => {
       setCurrentTime(
         new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })
       );
     }, 60000);
     return () => clearInterval(interval);
-  }, []);
-
-  const handleMoveUp = useCallback((index: number) => {
-    if (index === 0) return;
-    setVehicles((prev) => {
-      const next = [...prev];
-      [next[index - 1], next[index]] = [next[index], next[index - 1]];
-      return next;
-    });
-  }, []);
-
-  const handleMoveDown = useCallback((index: number) => {
-    setVehicles((prev) => {
-      if (index === prev.length - 1) return prev;
-      const next = [...prev];
-      [next[index], next[index + 1]] = [next[index + 1], next[index]];
-      return next;
-    });
   }, []);
 
   const handleScrollUp = useCallback(() => {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { LoaderPinEntry } from './components/LoaderPinEntry';
 import { ReadyToLoadScreen } from './components/ReadyToLoadScreen';
 import { LoadingScreen } from './components/LoadingScreen';
@@ -6,7 +6,8 @@ import { CompletedScreen } from './components/CompletedScreen';
 import { LoadingDetailScreen } from './components/LoadingDetailScreen';
 import { FinalCheckScreen } from './components/FinalCheckScreen';
 import { login, getProfile, isAuthenticated, logout, AuthUser } from './api/authApi';
-import { getActiveTrips, getManifest, LoadingItem, Vehicle } from './api/executionApi';
+import { getActiveTrips, getManifest, transformManifestToItems, LoadingItem } from './api/executionApi';
+import { Vehicle } from './components/VehicleCard';
 import { outlets } from './data/mockData';
 
 type Screen = 'pin' | 'queue' | 'loading' | 'completed' | 'detail' | 'finalCheck';
@@ -14,7 +15,7 @@ type Screen = 'pin' | 'queue' | 'loading' | 'completed' | 'detail' | 'finalCheck
 export default function LoaderApp() {
   const [screen, setScreen] = useState<Screen>('pin');
   const [workerName, setWorkerName] = useState('');
-  const [user, setUser] = useState<AuthUser | null>(null);
+  const [, setUser] = useState<AuthUser | null>(null);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [loadingItems, setLoadingItems] = useState<LoadingItem[]>([]);
   const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null);
@@ -53,7 +54,7 @@ export default function LoaderApp() {
     if (screen === 'detail') {
       setIsLoading(true);
       getManifest('trip_001')
-        .then((manifest) => setLoadingItems(manifest.items))
+        .then((manifest) => setLoadingItems(transformManifestToItems(manifest)))
         .catch((err) => setError(err.message))
         .finally(() => setIsLoading(false));
     }
@@ -102,19 +103,11 @@ export default function LoaderApp() {
     console.log('View:', vehicleId);
   };
 
-  const handleLogout = () => {
-    logout();
-    setUser(null);
-    setWorkerName('');
-    setScreen('pin');
-  };
-
   if (screen === 'pin') {
     return (
       <LoaderPinEntry
         onSuccess={handleLogin}
-        isLoading={isLoading}
-        error={error}
+        apiError={error}
         depot="Peliyagoda"
         dock="Dock 03"
         vehiclesBefore={vehicles.length}
@@ -139,7 +132,7 @@ export default function LoaderApp() {
     return (
       <FinalCheckScreen
         vehicle={vehicles[0] || {
-          vehicle_id: 'VEH056',
+          id: 'VEH056',
           type: 'truck',
           temp: 'reefer',
           weight_cap_kg: 5000,

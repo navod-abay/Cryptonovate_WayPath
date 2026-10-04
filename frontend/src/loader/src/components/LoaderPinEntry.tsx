@@ -1,11 +1,10 @@
-import React, { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { LoaderInfoPanel } from './LoaderInfoPanel';
 import { PinDisplay } from './PinDisplay';
 import { NumericKeypad } from './NumericKeypad';
 
 interface LoaderPinEntryProps {
   onSuccess?: (pin: string) => void;
-  isLoading?: boolean;
   apiError?: string;
   depot?: string;
   dock?: string;
@@ -16,7 +15,6 @@ interface LoaderPinEntryProps {
 
 export function LoaderPinEntry({
   onSuccess,
-  isLoading,
   apiError,
   depot,
   dock,
@@ -25,7 +23,7 @@ export function LoaderPinEntry({
   maxPinLength = 4,
 }: LoaderPinEntryProps) {
   const [pin, setPin] = useState('');
-  const [error, setError] = useState('');
+  const [, setError] = useState('');
   const [success, setSuccess] = useState(false);
   const isSubmitting = useRef(false);
 
@@ -48,7 +46,7 @@ export function LoaderPinEntry({
     setError('');
   }, []);
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (pin.length === maxPinLength && !isSubmitting.current) {
       isSubmitting.current = true;
       const timer = setTimeout(async () => {

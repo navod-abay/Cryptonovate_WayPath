@@ -1,4 +1,3 @@
-import React from 'react';
 
 export function TechIcon({ size = 32 }: { size?: number }) {
   return (

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { RedFlagIcon, DoubleTickIcon, AlertIcon } from './icons';
 import { Vehicle } from './VehicleCard';
 import { CommonHeader } from './CommonHeader';
@@ -28,15 +28,15 @@ export function LoadingDetailScreen({
   onFinish,
 }: LoadingDetailScreenProps) {
   const [activeOutlet, setActiveOutlet] = useState(0);
-  const [departMinutes, setDepartMinutes] = useState(39);
+  const departMinutes = 39;
   const [items, setItems] = useState<LoadingItem[]>(initialItems || []);
   const [manifest, setManifest] = useState<TripManifest | null>(null);
   const [showDamageModal, setShowDamageModal] = useState(false);
   const [showMissingModal, setShowMissingModal] = useState(false);
   const [selectedItem, setSelectedItem] = useState<LoadingItem | null>(null);
   const [damageCount, setDamageCount] = useState(1);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [, setIsLoading] = useState(false);
+  const [, setError] = useState('');
 
   // Get outlets in loading sequence order from manifest stops
   const manifestStops = manifest?.stops || [];
@@ -107,10 +107,10 @@ export function LoadingDetailScreen({
     try {
       const tripId = `TRIP-${vehicle.id}`;
       await reportShortfall(tripId, {
-        orderRef: 'ORD-1001',
+        order_ref: 'ORD-1001',
         sku: selectedItem.id,
-        missingQty: damageCount,
-        damageFlag: true,
+        missing_qty: damageCount,
+        damage_flag: true,
         notes: 'Damaged during loading',
       });
       setItems((prev) =>
