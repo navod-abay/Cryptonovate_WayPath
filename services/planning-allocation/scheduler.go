@@ -24,7 +24,7 @@ import (
 // that is) and plans it once.
 //
 // A failed run is retried on later ticks, up to maxAttempts per date and trigger; after that the
-// date needs a manual POST /planning-runs.
+// date needs a manual POST /planning-runs (service token, role "system").
 type Scheduler struct {
 	orders      OrdersAPI
 	deps        []func(context.Context) error // health checks of the services a run needs
@@ -94,7 +94,7 @@ func (s *Scheduler) tick(ctx context.Context) {
 		return
 	}
 	if failed >= s.maxAttempts {
-		log.Printf("[%s] scheduler: %s failed %d times; not retrying (start it with POST /planning-runs)", serviceName, day, failed)
+		log.Printf("[%s] scheduler: %s failed %d times; not retrying (start it with POST /planning-runs and a service token)", serviceName, day, failed)
 		s.doneDay = today
 		return
 	}
@@ -161,7 +161,7 @@ func (s *Scheduler) recordHistory(ctx context.Context, date time.Time) bool {
 	if s.historyOff || s.historyDone[day] {
 		return true
 	}
-	trips, err := s.plans.Trips(ctx, date, "", "")
+	trips, err := s.plans.Trips(ctx, date, TripFilter{})
 	if err != nil {
 		log.Printf("[%s] history: load plan for %s: %v", serviceName, day, err)
 		return false

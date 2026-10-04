@@ -44,6 +44,46 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /pin-login:
+    post:
+      tags: [Auth]
+      summary: Log a loader (depot kiosk) or driver (phone) in with their 4-digit PIN
+      description: >-
+        PINs are unique per role within a depot, so role, depot and PIN identify one active user. A
+        driver's token carries vehicle_id, the vehicle they drive.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [depot, pin]
+              properties:
+                depot:
+                  type: string
+                  example: Peliyagoda
+                role:
+                  type: string
+                  enum: [loader, driver]
+                  default: loader
+                pin:
+                  type: string
+                  pattern: '^\d{4}$'
+                  example: '1234'
+      responses:
+        '200':
+          description: Authenticated (same body as /login)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
   /refresh:
     post:
       tags: [Auth]
@@ -116,6 +156,60 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /loaders:
+    get:
+      tags: [Auth]
+      summary: List the active loaders, of all depots or one
+      description: For Planning (service token, role system), which shares each day's vehicles among a depot's loaders, and dispatchers.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: depot
+          in: query
+          required: false
+          schema:
+            type: string
+            example: Peliyagoda
+      responses:
+        '200':
+          description: Loaders, ordered by depot then username
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, username, fullName, depot]
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        username:
+                          type: string
+                        fullName:
+                          type: string
+                        depot:
+                          type: string
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Not a dispatcher or service token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
   /health:
     get:
       tags: [System]
@@ -181,6 +275,10 @@ components:
         depot:
           type: string
           nullable: true
+        vehicleId:
+          type: string
+          nullable: true
+          description: Drivers only, the vehicle they drive
 
     LoginResponse:
       type: object

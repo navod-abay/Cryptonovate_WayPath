@@ -1,14 +1,20 @@
-const LOCAL_IP = '192.168.1.X'; // Replace with your Windows machine's local IPv4 address
+// The app talks to the API gateway (NGINX, port 80), which routes /api/<service> to each service.
+//
+// On a phone plugged in over USB, `adb reverse tcp:80 tcp:80` makes the phone's localhost:80 the
+// gateway on the development machine, so no IP address is needed (Metro uses the same trick on 8081).
+// On the Android emulator without adb reverse, use http://10.0.2.2 instead.
+const GATEWAY_URL = 'http://localhost';
 
 export const API_ROUTES = {
-  AUTH: `http://${LOCAL_IP}:5001/api/auth`,
-  ORDERS: `http://${LOCAL_IP}:5002/api/orders`,
-  SYNC: `http://${LOCAL_IP}:5005/api/execution`,
+  AUTH: `${GATEWAY_URL}/api/auth`,
+  ORDERS: `${GATEWAY_URL}/api/orders`,
+  PLANNING: `${GATEWAY_URL}/api/planning`,
+  EXECUTION: `${GATEWAY_URL}/api/execution`,
 } as const;
 
 export const fetchWithTimeout = async (
-  url: string, 
-  options: RequestInit = {}, 
+  url: string,
+  options: RequestInit = {},
   timeout: number = 8000
 ): Promise<Response> => {
   const controller = new AbortController();

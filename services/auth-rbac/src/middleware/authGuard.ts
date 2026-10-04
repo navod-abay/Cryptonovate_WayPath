@@ -14,6 +14,7 @@ export interface AccessTokenPayload {
   role: UserRole;
   outlet_id: string | null;
   depot: string | null;
+  vehicle_id?: string | null; // drivers only
   type: 'access';
 }
 

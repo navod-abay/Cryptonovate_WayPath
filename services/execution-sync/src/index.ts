@@ -3,6 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import executionRoutes from './routes/execution.routes';
 import { initDb } from './db/init';
+import { startAlertRelay } from './services/alertOutbox';
 
 dotenv.config();
 
@@ -37,6 +38,7 @@ app.use((err: any, req: Request, res: Response, next: NextFunction) => {
 // Start DB & Express Server
 async function startServer() {
   await initDb();
+  startAlertRelay();
   app.listen(port, () => {
     console.log(`[execution-sync] Microservice operational and listening on port ${port}`);
   });

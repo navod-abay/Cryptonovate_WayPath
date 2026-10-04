@@ -92,11 +92,12 @@ func (s *memStore) Trip(_ context.Context, id string) (*TripDetail, error) {
 	return nil, nil
 }
 
-func (s *memStore) Trips(_ context.Context, date time.Time, depot, vehicleID string) ([]TripDetail, error) {
+func (s *memStore) Trips(_ context.Context, date time.Time, f TripFilter) ([]TripDetail, error) {
 	out := []TripDetail{}
 	if _, p := s.completed(date.Format(dateLayout)); p != nil {
 		for _, t := range p.Trips {
-			if (depot == "" || t.Depot == depot) && (vehicleID == "" || t.VehicleID == vehicleID) {
+			if (f.Depot == "" || t.Depot == f.Depot) && (f.VehicleID == "" || t.VehicleID == f.VehicleID) &&
+				(f.LoaderID == "" || t.LoaderID == f.LoaderID) {
 				out = append(out, t)
 			}
 		}
@@ -199,8 +200,12 @@ func samplePlan(date string) *Plan {
 			t.WeightKg += t.Stops[i].WeightKg
 			t.VolumeM3 += t.Stops[i].VolumeM3
 		}
+		loader := testUserID // the loader of userToken
+		if veh == "VEH018" {
+			loader = "loader-2"
+		}
 		return TripDetail{Trip: t, PlanDate: date, Depot: depot, VehicleID: veh, VehicleType: typ, VehicleTemp: temp,
-			WeightCapacityKg: capKg, VolumeCapacityM3: capM3}
+			WeightCapacityKg: capKg, VolumeCapacityM3: capM3, LoaderID: loader, LoaderName: "Loader " + loader}
 	}
 	items := []StopItem{{SKU: "MILK-CRT", Description: "Milk crate", Qty: 4}}
 	return &Plan{
@@ -233,17 +238,21 @@ var noopPlanner = funcPlanner(func(context.Context, string, time.Time) (*RunStat
 
 var fixedNow = func() time.Time { return time.Date(2026, 10, 2, 20, 0, 0, 0, time.UTC) } // 3 Oct 01:30 in Colombo
 
+const testSecret = "planning-test-secret"
+
 func newTestServer(store *memStore, p Planner) http.Handler {
 	mux := http.NewServeMux()
-	(&API{store: store, runs: NewRunManager(store, store, p, time.Minute), now: fixedNow,
+	(&API{store: store, runs: NewRunManager(store, store, p, time.Minute), now: fixedNow, secret: testSecret,
 		nextRunDate: func(context.Context) (time.Time, error) { return time.Date(2026, 10, 5, 0, 0, 0, 0, sriLanka), nil },
 	}).routes(mux)
 	return mux
 }
 
+// do calls the API as a service (role "system", allowed on every route); auth_test.go covers the roles.
 func do(t *testing.T, h http.Handler, method, path, body string) (*httptest.ResponseRecorder, map[string]any) {
 	t.Helper()
 	req := httptest.NewRequest(method, path, strings.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+serviceToken(testSecret, time.Now()))
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	var out map[string]any
@@ -330,6 +339,7 @@ func TestTripsAreServedUnderBothPrefixes(t *testing.T) {
 		t.Errorf("unknown trip: status %d, want 404", rec.Code)
 	}
 	req := httptest.NewRequest("GET", "/trips?date=2026-10-05&depot=Peliyagoda", nil)
+	req.Header.Set("Authorization", "Bearer "+serviceToken(testSecret, time.Now()))
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	var list []map[string]any

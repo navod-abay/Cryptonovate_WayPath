@@ -20,4 +20,6 @@ export interface AvailabilityUpdate { status:'available'|'in_workshop';unavailab
 export interface Incident {
   id: string; source: string; kind: 'driver' | 'warehouse' | 'store';
   summary: string; detail: string; minutesAgo: number; vehicleId?: string; orderId?: string;
+  /** Reached the server well after it happened (queued on a device during an outage). */
+  syncedLate?: boolean; receivedMinutesAgo?: number;
 }

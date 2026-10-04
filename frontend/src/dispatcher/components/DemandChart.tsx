@@ -13,7 +13,7 @@ export default function DemandChart() {
   const step=Math.ceil(maximum/5), top=step*5;
   const x=(i:number)=>58+i*52, y=(v:number)=>400-v/top*370;
   return <div className="chart panel"><RequestState resource={resource} />{resource.data && <>
-    <p className="chart-caption" title={resource.data.note}>{resource.data.method==='file_test_data' ? 'Sample demand · test data' : 'Demand estimate · ordered units'}</p>
+    <p className="chart-caption" title={resource.data.note}>{resource.data.method==='sample_data' ? 'Sample demand · not a trained forecast' : 'Demand estimate · ordered units'}</p>
     {!values.flat().some(v=>v!==null) ? <EmptyState text="Insufficient order history for an estimate." /> : <>
     <svg viewBox="0 0 326 435" role="img" aria-label="Next week's estimated demand based on recent order history">
       {Array.from({length:6},(_,i)=>i*step).map(v=><g key={v}><line x1="32" x2="305" y1={y(v)} y2={y(v)} stroke="#e7edf0" /><text x="26" y={y(v)+5} textAnchor="end">{v}</text></g>)}

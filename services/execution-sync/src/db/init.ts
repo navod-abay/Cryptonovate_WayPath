@@ -57,6 +57,36 @@ export async function initDb() {
       );
     `);
 
+    // Scan-to-load (see LoadingService): when loading started, who reported a shortfall, every unit
+    // label scanned (one row per unit, so a second scan of the same label is recognised), and the
+    // orders whose units are all accounted for, with whether Order Management has been told.
+    await client.query(`
+      ALTER TABLE loading_manifests ADD COLUMN IF NOT EXISTS started_at TIMESTAMP WITH TIME ZONE;
+      ALTER TABLE loading_shortfalls ADD COLUMN IF NOT EXISTS loader_id UUID;
+      CREATE INDEX IF NOT EXISTS ix_loading_shortfalls_trip ON loading_shortfalls (trip_id);
+
+      CREATE TABLE IF NOT EXISTS loading_scans (
+        order_ref VARCHAR(50) NOT NULL,
+        sku VARCHAR(50) NOT NULL,
+        unit_no INT NOT NULL,
+        trip_id VARCHAR(50) NOT NULL,
+        loader_id UUID,
+        scanned_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (order_ref, sku, unit_no)
+      );
+      CREATE INDEX IF NOT EXISTS ix_loading_scans_trip ON loading_scans (trip_id);
+
+      CREATE TABLE IF NOT EXISTS loaded_orders (
+        order_ref VARCHAR(50) PRIMARY KEY,
+        trip_id VARCHAR(50) NOT NULL,
+        scanned_units INT NOT NULL,
+        missing_units INT NOT NULL,
+        damaged_units INT NOT NULL,
+        loaded_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        synced_at TIMESTAMP WITH TIME ZONE  -- when Order Management accepted 'loaded'
+      );
+    `);
+
     // Delivery Events (bulk sync target)
     await client.query(`
       CREATE TABLE IF NOT EXISTS delivery_events (
@@ -74,17 +104,53 @@ export async function initDb() {
       );
     `);
 
-    // Delivery Disputes
+    // Driver Incidents (roadside / at-outlet reports). id is generated on the device, so a report
+    // re-sent after a dropped connection is recognised instead of stored twice.
     await client.query(`
-      CREATE TABLE IF NOT EXISTS delivery_disputes (
+      CREATE TABLE IF NOT EXISTS driver_incidents (
+        id UUID PRIMARY KEY,
+        driver_id UUID,
+        driver_username VARCHAR(100),
+        depot VARCHAR(50),
+        trip_id VARCHAR(50),
+        stop_id VARCHAR(50),
+        outlet_id VARCHAR(50),
+        order_ref VARCHAR(50),
+        vehicle_id VARCHAR(50),
+        issue VARCHAR(30) NOT NULL,
+        action VARCHAR(40),
+        notes TEXT,
+        captured_at TIMESTAMP WITH TIME ZONE NOT NULL,
+        received_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    // Problems a store manager reports about a delivery that has not arrived yet
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS delivery_problems (
         id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-        order_ref VARCHAR(50) NOT NULL,
+        delivery_id VARCHAR(50) NOT NULL,
+        order_ref VARCHAR(50),
+        outlet_id VARCHAR(50),
         store_manager_id UUID,
-        discrepancy_type VARCHAR(50) NOT NULL,
-        description TEXT,
+        problems JSONB NOT NULL,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
     `);
+
+    // Dashboard alerts waiting to be relayed to NATS (see services/alertOutbox.ts)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS execution_alert_outbox (
+        id UUID PRIMARY KEY,
+        subject VARCHAR(100) NOT NULL,
+        envelope JSONB NOT NULL,
+        created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        published_at TIMESTAMP WITH TIME ZONE
+      );
+    `);
+    await client.query(
+      'CREATE INDEX IF NOT EXISTS ix_execution_alert_outbox_pending ON execution_alert_outbox (created_at) WHERE published_at IS NULL;'
+    );
 
     await client.query('COMMIT');
     console.log('[db/init] Execution Sync database schema initialized successfully.');
