@@ -55,13 +55,43 @@ test('API login mode opens the route gate only after a successful login response
   const login=load('data/signIn.ts',async(path,init)=>{
     assert.equal(path,'/api/auth/login');
     assert.equal(JSON.parse(init.body).username,'service-user');
-    return json({success:true,data:{user:{username:'service-user'}}});
+    return json({success:true,access_token:'access-1',refresh_token:'refresh-1',user:{username:'service-user',role:'dispatcher'}});
   },true,new Map(),'api');
   assert.equal(login.usesTestLogin,false);assert.equal(login.getSignedIn(),false);
   await login.signIn('service-user','service-password');assert.equal(login.getSignedIn(),true);
   const rejected=load('data/signIn.ts',async()=>new Response('{}',{status:401}),true,new Map(),'api');
   await assert.rejects(()=>rejected.signIn('service-user','wrong'));
   assert.equal(rejected.getSignedIn(),false);
+});
+
+test('API login rejects other roles and never opens the route gate for them',async()=>{
+  const login=load('data/signIn.ts',async()=>json({success:true,access_token:'a',refresh_token:'r',user:{role:'store_manager'}}),true,new Map(),'api');
+  await assert.rejects(()=>login.signIn('manager','pw'),/dispatchers only/);
+  assert.equal(login.getSignedIn(),false);
+});
+
+test('after API login requests carry the bearer token, refresh once on 401 and sign out when refresh fails',async()=>{
+  const calls=[];let refreshOk=true;
+  const fetch=async(path,init)=>{
+    calls.push([path,init.headers.Authorization]);
+    if(path==='/api/auth/login')return json({success:true,access_token:'access-1',refresh_token:'refresh-1',user:{role:'dispatcher'}});
+    if(path==='/api/auth/refresh'){assert.equal(JSON.parse(init.body).refresh_token,'refresh-1');return refreshOk?json({success:true,access_token:'access-2'}):new Response('{}',{status:401});}
+    return init.headers.Authorization==='Bearer access-2'?json({success:true,data:['ok']}):new Response('{}',{status:401});
+  };
+  const app=load('tests/authFlow.entry.ts',fetch,true,new Map(),'api');
+  await app.signIn('d','pw');
+  assert.equal(app.getSignedIn(),true);
+  assert.deepEqual(calls[0],['/api/auth/login',undefined]);
+  assert.deepEqual(await app.request('/fleet/vehicles'),['ok']);
+  assert.deepEqual(calls.slice(1).map(c=>c[0]),['/api/fleet/vehicles','/api/auth/refresh','/api/fleet/vehicles']);
+  assert.equal(calls[1][1],'Bearer access-1');assert.equal(calls[3][1],'Bearer access-2');
+  assert.deepEqual(await app.request('/fleet/vehicles'),['ok']);
+  assert.equal(calls.length,5);
+  refreshOk=false;
+  const expired=load('tests/authFlow.entry.ts',fetch,true,new Map(),'api');
+  await expired.signIn('d','pw');refreshOk=false;
+  await assert.rejects(()=>expired.request('/fleet/vehicles'),/session has expired/);
+  assert.equal(expired.getSignedIn(),false);
 });
 
 test('API requests have no auth headers and successful empty responses stay empty',async()=>{

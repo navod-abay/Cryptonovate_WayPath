@@ -79,7 +79,7 @@ interface ApiIncident extends Omit<Incident,'minutesAgo'> { createdAt:string }
 function mapIncident(i:ApiIncident):Incident { return {...i,minutesAgo:Math.max(0,Math.floor((Date.now()-Date.parse(i.createdAt))/60000))}; }
 export const dispatcherRepository = {
   getOrders,getOrder,getVehicles,getSchedule,
-  login:(username:string,password:string,signal?:AbortSignal)=>request('/auth/login',signal,{method:'POST',body:JSON.stringify({username,password}),fileFallback:false}),
+  login:(username:string,password:string,signal?:AbortSignal)=>request<unknown>('/auth/login',signal,{method:'POST',body:JSON.stringify({username,password}),fileFallback:false}),
   updateAvailability:(id:string,update:AvailabilityUpdate,signal?:AbortSignal)=>request<AvailabilityUpdate>(`/fleet/vehicles/${encodeURIComponent(id)}/availability`,signal,{method:'PUT',body:JSON.stringify({...update,unavailable_periods:normalizePeriods(update.unavailable_periods)})}),
   getVehicleFuel:async(id:string,date:string,depot:Warehouse,signal?:AbortSignal)=>{
     const result=await request<{vehicles?:{vehicle_id:string;quota_litres:number;consumed_litres:number}[]}>(`/fleet/fuel-usage/weekly?date=${date}&depot=${depot}`,signal);

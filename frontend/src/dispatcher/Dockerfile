@@ -10,6 +10,7 @@ RUN ln -s /app/src/dispatcher/node_modules /app/node_modules
 COPY src/dispatcher .
 ARG VITE_API_BASE_URL
 ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
+
 RUN npm run build
 
 EXPOSE 4173

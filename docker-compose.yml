@@ -203,7 +203,6 @@ services:
       dockerfile: src/store_manager/Dockerfile
       args:
         VITE_API_BASE_URL: ${STORE_MANAGER_API_BASE_URL:-http://localhost}
-        VITE_USE_MOCK_API: ${STORE_MANAGER_USE_MOCK_API:-true}
     container_name: app_store_manager
     restart: unless-stopped
     ports:
