@@ -15,6 +15,7 @@ type Screen = 'pin' | 'queue' | 'loading' | 'completed' | 'detail' | 'labels' | 
 const KIOSK_DEPOT = import.meta.env.VITE_LOADER_DEPOT || 'Peliyagoda';
 const DOCK = 'Dock 03';
 const CUTOFF = '04:00 AM';
+const QUEUE_REFRESH_MS = 15_000;
 
 export default function LoaderApp() {
   const [screen, setScreen] = useState<Screen>('pin');
@@ -52,6 +53,15 @@ export default function LoaderApp() {
         .catch((err) => setError(err.message))
         .finally(() => setIsLoading(false));
     }
+  }, [screen, user, depot]);
+
+  // A truck joins Ready to Load when its driver checks in at the depot, so keep that list fresh.
+  useEffect(() => {
+    if (!user || screen !== 'queue') return;
+    const timer = setInterval(() => {
+      getActiveTrips(depot, 'ready_to_load').then(setVehicles).catch(() => {});
+    }, QUEUE_REFRESH_MS);
+    return () => clearInterval(timer);
   }, [screen, user, depot]);
 
   const handleLogin = useCallback(async (pin: string) => {
@@ -111,7 +121,7 @@ export default function LoaderApp() {
       <LoadingDetailScreen
         vehicle={selectedVehicle}
         workerName={workerName}
-        onBack={() => setScreen('queue')}
+        onBack={() => setScreen('loading')} // the opened trip is now in the Loading queue
         onFinish={(stopOutlets) => {
           setOutlets(stopOutlets);
           setScreen('finalCheck');

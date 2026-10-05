@@ -10,6 +10,7 @@ import {
   BulkSyncSchema,
   ConfirmOrderSchema,
   DriverIncidentsSchema,
+  StopEventsSchema,
   DeliveryProblemSchema,
 } from '../schemas/execution.schema';
 
@@ -100,6 +101,43 @@ export class ExecutionController {
       const date = typeof req.query.date === 'string' ? req.query.date : undefined;
       const vehicleId = typeof req.query.vehicleId === 'string' ? req.query.vehicleId : undefined;
       return res.json({ success: true, data: await ExecutionSyncService.getDriverTrips(req.user, date, vehicleId) });
+    } catch (err: any) {
+      return sendError(res, err);
+    }
+  }
+
+  // B1a. The driver pressed "Start Trip"
+  static async startDriverTrip(req: Request, res: Response) {
+    try {
+      return res.json({ success: true, data: await ExecutionSyncService.startDriverTrip(req.params.tripId, req.user) });
+    } catch (err: any) {
+      return sendError(res, err);
+    }
+  }
+
+  // B1b. The driver marked "I've Arrived" at the depot: the trip is ready to load
+  static async arriveAtDepot(req: Request, res: Response) {
+    try {
+      return res.json({ success: true, data: await ExecutionSyncService.arriveAtDepot(req.params.tripId, req.user) });
+    } catch (err: any) {
+      return sendError(res, err);
+    }
+  }
+
+  // B1d. The driver leaves the depot (only once the truck is released)
+  static async departFromDepot(req: Request, res: Response) {
+    try {
+      return res.json({ success: true, data: await ExecutionSyncService.departFromDepot(req.params.tripId, req.user) });
+    } catch (err: any) {
+      return sendError(res, err);
+    }
+  }
+
+  // B1c. Arrivals at and departures from stops (one, or a queued backlog)
+  static async recordStopEvents(req: Request, res: Response) {
+    try {
+      const { events } = StopEventsSchema.parse(req.body);
+      return res.json({ success: true, data: await ExecutionSyncService.recordStopEvents(events, req.user) });
     } catch (err: any) {
       return sendError(res, err);
     }

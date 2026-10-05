@@ -58,7 +58,7 @@ paths:
           required: false
           schema:
             type: string
-            enum: [ready_to_load, loading, completed]
+            enum: [awaiting_driver, ready_to_load, loading, completed]
         - name: date
           in: query
           required: false
@@ -101,7 +101,14 @@ paths:
                           type: integer
                         status:
                           type: string
-                          enum: [ready_to_load, loading, completed]
+                          description: >-
+                            awaiting_driver until the driver has started the trip and marked arrival
+                            at the depot; then ready_to_load
+                          enum: [awaiting_driver, ready_to_load, loading, completed]
+                        depotArrivedAt:
+                          type: string
+                          format: date-time
+                          nullable: true
                         dock:
                           type: string
                         loaderId:
@@ -144,7 +151,9 @@ paths:
     post:
       tags: [Warehouse Loading]
       summary: Start loading a trip
-      description: Moves the trip to the loader's "loading" queue. Idempotent; a dispatched trip is 409.
+      description: >-
+        Moves the trip to the loader's "loading" queue. Idempotent; 409 when the trip has already been
+        dispatched or its driver has not marked arrival at the depot yet.
       security:
         - BearerAuth: []
       parameters:
@@ -160,7 +169,7 @@ paths:
         '403':
           description: The trip is assigned to another loader
         '409':
-          description: The trip has already been dispatched
+          description: The trip has already been dispatched, or its driver has not arrived at the depot
 
   /trips/{tripId}/scans:
     post:
@@ -326,13 +335,140 @@ paths:
           description: >-
             { date, vehicleId, trips: Planning's TripDetail (tripId, tripNumber, departureTime,
             returnTime, district, stops[] with eta, window and items) plus loadingStatus
-            (ready_to_load | loading | completed) }
+            (awaiting_driver | ready_to_load | loading | completed), driverStartedAt,
+            depotArrivedAt and depotDepartedAt (null until the driver does it); each stop also has
+            arrivedAt, departedAt and offlineDelivery }
         '400':
           description: A dispatcher did not name a vehicle
         '403':
           description: The driver account is not linked to a vehicle
         '502':
           description: Planning & Allocation is unreachable or failed
+
+  /driver/trips/{tripId}/start:
+    post:
+      tags: [Driver Execution]
+      summary: The driver started the trip
+      description: Records when the driver pressed "Start Trip". Idempotent; a second call keeps the first time.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: tripId
+          in: path
+          required: true
+          schema:
+            type: string
+            example: 20261005-VEH001-T1
+      responses:
+        '200':
+          description: '{ tripId, driverStartedAt, depotArrivedAt }'
+        '403':
+          description: The trip is not on the driver's vehicle
+        '404':
+          description: No such trip
+
+  /driver/trips/{tripId}/depot-arrival:
+    post:
+      tags: [Driver Execution]
+      summary: The driver arrived at the depot
+      description: >-
+        Records when the driver marked "I've Arrived" at the depot. Until then the trip is
+        awaiting_driver and does not appear in the loaders' Ready to Load queue. Idempotent.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: tripId
+          in: path
+          required: true
+          schema:
+            type: string
+            example: 20261005-VEH001-T1
+      responses:
+        '200':
+          description: '{ tripId, driverStartedAt, depotArrivedAt, loadingStatus }'
+        '403':
+          description: The trip is not on the driver's vehicle
+        '404':
+          description: No such trip
+        '409':
+          description: The trip has not been started yet
+
+  /driver/trips/{tripId}/depot-departure:
+    post:
+      tags: [Driver Execution]
+      summary: The driver leaves the depot
+      description: >-
+        Only after the driver checked in and the loaders released the truck (every unit of every
+        order scanned or reported, then dispatched). Idempotent.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: tripId
+          in: path
+          required: true
+          schema:
+            type: string
+            example: 20261005-VEH001-T1
+      responses:
+        '200':
+          description: '{ tripId, depotDepartedAt }'
+        '403':
+          description: The trip is not on the driver's vehicle
+        '409':
+          description: The driver has not checked in, or the truck is not loaded and released yet
+
+  /driver/stop-events:
+    post:
+      tags: [Driver Execution]
+      summary: Arrivals at and departures from outlet stops
+      description: >-
+        Sent as they happen, or as a backlog queued on the phone while it had no signal. Each event
+        carries a device-generated clientEventId; every stop time keeps the earliest capturedAt, so a
+        late or repeated event changes nothing. The depot is not a stop here (see depot-arrival and
+        depot-departure).
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [events]
+              properties:
+                events:
+                  type: array
+                  minItems: 1
+                  maxItems: 100
+                  items:
+                    type: object
+                    required: [clientEventId, tripId, stopId, type, capturedAt]
+                    properties:
+                      clientEventId:
+                        type: string
+                        format: uuid
+                      tripId:
+                        type: string
+                        example: 20261005-VEH001-T1
+                      stopId:
+                        type: string
+                        example: 20261005-VEH001-T1-S1
+                      type:
+                        type: string
+                        enum: [arrival, departure]
+                      offline:
+                        type: boolean
+                        description: A departure after a delivery made without signal (photos, no store code)
+                      capturedAt:
+                        type: string
+                        format: date-time
+      responses:
+        '200':
+          description: '{ accepted: clientEventId[] }'
+        '400':
+          description: Malformed event, or a stop that is not on the trip (the phone drops it)
+        '403':
+          description: The trip is not on the driver's vehicle
 
   /telemetry:
     post:

@@ -37,7 +37,10 @@ export interface TripPayload {
   tripId: string;
   vehicleId: string;
   planDate: string;
-  /** ready_to_load | loading | completed: whether the loaders have released the truck. */
+  /**
+   * awaiting_driver (not arrived at the depot yet) | ready_to_load | loading | completed: whether the
+   * loaders have released the truck.
+   */
   loadingStatus: string;
   activeTripId: string; // the tab label, e.g. "Trip 1"
   isStarted: boolean; // Tracks if "Start Trip" was pressed

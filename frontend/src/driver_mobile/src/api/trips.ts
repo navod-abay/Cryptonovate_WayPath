@@ -1,6 +1,7 @@
 import { API_ROUTES } from './config';
 import { authFetch, errorMessage } from './auth';
-import { GoodsType, TripNode, TripPayload } from '../types/trip';
+import { GoodsType, TripLog, TripNode, TripPayload } from '../types/trip';
+import { pendingStopEvents, StopEvent } from '../services/StopEvents';
 
 /** Planning's TripDetail as GET /api/execution/driver/active-route returns it. */
 interface PlannedStop {
@@ -14,6 +15,8 @@ interface PlannedStop {
   windowOpen: string;
   windowClose: string;
   items: { sku: string; description: string; qty: number }[];
+  arrivedAt: string | null;
+  departedAt: string | null;
 }
 
 interface PlannedTrip {
@@ -26,6 +29,9 @@ interface PlannedTrip {
   departureTime: string;
   returnTime: string;
   loadingStatus: string;
+  driverStartedAt: string | null;
+  depotArrivedAt: string | null;
+  depotDepartedAt: string | null;
   stops: PlannedStop[];
 }
 
@@ -58,6 +64,33 @@ function goodsType(brand: string, temperature: string): GoodsType {
   return 'dry';
 }
 
+/** An ISO time as the screens show it, e.g. "06:23 AM". */
+function clockTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+/** The Arrival / Departure log and screen status of a stop, from its times. */
+function progress(arrivedAt: string | null, departedAt: string | null, waiting: TripNode['status']) {
+  const logs: TripLog[] = [];
+  if (arrivedAt) logs.push({ action: 'Arrival', time: clockTime(arrivedAt) });
+  if (departedAt) logs.push({ action: 'Departure', time: clockTime(departedAt) });
+  const status: TripNode['status'] = departedAt ? 'completed' : arrivedAt ? waiting : 'pending';
+  return { logs, status };
+}
+
+/** Events still queued on the phone (made without signal) count as done: the server will have them. */
+function withPending(trip: PlannedTrip, pending: StopEvent[]): PlannedTrip {
+  const mine = pending.filter((e) => e.tripId === trip.tripId);
+  if (mine.length === 0) return trip;
+  return {
+    ...trip,
+    stops: trip.stops.map((s) => {
+      const at = (type: StopEvent['type']) => mine.find((e) => e.stopId === s.stopId && e.type === type)?.capturedAt ?? null;
+      return { ...s, arrivedAt: s.arrivedAt ?? at('arrival'), departedAt: s.departedAt ?? at('departure') };
+    }),
+  };
+}
+
 function toPayload(trip: PlannedTrip): TripPayload {
   const chilled = trip.stops.some((s) => s.temperature === 'chilled');
   const warehouse: TripNode = {
@@ -70,8 +103,8 @@ function toPayload(trip: PlannedTrip): TripPayload {
     location: trip.depot,
     scheduledStart: to12h(minusMinutes(trip.departureTime, AT_DOCK_BEFORE_DEPARTURE_MIN)),
     scheduledEnd: to12h(trip.departureTime),
-    status: 'pending',
-    logs: [],
+    // Checked in, the truck can only leave once the loaders have released it.
+    ...progress(trip.depotArrivedAt, trip.depotDepartedAt, trip.loadingStatus === 'completed' ? 'ready_to_depart' : 'arrived'),
     inventory: [],
   };
   const outlets: TripNode[] = trip.stops.map((s) => ({
@@ -85,8 +118,8 @@ function toPayload(trip: PlannedTrip): TripPayload {
     scheduledStart: to12h(s.windowOpen),
     scheduledEnd: to12h(s.windowClose),
     estimatedArrival: to12h(s.eta),
-    status: 'pending',
-    logs: [],
+    // Once arrived, an outlet moves on to departure (as it does on the screen).
+    ...progress(s.arrivedAt, s.departedAt, 'ready_to_depart'),
     // Expected to be delivered in full; the driver changes "actual" for a short delivery.
     inventory: s.items.map((i) => ({ id: i.sku, name: i.description, expected: i.qty, actual: i.qty })),
     stopId: s.stopId,
@@ -98,9 +131,35 @@ function toPayload(trip: PlannedTrip): TripPayload {
     planDate: trip.planDate,
     loadingStatus: trip.loadingStatus,
     activeTripId: `Trip ${trip.tripNumber}`,
-    isStarted: false,
+    isStarted: !!trip.driverStartedAt,
     nodes: [warehouse, ...outlets],
   };
+}
+
+async function postTripAction(tripId: string, action: 'start' | 'depot-arrival' | 'depot-departure'): Promise<void> {
+  const res = await authFetch(`${API_ROUTES.EXECUTION}/driver/trips/${encodeURIComponent(tripId)}/${action}`, { method: 'POST' });
+  if (!res.ok) throw new Error(errorMessage(await res.json().catch(() => null), res.status));
+}
+
+/** The driver pressed "Start Trip". */
+export function startTrip(tripId: string): Promise<void> {
+  return postTripAction(tripId, 'start');
+}
+
+/** The driver pressed "I've Arrived" at the depot: the loaders now see the truck as ready to load. */
+export function arriveAtDepot(tripId: string): Promise<void> {
+  return postTripAction(tripId, 'depot-arrival');
+}
+
+/** The driver leaves the depot; refused until the loaders have released the truck. */
+export function departFromDepot(tripId: string): Promise<void> {
+  return postTripAction(tripId, 'depot-departure');
+}
+
+/** Whether the loaders have released the truck yet (awaiting_driver | ready_to_load | loading | completed). */
+export async function fetchLoadingStatus(tripId: string): Promise<string | undefined> {
+  const day = await fetchTodayTrips();
+  return day.trips.find((t) => t.tripId === tripId)?.loadingStatus;
 }
 
 /** Today's trips (Colombo date) of the vehicle the signed-in driver drives. */
@@ -109,5 +168,6 @@ export async function fetchTodayTrips(): Promise<DriverDay> {
   const body = await res.json().catch(() => null);
   if (!res.ok) throw new Error(errorMessage(body, res.status));
   const day = body.data as { date: string; vehicleId: string; trips: PlannedTrip[] };
-  return { date: day.date, vehicleId: day.vehicleId, trips: day.trips.map(toPayload) };
+  const pending = await pendingStopEvents();
+  return { date: day.date, vehicleId: day.vehicleId, trips: day.trips.map((t) => toPayload(withPending(t, pending))) };
 }

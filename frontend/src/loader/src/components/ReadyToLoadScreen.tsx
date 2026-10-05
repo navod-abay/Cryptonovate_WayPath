@@ -122,6 +122,11 @@ export function ReadyToLoadScreen({
         ) : (
           <>
             <div ref={scrollRef} className="flex-1 overflow-y-auto space-y-3">
+              {vehicles.length === 0 && (
+                <p className="text-center text-sm text-slate-500 py-10">
+                  No trucks at the dock yet. A truck appears here once its driver checks in at the depot.
+                </p>
+              )}
               {vehicles.map((vehicle) => (
                 <VehicleCard
                   key={vehicle.tripId}

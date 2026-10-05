@@ -35,7 +35,7 @@ export interface TripManifest {
   vehicleId: string;
   depot: string;
   departureTime: string;
-  status: 'ready_to_load' | 'loading' | 'completed';
+  status: 'awaiting_driver' | 'ready_to_load' | 'loading' | 'completed';
   loaderName: string | null;
   loadingStrategy: string;
   totalStops: number;
@@ -76,7 +76,7 @@ export interface ActiveTrip {
   temperature: 'frozen' | 'ambient';
   departureTime: string;
   stops: number;
-  status: 'ready_to_load' | 'loading' | 'completed';
+  status: 'awaiting_driver' | 'ready_to_load' | 'loading' | 'completed';
   dock: string;
 }
 

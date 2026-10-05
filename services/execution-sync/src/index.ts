@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import executionRoutes from './routes/execution.routes';
 import { initDb } from './db/init';
 import { startAlertRelay } from './services/alertOutbox';
+import { startDemoArrivals } from './db/demoArrivals';
 
 dotenv.config();
 
@@ -39,6 +40,7 @@ app.use((err: any, req: Request, res: Response, next: NextFunction) => {
 async function startServer() {
   await initDb();
   startAlertRelay();
+  startDemoArrivals();
   app.listen(port, () => {
     console.log(`[execution-sync] Microservice operational and listening on port ${port}`);
   });
