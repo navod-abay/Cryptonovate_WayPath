@@ -5,6 +5,7 @@
  */
 import { AUTH_API_BASE_URL, USE_MOCK, USE_MOCK_AUTH } from './config';
 import { ApiError, http, setPendingToken, setUnauthorizedHandler } from './http';
+import * as backend from './backend';
 import * as mock from '@/mock/server';
 import { MOCK_ACCOUNTS } from '@/mock/users';
 import { emptyState, loadSavedSession, saveSession, setState } from '@/state/store';
@@ -25,16 +26,9 @@ const apiMe = async (): Promise<Partial<User>> => {
   return (res as any)?.user ?? res;
 };
 
-/** GET /orders/outlets/:outletId */
-const apiOutlet = async (outletId: string): Promise<Outlet> => {
-  if (USE_MOCK) return mock.getOutlet(outletId);
-  try {
-    return await http.get<Outlet>(`/orders/outlets/${encodeURIComponent(outletId)}`);
-  } catch (err) {
-    console.warn(`Outlet ${outletId} could not be loaded from backend, falling back to local store profile:`, err);
-    return mock.getOutlet(outletId);
-  }
-};
+/** POST /fleet/outlets/batch (brand and district); the manager's name comes from the login */
+const apiOutlet = (outletId: string, fullName: string): Promise<Outlet> =>
+  USE_MOCK ? mock.getOutlet(outletId) : backend.fetchOutlet(outletId, fullName);
 
 export async function login(username: string, password: string): Promise<Session> {
   let res: LoginResponse;
@@ -51,7 +45,7 @@ export async function login(username: string, password: string): Promise<Session
   // (and the session is saved) once the outlet has loaded.
   setPendingToken(res.access_token);
   try {
-    const [outlet, profile] = await Promise.all([apiOutlet(res.user.outletId), apiMe().catch(() => null)]);
+    const [outlet, profile] = await Promise.all([apiOutlet(res.user.outletId, res.user.fullName), apiMe().catch(() => null)]);
     const profileUser = (profile as any)?.user ?? profile ?? {};
     const session: Session = {
       token: res.access_token,

@@ -7,6 +7,7 @@
  * functions and read the results from the store.
  */
 import { USE_MOCK } from './config';
+import * as backend from './backend';
 import { http } from './http';
 import * as mock from '@/mock/server';
 import { emptyData, getState, setState } from '@/state/store';
@@ -21,28 +22,27 @@ const categories = () => getState().outlet.categories;
 
 // ============================================================ reads
 
-/** GET /orders/products?categories=chilled,dry */
-const fetchProducts = () =>
-  USE_MOCK ? mock.getProducts(categories()) : http.get<Product[]>('/orders/products', { categories: categories().join(',') });
+// Real mode reads from the existing services through src/api/backend.ts (see BACKEND_INTEGRATION.md).
 
-/** GET /fleet/capacity?categories=chilled,dry */
-const fetchCapacity = () =>
-  USE_MOCK
-    ? mock.getTruckCapacity(categories())
-    : http.get<Partial<Record<OrderType, TruckCapacity>>>('/fleet/capacity', { categories: categories().join(',') });
+/** No product catalogue exists in the backend yet, so the product list is empty in real mode. */
+const fetchProducts = (): Promise<Product[]> => (USE_MOCK ? mock.getProducts(categories()) : Promise.resolve([]));
 
-/** GET /orders/outlets/:outletId/orders */
-const fetchOrders = () => (USE_MOCK ? mock.getOrders() : http.get<Order[]>(`/orders/outlets/${outletId()}/orders`));
+/** GET /fleet/vehicles, largest vehicle per temperature */
+const fetchCapacity = (): Promise<Partial<Record<OrderType, TruckCapacity>>> =>
+  USE_MOCK ? mock.getTruckCapacity(categories()) : backend.fetchCapacity(categories());
 
-/** GET /orders/outlets/:outletId/order-suggestions */
-const fetchSuggestions = () =>
-  USE_MOCK ? mock.getOrderSuggestions() : http.get<OrderSuggestions>(`/orders/outlets/${outletId()}/order-suggestions`);
+/** GET /orders/?outlet_id= plus /orders/:ref for lines and events */
+const fetchOrders = (): Promise<Order[]> => (USE_MOCK ? mock.getOrders() : backend.fetchOrders(getState().outlet.id));
 
-/** GET /execution/outlets/:outletId/deliveries */
-const fetchDeliveries = () => (USE_MOCK ? mock.getDeliveries() : http.get<Delivery[]>(`/execution/outlets/${outletId()}/deliveries`));
+/** Derived from the outlet's previous orders */
+const fetchSuggestions = (): Promise<OrderSuggestions> =>
+  USE_MOCK ? mock.getOrderSuggestions() : backend.fetchSuggestions(getState().outlet.id);
 
-/** GET /execution/outlets/:outletId/updates */
-const fetchUpdates = () => (USE_MOCK ? mock.getUpdates() : http.get<Update[]>(`/execution/outlets/${outletId()}/updates`));
+/** Derived from orders that are on the way or delivered, plus planning stops */
+const fetchDeliveries = (): Promise<Delivery[]> => (USE_MOCK ? mock.getDeliveries() : backend.fetchDeliveries(getState().outlet.id));
+
+/** Derived from order status events */
+const fetchUpdates = (): Promise<Update[]> => (USE_MOCK ? mock.getUpdates() : backend.fetchUpdates(getState().outlet.id));
 
 let loading: Promise<void> | null = null;
 
@@ -114,9 +114,17 @@ export async function dismissMissingItem(type: OrderType, productId: string) {
 
 // ============================================================ deliveries
 
-/** POST /execution/deliveries/:deliveryId/unloading */
+/** POST /execution/orders/:orderRef/unloading (real mode) */
 export async function startUnloading(deliveryId: string) {
-  const d = USE_MOCK ? await mock.startUnloading(deliveryId) : await http.post<Delivery>(`/execution/deliveries/${deliveryId}/unloading`);
+  if (USE_MOCK) {
+    const d = await mock.startUnloading(deliveryId);
+    upsertDelivery(d);
+    return d;
+  }
+  const current = getState().deliveries.find((x) => x.id === deliveryId);
+  if (!current) throw new Error('Delivery not found.');
+  await backend.startUnloading(current.orderId);
+  const d: Delivery = { ...current, status: 'unloading' };
   upsertDelivery(d);
   return d;
 }
@@ -179,10 +187,10 @@ export async function checkHandover(deliveryId: string): Promise<boolean> {
 
 // ============================================================ updates
 
-/** POST /execution/updates/read   { ids } */
+/** Real mode keeps the read state in this browser (the backend has no endpoint for it). */
 export async function markUpdatesRead(ids: string[]) {
   if (!ids.length) return;
   setState((s) => ({ ...s, updates: s.updates.map((u) => (ids.includes(u.id) ? { ...u, read: true } : u)) }));
   if (USE_MOCK) await mock.markUpdatesRead(ids);
-  else await http.post<void>('/execution/updates/read', { ids });
+  else backend.rememberRead(ids);
 }
