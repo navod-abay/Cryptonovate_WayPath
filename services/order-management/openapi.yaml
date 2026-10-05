@@ -85,6 +85,8 @@ tags:
     description: Deferral, risk and dashboard views
   - name: Store
     description: Receipt at the outlet
+  - name: Catalogue
+    description: Products a store can order
 components:
   securitySchemes:
     bearerAuth:
@@ -603,7 +605,7 @@ paths:
             minLength: 1
             maxLength: 100
           example: out001-2026-09-29-chilled-1
-        - &a10
+        - &a11
           name: X-Test-Now
           in: header
           required: false
@@ -679,7 +681,7 @@ paths:
                 value:
                   temp_requirement: chilled
                   items:
-                    - &a13
+                    - &a14
                       sku: MLK-1L
                       description: Fresh milk 1L
                       quantity: 120
@@ -693,14 +695,14 @@ paths:
                   temp_requirement: ambient
                   order_date: 2026-10-01
                   items:
-                    - &a11
+                    - &a12
                       sku: RICE-5KG
                       description: Samba rice 5kg bag
                       quantity: 10
                       unit_weight_kg: 5.05
                       unit_volume_m3: 0.007
                       is_chilled: false
-                    - &a12
+                    - &a13
                       sku: TEA-400G
                       description: Ceylon tea 400g
                       quantity: 20
@@ -757,7 +759,7 @@ paths:
                   created_at: 2026-09-28T04:30:00.412Z
                   updated_at: 2026-09-28T04:35:00.108Z
                   items: &a2
-                    - &a7
+                    - &a8
                       id: 93774585-618a-433c-b13e-d1643eeec746
                       order_ref: ORD-20260929-00042
                       sku: MLK-1L
@@ -795,7 +797,7 @@ paths:
                     $ref: "#/components/schemas/OrderDetail"
               example:
                 success: true
-                data: &a14
+                data: &a15
                   order_ref: ORD-20260929-00042
                   outlet_id: OUT001
                   brand: Fresh
@@ -823,7 +825,7 @@ paths:
                   updated_at: 2026-09-28T04:35:00.108Z
                   items: *a2
                   events: *a3
-        "400": &a15
+        "400": &a7
           description: VALIDATION_ERROR
           content:
             application/json:
@@ -1277,6 +1279,118 @@ paths:
                     error:
                       code: FORBIDDEN
                       message: "Access denied. Requires one of roles: [store_manager, dispatcher]"
+        "503": *a5
+  /products:
+    get:
+      operationId: listProducts
+      tags:
+        - Catalogue
+      summary: Products a store can order
+      description: "Roles: store_manager, dispatcher. A store manager only sees the brand of their own outlet. `categories` is
+        a comma-separated list of `chilled`, `dry`, `tech`, `style` (Fresh splits into chilled and dry). `search`
+        matches the description or the SKU, case-insensitively. Each product carries the per-unit weight and volume and
+        the `is_chilled` flag an order line needs."
+      security: *a1
+      parameters:
+        - name: categories
+          in: query
+          required: false
+          schema:
+            type: string
+          description: "Comma-separated: chilled, dry, tech, style. Default: all the caller may see"
+          example: chilled,dry
+        - name: search
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 80
+          description: Matches description or SKU
+          example: milk
+      responses:
+        "200":
+          description: Products, grouped by brand then temperature
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        sku:
+                          type: string
+                        description:
+                          type: string
+                        brand:
+                          type: string
+                          enum:
+                            - Fresh
+                            - Style
+                            - Tech
+                        temp_requirement:
+                          type: string
+                          enum:
+                            - ambient
+                            - chilled
+                        category:
+                          type: string
+                          enum:
+                            - chilled
+                            - dry
+                            - tech
+                            - style
+                        unit_weight_kg:
+                          type: number
+                        unit_volume_m3:
+                          type: number
+                        is_chilled:
+                          type: boolean
+              example:
+                success: true
+                data:
+                  - sku: MLK-1L
+                    description: Fresh milk 1L
+                    brand: Fresh
+                    temp_requirement: chilled
+                    category: chilled
+                    unit_weight_kg: 1.03
+                    unit_volume_m3: 0.0011
+                    is_chilled: true
+        "400": *a7
+        "401": *a4
+        "403":
+          description: FORBIDDEN · OUTLET_SCOPE_VIOLATION
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                FORBIDDEN:
+                  summary: FORBIDDEN
+                  value:
+                    success: false
+                    error:
+                      code: FORBIDDEN
+                      message: "Access denied. Requires one of roles: [store_manager, dispatcher]"
+                OUTLET_SCOPE_VIOLATION:
+                  summary: OUTLET_SCOPE_VIOLATION
+                  value:
+                    success: false
+                    error:
+                      code: OUTLET_SCOPE_VIOLATION
+                      message: Store manager for OUT001 may not access outlet OUT050
+                      details:
+                        token_outlet_id: OUT001
+                        requested_outlet_id: OUT050
         "503": *a5
   /summary:
     get:
@@ -1760,7 +1874,7 @@ paths:
       description: "Roles: store_manager (own outlet), dispatcher, loader."
       security: *a1
       parameters:
-        - &a8
+        - &a9
           name: order_ref
           in: path
           required: true
@@ -1814,7 +1928,7 @@ paths:
                   created_at: 2026-09-28T04:30:00.412Z
                   updated_at: 2026-09-28T04:35:00.108Z
                   items: &a16
-                    - *a7
+                    - *a8
                   events: &a17
                     - id: b3620ebe-62a7-4578-99d8-233e335c5781
                       order_ref: ORD-20260929-00042
@@ -1859,7 +1973,7 @@ paths:
                       details:
                         token_outlet_id: OUT001
                         requested_outlet_id: OUT050
-        "404": &a9
+        "404": &a10
           description: ORDER_NOT_FOUND
           content:
             application/json:
@@ -1885,7 +1999,7 @@ paths:
         re-ordered."
       security: *a1
       parameters:
-        - *a8
+        - *a9
       requestBody:
         required: false
         content:
@@ -1950,7 +2064,7 @@ paths:
                   created_at: 2026-09-28T04:30:00.412Z
                   updated_at: 2026-09-28T04:35:00.108Z
                   items:
-                    - *a7
+                    - *a8
                   events:
                     - id: b3620ebe-62a7-4578-99d8-233e335c5781
                       order_ref: ORD-20260929-00042
@@ -1986,7 +2100,7 @@ paths:
                       details:
                         token_outlet_id: OUT001
                         requested_outlet_id: OUT050
-        "404": *a9
+        "404": *a10
         "409":
           description: ORDER_NOT_CANCELLABLE
           content:
@@ -2019,8 +2133,8 @@ paths:
         while `confirmed` and before that delivery date's cutoff. Totals are recomputed from the items."
       security: *a1
       parameters:
-        - *a8
-        - *a10
+        - *a9
+        - *a11
       requestBody:
         required: true
         content:
@@ -2074,13 +2188,13 @@ paths:
                 summary: Two ambient lines
                 value:
                   items:
-                    - *a11
                     - *a12
+                    - *a13
               chilledBasket:
                 summary: One chilled line
                 value:
                   items:
-                    - *a13
+                    - *a14
       responses:
         "200":
           description: Updated order
@@ -2099,8 +2213,8 @@ paths:
                     $ref: "#/components/schemas/OrderDetail"
               example:
                 success: true
-                data: *a14
-        "400": *a15
+                data: *a15
+        "400": *a7
         "401": *a4
         "403":
           description: FORBIDDEN · OUTLET_SCOPE_VIOLATION
@@ -2126,7 +2240,7 @@ paths:
                       details:
                         token_outlet_id: OUT001
                         requested_outlet_id: OUT050
-        "404": *a9
+        "404": *a10
         "409":
           description: ORDER_NOT_EDITABLE
           content:
@@ -2186,8 +2300,8 @@ paths:
         case it rolls to the following run. Use `X-Test-Now` to try both sides of the cutoff."
       security: *a1
       parameters:
-        - *a8
-        - *a10
+        - *a9
+        - *a11
       requestBody:
         required: false
         content:
@@ -2284,7 +2398,7 @@ paths:
                       details:
                         token_outlet_id: OUT001
                         requested_outlet_id: OUT050
-        "404": *a9
+        "404": *a10
         "409":
           description: CUTOFF_PASSED · INVALID_STATE_TRANSITION · DUPLICATE_ORDER
           content:
@@ -2365,7 +2479,7 @@ paths:
       description: "Roles: store_manager (own outlet), dispatcher. Each coded reason carries a readable `reason_label`."
       security: *a1
       parameters:
-        - *a8
+        - *a9
       responses:
         "200":
           description: History
@@ -2491,7 +2605,7 @@ paths:
                       details:
                         token_outlet_id: OUT001
                         requested_outlet_id: OUT050
-        "404": *a9
+        "404": *a10
         "503": *a5
   /{order_ref}/status:
     patch:
@@ -2504,7 +2618,7 @@ paths:
         set only by `POST /{order_ref}/receipt`."
       security: *a1
       parameters:
-        - *a8
+        - *a9
       requestBody:
         required: true
         content:
@@ -2604,7 +2718,7 @@ paths:
                   created_at: 2026-09-28T04:30:00.412Z
                   updated_at: 2026-09-28T04:35:00.108Z
                   items:
-                    - *a7
+                    - *a8
                   events:
                     - id: b3620ebe-62a7-4578-99d8-233e335c5781
                       order_ref: ORD-20260929-00042
@@ -2653,7 +2767,7 @@ paths:
                         permitted:
                           - out_for_delivery
                           - delivered
-        "404": *a9
+        "404": *a10
         "409":
           description: INVALID_STATE_TRANSITION
           content:
@@ -2703,7 +2817,7 @@ paths:
         (AGED_OUT)."
       security: *a1
       parameters:
-        - *a8
+        - *a9
       requestBody:
         required: true
         content:
@@ -2777,7 +2891,7 @@ paths:
                   created_at: 2026-09-28T04:30:00.412Z
                   updated_at: 2026-09-28T04:35:00.108Z
                   items:
-                    - *a7
+                    - *a8
                   events:
                     - id: b3620ebe-62a7-4578-99d8-233e335c5781
                       order_ref: ORD-20260929-00042
@@ -2812,7 +2926,7 @@ paths:
                     error:
                       code: FORBIDDEN
                       message: "Access denied. Requires one of roles: [store_manager, dispatcher]"
-        "404": *a9
+        "404": *a10
         "409":
           description: INVALID_STATE_TRANSITION
           content:
@@ -2870,7 +2984,7 @@ paths:
         `received`, otherwise `disputed`. Either way the outlet counts as served."
       security: *a1
       parameters:
-        - *a8
+        - *a9
       requestBody:
         required: true
         content:
@@ -2980,7 +3094,7 @@ paths:
                     created_at: 2026-09-28T04:30:00.412Z
                     updated_at: 2026-09-28T04:35:00.108Z
                     items:
-                      - *a7
+                      - *a8
                     events:
                       - id: b3620ebe-62a7-4578-99d8-233e335c5781
                         order_ref: ORD-20260929-00042
@@ -3000,7 +3114,7 @@ paths:
                     note: 2 crates short
                     received_by: 9595b3cf-eec1-4559-9fcc-889ef5a9280c
                     received_at: 2026-09-29T01:30:12.940Z
-        "400": *a15
+        "400": *a7
         "401": *a4
         "403":
           description: FORBIDDEN · OUTLET_SCOPE_VIOLATION
@@ -3026,7 +3140,7 @@ paths:
                       details:
                         token_outlet_id: OUT001
                         requested_outlet_id: OUT050
-        "404": *a9
+        "404": *a10
         "409":
           description: RECEIPT_ALREADY_RECORDED · INVALID_STATE_TRANSITION
           content:

@@ -577,7 +577,34 @@ export async function seedDemoOrders(vehicleAttempts = 1): Promise<DemoSeedOutco
 }
 
 /** Boot-time data preparation. Returns true when a demo seed is still pending. */
+const PRODUCT_GROUPS = [
+  { key: 'freshAmbient', brand: 'Fresh', temp: 'ambient' },
+  { key: 'freshChilled', brand: 'Fresh', temp: 'chilled' },
+  { key: 'style', brand: 'Style', temp: 'ambient' },
+  { key: 'tech', brand: 'Tech', temp: 'ambient' },
+] as const;
+
+/** Writes the catalogue to the products table: insert new SKUs, refresh the rest. Runs on every boot. */
+export async function seedProducts(): Promise<number> {
+  let count = 0;
+  for (const group of PRODUCT_GROUPS) {
+    for (const item of CATALOGUE[group.key]) {
+      await pool.query(
+        `INSERT INTO products (sku, description, brand, temp_requirement, unit_weight_kg, unit_volume_m3)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         ON CONFLICT (sku) DO UPDATE
+           SET description = EXCLUDED.description, brand = EXCLUDED.brand, temp_requirement = EXCLUDED.temp_requirement,
+               unit_weight_kg = EXCLUDED.unit_weight_kg, unit_volume_m3 = EXCLUDED.unit_volume_m3`,
+        [item.sku, item.description, group.brand, group.temp, item.w, item.v],
+      );
+      count += 1;
+    }
+  }
+  return count;
+}
+
 export async function seedData(opts: { demoOrders: boolean }): Promise<boolean> {
+  console.log(`✅ Product catalogue ready: ${await seedProducts()} product(s).`);
   const { changed, total, skipped } = await syncOutlets();
   console.log(`✅ outlets_ref synced from Fleet's outlets table: ${total - skipped} outlet(s), ${changed} inserted or corrected.`);
   if (skipped > 0) {

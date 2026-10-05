@@ -148,6 +148,21 @@ CREATE TABLE IF NOT EXISTS service_jobs (
   PRIMARY KEY (job_name, job_key)
 );
 
+-- ------------------------------------------------------------------ products
+-- The catalogue a store orders from. Seeded from the service's catalogue on every boot
+-- (insert or refresh by sku), so changing a weight in code reaches the database.
+CREATE TABLE IF NOT EXISTS products (
+  sku              VARCHAR(40)   PRIMARY KEY,
+  description      VARCHAR(200)  NOT NULL,
+  brand            VARCHAR(10)   NOT NULL CHECK (brand IN ('Fresh','Style','Tech')),
+  temp_requirement VARCHAR(10)   NOT NULL CHECK (temp_requirement IN ('ambient','chilled')),
+  unit_weight_kg   NUMERIC(8,3)  NOT NULL CHECK (unit_weight_kg >= 0),
+  unit_volume_m3   NUMERIC(8,4)  NOT NULL CHECK (unit_volume_m3 >= 0),
+  active           BOOLEAN       NOT NULL DEFAULT true,
+  created_at       TIMESTAMPTZ   NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS ix_products_brand_temp ON products (brand, temp_requirement) WHERE active;
+
 -- ------------------------------------------------------------ orders_ref_seq
 -- Race-safe order_ref suffix. Name is service-specific on purpose.
 CREATE SEQUENCE IF NOT EXISTS orders_ref_seq;

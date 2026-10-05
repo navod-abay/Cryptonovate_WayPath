@@ -16,6 +16,7 @@ import {
   CreateOrderSchema,
   DeferOrderSchema,
   ListOrdersQuerySchema,
+  ListProductsQuerySchema,
   ReceiptSchema,
   ReplaceItemsSchema,
   StatusBatchSchema,
@@ -54,6 +55,7 @@ const dispatcherOrPlanning = requireRole(['dispatcher', 'system']);
 router.get('/confirmed', requireRole(['dispatcher', 'loader', 'system']), validateQuery(ConfirmedQuerySchema), asyncHandler(ctrl.getConfirmed));
 router.get('/at-risk', dispatcher, validateQuery(AtRiskQuerySchema), asyncHandler(ctrl.getAtRisk));
 router.get('/summary', dispatcher, validateQuery(SummaryQuerySchema), asyncHandler(ctrl.getSummary));
+router.get('/products', requireRole(['store_manager', 'dispatcher']), validateQuery(ListProductsQuerySchema), asyncHandler(ctrl.listProducts));
 router.patch('/status-batch', dispatcherOrPlanning, validateRequest(StatusBatchSchema), asyncHandler(ctrl.statusBatch));
 router.post('/close-window', dispatcherOrPlanning, validateRequest(CloseWindowSchema), asyncHandler(ctrl.closeWindow));
 
