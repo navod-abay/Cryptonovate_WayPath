@@ -8,6 +8,8 @@ export interface User {
   role: UserRole;
   outlet_id: string | null;
   depot: string | null;
+  email?: string | null;
+  phone?: string | null;
   is_active: boolean;
   created_at: Date;
 }

@@ -23,6 +23,8 @@ CREATE TABLE IF NOT EXISTS users (
   role user_role_enum NOT NULL,
   outlet_id VARCHAR(20) NULL,
   depot VARCHAR(50) NULL,
+  email VARCHAR(100) NULL,
+  phone VARCHAR(30) NULL,
   is_active BOOLEAN DEFAULT true,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );

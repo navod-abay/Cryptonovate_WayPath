@@ -14,10 +14,16 @@ export const refreshSchema = z.object({
   refresh_token: z.string().min(1, 'Refresh token is required'),
 });
 
-export const changePasswordSchema = z.object({
-  currentPassword: z.string().min(1, 'Current password is required'),
-  newPassword: z.string().min(8, 'New password must be at least 8 characters long'),
-});
+export const changePasswordSchema = z
+  .object({
+    currentPassword: z.string().min(1, 'Current password is required'),
+    newPassword: z.string().min(8, 'New password must be at least 8 characters long'),
+    confirmPassword: z.string().optional(),
+  })
+  .refine((v) => v.confirmPassword === undefined || v.confirmPassword === v.newPassword, {
+    message: 'New passwords do not match',
+    path: ['confirmPassword'],
+  });
 
 export class AuthController {
   /**
@@ -146,7 +152,7 @@ export class AuthController {
 
     try {
       const result = await pool.query<User>(
-        'SELECT id, username, full_name, role, outlet_id, depot, is_active, created_at FROM users WHERE id = $1',
+        'SELECT id, username, full_name, role, outlet_id, depot, email, phone, is_active, created_at FROM users WHERE id = $1',
         [req.user.sub]
       );
 
@@ -172,6 +178,8 @@ export class AuthController {
           fullName: user.full_name,
           outletId: user.outlet_id,
           depot: user.depot,
+          email: user.email ?? null,
+          phone: user.phone ?? null,
           isActive: user.is_active,
           createdAt: user.created_at,
         },
@@ -240,6 +248,17 @@ export class AuthController {
           error: {
             code: 'INVALID_PASSWORD',
             message: 'Current password is incorrect',
+          },
+        });
+        return;
+      }
+
+      if (newPassword === currentPassword) {
+        res.status(400).json({
+          success: false,
+          error: {
+            code: 'SAME_PASSWORD',
+            message: 'New password must be different from the current one',
           },
         });
         return;
