@@ -113,6 +113,14 @@ export interface Order {
   deferredReason?: string;
 }
 
+/** An order that was started but not confirmed yet. It only pre-fills the cart; it is not a placed order. */
+export interface DraftOrder {
+  id: string;
+  type: OrderType;
+  deliveryDate: string;
+  lines: OrderLine[];
+}
+
 export type DeliveryStatus = 'on_the_way' | 'arrived' | 'unloading' | 'delivered';
 
 export interface DeliveryItem {

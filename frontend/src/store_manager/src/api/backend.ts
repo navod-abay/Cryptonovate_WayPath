@@ -5,7 +5,7 @@
  */
 import { ApiError, http } from './http';
 import type {
-  ConfirmationCode, Delivery, DeliveryStatus, NewOrderInput, Order, OrderStatus, OrderSuggestions, OrderType, Outlet, Product, StoreType, TruckCapacity, Update,
+  ConfirmationCode, Delivery, DeliveryStatus, DraftOrder, NewOrderInput, Order, OrderStatus, OrderSuggestions, OrderType, Outlet, Product, StoreType, TruckCapacity, Update,
 } from '@/types';
 
 // ------------------------------------------------------------ backend shapes
@@ -29,7 +29,7 @@ interface BackendOrder {
 }
 interface BackendStop { orderRef: string; outletId: string; sequence: number; eta: string; windowOpen: string; windowClose: string }
 interface BackendTrip { vehicleId: string; stops: BackendStop[] }
-interface BackendOutlet { outlet_id: string; brand: string; district: string }
+interface BackendOutlet { outlet_id: string; brand: string; district: string; name?: string | null; address?: string | null }
 interface BackendVehicle { temp: 'reefer' | 'ambient'; weight_cap_kg: number; volume_cap_m3: number }
 
 // ------------------------------------------------------------ mapping tables
@@ -85,10 +85,10 @@ export async function fetchOutlet(outletId: string, fullName: string): Promise<O
     id: row.outlet_id,
     city: row.district,
     managerName: fullName.split(' ')[0] ?? fullName,
-    storeName: `${row.brand} ${row.district}`,
+    storeName: row.name || `${row.brand} ${row.district}`,
     storeType,
     categories: CATEGORIES[storeType],
-    address: '',
+    address: row.address ?? '',
   };
 }
 
@@ -163,7 +163,7 @@ function loadSnapshot(outletId: string): Promise<Snapshot> {
   if (snapshot && snapshot.outletId === outletId && Date.now() - snapshot.at < 3000) return snapshot.promise;
   const promise = (async () => {
     const list = await http.get<{ orders: BackendOrder[] }>('/orders/', { outlet_id: outletId, page_size: 50 });
-    const visible = list.orders.filter((o) => o.status in ORDER_STATUS);
+    const visible = list.orders.filter((o) => o.status in ORDER_STATUS || o.status === 'draft');
     const [orders, unloading] = await Promise.all([Promise.all(visible.map(loadOrderDetail)), loadUnloading(outletId)]);
     return { orders, plan: await loadPlan(orders), unloading };
   })();
@@ -176,7 +176,7 @@ function loadSnapshot(outletId: string): Promise<Snapshot> {
 
 export async function fetchOrders(outletId: string): Promise<Order[]> {
   const { orders, plan } = await loadSnapshot(outletId);
-  return orders.map((o): Order => ({
+  return orders.filter((o) => o.status in ORDER_STATUS).map((o): Order => ({
     id: o.order_ref,
     type: orderTypeOf(o),
     deliveryDate: o.order_date,
@@ -191,6 +191,19 @@ export async function fetchOrders(outletId: string): Promise<Order[]> {
     vehicle: o.vehicle_id ?? plan.get(o.order_ref)?.vehicle,
     deferredReason: o.status === 'deferred' ? [...(o.events ?? [])].reverse().find((e) => e.to_status === 'deferred')?.reason_label ?? undefined : undefined,
   }));
+}
+
+/** Orders the store started but has not confirmed. They only fill the cart. */
+export async function fetchDrafts(outletId: string): Promise<DraftOrder[]> {
+  const { orders } = await loadSnapshot(outletId);
+  return orders
+    .filter((o) => o.status === 'draft')
+    .map((o) => ({
+      id: o.order_ref,
+      type: orderTypeOf(o),
+      deliveryDate: o.order_date,
+      lines: (o.items ?? []).map((i) => ({ productId: i.sku, name: i.description, quantity: i.quantity })),
+    }));
 }
 
 export async function fetchDeliveries(outletId: string): Promise<Delivery[]> {
@@ -260,7 +273,7 @@ export async function fetchUpdates(outletId: string): Promise<Update[]> {
 export async function fetchSuggestions(outletId: string): Promise<OrderSuggestions> {
   const { orders } = await loadSnapshot(outletId);
   const lastOrderQty: Record<string, number> = {};
-  [...orders].sort((a, b) => a.placed_at.localeCompare(b.placed_at)).forEach((o) => {
+  [...orders].filter((o) => o.status !== 'draft').sort((a, b) => a.placed_at.localeCompare(b.placed_at)).forEach((o) => {
     (o.items ?? []).forEach((i) => { lastOrderQty[i.sku] = i.quantity; });
   });
   return { lastOrderQty, missingFromLast: {} };
@@ -289,10 +302,16 @@ export async function recordReceipt(orderRef: string, totals: ReceiptTotals): Pr
 // ------------------------------------------------------------ placing an order
 
 /**
- * Creates the order for that day and category, or replaces its lines when one already exists
- * (draft or still-open confirmed), then confirms it. Returns the order as the screens show it.
+ * Replaces the lines of the order the app already knows for that day and category (a draft, or a
+ * confirmed one that is still open), or creates a new one, then confirms it if it was a draft.
+ * If the app's view was stale and the create is refused as a duplicate, it replaces that order instead.
  */
-export async function placeOrder(input: NewOrderInput, outletId: string, products: Product[]): Promise<Order> {
+export async function placeOrder(
+  input: NewOrderInput,
+  outletId: string,
+  products: Product[],
+  existing?: { id: string; draft: boolean },
+): Promise<Order> {
   const byId = new Map(products.map((p) => [p.id, p]));
   const items = input.lines.map((l) => {
     const product = byId.get(l.productId);
@@ -308,17 +327,27 @@ export async function placeOrder(input: NewOrderInput, outletId: string, product
   });
   const temp = input.type === 'chilled' ? 'chilled' : 'ambient';
 
+  const replaceLines = (orderRef: string) => http.put(`/orders/${encodeURIComponent(orderRef)}/items`, { items });
+
   let ref: string;
-  let status = 'draft';
-  try {
-    const created = await http.post<{ order_ref: string }>('/orders/', { outlet_id: outletId, temp_requirement: temp, order_date: input.deliveryDate, items });
-    ref = created.order_ref;
-  } catch (e) {
-    const existing = e instanceof ApiError && e.code === 'DUPLICATE_ORDER' ? (e.details as { existing_order_ref?: string } | undefined)?.existing_order_ref : undefined;
-    if (!existing) throw e;
-    ref = existing;
-    status = await fetchOrderStatus(ref);
-    await http.put(`/orders/${encodeURIComponent(ref)}/items`, { items });
+  let status: string;
+  if (existing) {
+    ref = existing.id;
+    status = existing.draft ? 'draft' : 'confirmed';
+    await replaceLines(ref);
+  } else {
+    try {
+      const created = await http.post<{ order_ref: string }>('/orders/', { outlet_id: outletId, temp_requirement: temp, order_date: input.deliveryDate, items });
+      ref = created.order_ref;
+      status = 'draft';
+    } catch (e) {
+      // The app's view was stale: the day already has an order, so replace its lines instead.
+      const duplicate = e instanceof ApiError && e.code === 'DUPLICATE_ORDER' ? (e.details as { existing_order_ref?: string } | undefined)?.existing_order_ref : undefined;
+      if (!duplicate) throw e;
+      ref = duplicate;
+      status = await fetchOrderStatus(ref);
+      await replaceLines(ref);
+    }
   }
   if (status === 'draft') await http.post(`/orders/${encodeURIComponent(ref)}/confirm`, { accept_next_run: false });
 

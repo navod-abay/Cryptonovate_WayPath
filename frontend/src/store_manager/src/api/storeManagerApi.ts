@@ -7,12 +7,13 @@
  * functions and read the results from the store.
  */
 import { USE_MOCK } from './config';
+import { refreshProfile } from './authApi';
 import * as backend from './backend';
 import { ApiError, http } from './http';
 import * as mock from '@/mock/server';
 import { emptyData, getState, setState } from '@/state/store';
 import type {
-  ConfirmationCode, Delivery, IssueReport, NewIssueInput, NewOrderInput, Order,
+  ConfirmationCode, Delivery, DraftOrder, IssueReport, NewIssueInput, NewOrderInput, Order,
   OrderSuggestions, OrderType, Product, TruckCapacity, Update,
 } from '@/types';
 import { describeReport } from '@/utils/text';
@@ -33,6 +34,9 @@ const fetchCapacity = (): Promise<Partial<Record<OrderType, TruckCapacity>>> =>
 
 /** GET /orders/?outlet_id= plus /orders/:ref for lines and events */
 const fetchOrders = (): Promise<Order[]> => (USE_MOCK ? mock.getOrders() : backend.fetchOrders(getState().outlet.id));
+
+/** Orders started but not confirmed; they pre-fill the cart */
+const fetchDrafts = (): Promise<DraftOrder[]> => (USE_MOCK ? Promise.resolve([]) : backend.fetchDrafts(getState().outlet.id));
 
 /** Derived from the outlet's previous orders */
 const fetchSuggestions = (): Promise<OrderSuggestions> =>
@@ -55,12 +59,14 @@ export function loadStoreData(): Promise<void> {
 async function doLoadStoreData() {
   setState((s) => ({ ...s, load: { status: 'loading', error: null } }));
   try {
-    const [products, capacity, orders, deliveries, updates, suggestions] = await Promise.all([
-      fetchProducts(), fetchCapacity(), fetchOrders(), fetchDeliveries(), fetchUpdates(), fetchSuggestions(),
+    // Profile and outlet first: the products and capacity below depend on the outlet's categories.
+    await refreshProfile().catch(() => undefined);
+    const [products, capacity, orders, drafts, deliveries, updates, suggestions] = await Promise.all([
+      fetchProducts(), fetchCapacity(), fetchOrders(), fetchDrafts(), fetchDeliveries(), fetchUpdates(), fetchSuggestions(),
     ]);
     setState((s) => ({
       ...s,
-      products, capacity, orders, deliveries, updates,
+      products, capacity, orders, drafts, deliveries, updates,
       lastOrderQty: suggestions.lastOrderQty,
       missingFromLast: { ...emptyData().missingFromLast, ...suggestions.missingFromLast },
       load: { status: 'ready', error: null },
@@ -77,8 +83,8 @@ export async function refreshLiveData() {
 }
 
 async function refreshOrders() {
-  const [orders, suggestions] = await Promise.all([fetchOrders(), fetchSuggestions()]);
-  setState((s) => ({ ...s, orders, lastOrderQty: suggestions.lastOrderQty, missingFromLast: { ...s.missingFromLast, ...suggestions.missingFromLast } }));
+  const [orders, drafts, suggestions] = await Promise.all([fetchOrders(), fetchDrafts(), fetchSuggestions()]);
+  setState((s) => ({ ...s, orders, drafts, lastOrderQty: suggestions.lastOrderQty, missingFromLast: { ...s.missingFromLast, ...suggestions.missingFromLast } }));
 }
 
 const upsertDelivery = (d: Delivery) =>
@@ -89,10 +95,15 @@ const upsertDelivery = (d: Delivery) =>
 /** POST /orders (creates, or replaces the lines of the order for that day + category), then confirm */
 export async function placeOrder(input: NewOrderInput): Promise<Order> {
   const body = { ...input, lines: input.lines.filter((l) => l.quantity + (l.carriedOver ?? 0) > 0) };
-  const order = USE_MOCK ? await mock.placeOrder(body) : await backend.placeOrder(body, getState().outlet.id, getState().products);
+  const sameDay = <T extends { type: OrderType; deliveryDate: string }>(o: T) => o.type === body.type && o.deliveryDate === body.deliveryDate;
+  const placed = getState().orders.find(sameDay);
+  const draft = getState().drafts.find(sameDay);
+  const known = placed ? { id: placed.id, draft: false } : draft ? { id: draft.id, draft: true } : undefined;
+  const order = USE_MOCK ? await mock.placeOrder(body) : await backend.placeOrder(body, getState().outlet.id, getState().products, known);
   setState((s) => ({
     ...s,
     orders: [...s.orders.filter((o) => !(o.type === order.type && o.deliveryDate === order.deliveryDate)), order],
+    drafts: s.drafts.filter((d) => !(d.type === order.type && d.deliveryDate === order.deliveryDate)),
     missingFromLast: { ...s.missingFromLast, [order.type]: [] },
   }));
   return order;

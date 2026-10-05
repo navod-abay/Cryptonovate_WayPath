@@ -57,6 +57,8 @@ export async function login(username: string, password: string): Promise<Session
         role: 'store_manager',
         outletId: res.user.outletId,
         ...profileUser,
+        // /me returns when the account was created
+        memberSince: profileUser.memberSince ?? (profileUser as { createdAt?: string }).createdAt,
       },
       outlet,
     };
@@ -66,6 +68,24 @@ export async function login(username: string, password: string): Promise<Session
   } finally {
     setPendingToken(null);
   }
+}
+
+/**
+ * Re-reads the profile and the outlet so a change made on the server shows without signing in
+ * again. The session is saved at login and would otherwise keep the old values until then.
+ */
+export async function refreshProfile() {
+  const session = loadSavedSession();
+  if (USE_MOCK_AUTH || !session) return;
+  const [outlet, profile] = await Promise.all([apiOutlet(session.user.outletId, session.user.fullName), apiMe().catch(() => null)]);
+  const fresh = ((profile as any)?.user ?? profile ?? {}) as Partial<User> & { createdAt?: string };
+  const next: Session = {
+    ...session,
+    user: { ...session.user, ...fresh, memberSince: fresh.memberSince ?? fresh.createdAt ?? session.user.memberSince },
+    outlet,
+  };
+  saveSession(next);
+  setState((s) => (s.session ? { ...s, session: next, outlet } : s));
 }
 
 /** Sign out. JWTs are stateless, so this only clears the client (no endpoint needed). */
@@ -79,13 +99,13 @@ setUnauthorizedHandler(() => {
   void logout();
 });
 
-/** POST /auth/change-password  (needs to be built in auth-rbac) */
-export async function changePassword(current: string, next: string) {
+/** POST /auth/change-password */
+export async function changePassword(current: string, next: string, confirm?: string) {
   if (next.length < 8) throw new AuthError('New password must be at least 8 characters.');
   if (next === current) throw new AuthError('New password must be different from the current one.');
   try {
     if (USE_MOCK_AUTH) await mock.changePassword(current, next);
-    else await http.post<void>('/auth/change-password', { currentPassword: current, newPassword: next }, { baseUrl: AUTH_API_BASE_URL });
+    else await http.post<void>('/auth/change-password', { currentPassword: current, newPassword: next, confirmPassword: confirm }, { baseUrl: AUTH_API_BASE_URL });
   } catch (e) {
     if (e instanceof ApiError && e.status === 400) throw new AuthError(e.message);
     throw e;
