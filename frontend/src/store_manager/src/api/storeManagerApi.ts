@@ -8,7 +8,7 @@
  */
 import { USE_MOCK } from './config';
 import * as backend from './backend';
-import { http } from './http';
+import { ApiError, http } from './http';
 import * as mock from '@/mock/server';
 import { emptyData, getState, setState } from '@/state/store';
 import type {
@@ -163,14 +163,42 @@ export async function reportDeliveryProblem(deliveryId: string, problems: string
 }
 
 /**
- * POST /execution/orders/:orderRef/confirm   (exists in execution-sync; should return the handover code)
+ * POST /execution/orders/:orderRef/confirm   (issues the handover code; real mode)
  * The store manager reads the code to the driver, who types it into the driver app.
  */
 export async function requestConfirmationCode(deliveryId: string): Promise<ConfirmationCode> {
   const delivery = getState().deliveries.find((d) => d.id === deliveryId);
-  return USE_MOCK
-    ? mock.createHandoverCode(deliveryId)
-    : http.post<ConfirmationCode>(`/execution/orders/${encodeURIComponent(delivery?.orderId ?? '')}/confirm`, { deliveryId });
+  return USE_MOCK ? mock.createHandoverCode(deliveryId) : backend.requestHandoverCode(delivery?.orderId ?? '');
+}
+
+const recording = new Map<string, Promise<void>>();
+
+/** Sends the store's receipt: items reported missing or damaged, the rest received. One call per delivery at a time. */
+function recordReceipt(deliveryId: string): Promise<void> {
+  const running = recording.get(deliveryId);
+  if (running) return running;
+  const delivery = getState().deliveries.find((d) => d.id === deliveryId);
+  if (!delivery) return Promise.reject(new Error('Delivery not found.'));
+  const total = delivery.items.reduce((n, i) => n + i.sent, 0);
+  const missing = delivery.reports.filter((r) => r.kind === 'missing').reduce((n, r) => n + r.quantity, 0);
+  const rejected = delivery.reports.filter((r) => r.kind === 'damaged').reduce((n, r) => n + r.quantity, 0);
+  if (missing + rejected > total) return Promise.reject(new Error('More items are reported than were sent.'));
+  const note = delivery.reports.map((r) => describeReport(r)).join('; ').slice(0, 1000);
+  const promise = backend
+    .recordReceipt(delivery.orderId, { received_units: total - missing - rejected, missing_units: missing, rejected_units: rejected, ...(note ? { note } : {}) })
+    .catch((e) => {
+      // Already recorded (for example by an earlier attempt) counts as done.
+      if (!(e instanceof ApiError && e.code === 'RECEIPT_ALREADY_RECORDED')) throw e;
+    })
+    .finally(() => recording.delete(deliveryId));
+  recording.set(deliveryId, promise);
+  return promise;
+}
+
+/** The driver already finished the handover, so no code is needed: record the receipt now. */
+export async function confirmReceipt(deliveryId: string) {
+  await recordReceipt(deliveryId);
+  await Promise.all([refreshOrders(), refreshLiveData()]);
 }
 
 /**
@@ -178,7 +206,16 @@ export async function requestConfirmationCode(deliveryId: string): Promise<Confi
  * Returns true once the driver has entered the code (status "delivered").
  */
 export async function checkHandover(deliveryId: string): Promise<boolean> {
-  const d = USE_MOCK ? await mock.getDelivery(deliveryId) : await http.get<Delivery>(`/execution/deliveries/${deliveryId}`);
+  if (!USE_MOCK) {
+    const delivery = getState().deliveries.find((x) => x.id === deliveryId);
+    const status = await backend.fetchOrderStatus(delivery?.orderId ?? '');
+    if (status === 'out_for_delivery') return false;
+    // The driver entered the code, so the order is delivered; record the store's receipt now.
+    if (status === 'delivered') await recordReceipt(deliveryId);
+    await Promise.all([refreshOrders(), refreshLiveData()]).catch(() => undefined);
+    return true;
+  }
+  const d = await mock.getDelivery(deliveryId);
   upsertDelivery(d);
   if (d.status !== 'delivered') return false;
   await Promise.all([refreshOrders(), refreshLiveData()]).catch(() => undefined);

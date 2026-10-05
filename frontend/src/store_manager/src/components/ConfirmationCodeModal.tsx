@@ -6,6 +6,7 @@ import { useNow } from '@/hooks/useNow';
 import { splitDuration, pad2 } from '@/utils/date';
 import { checkHandover, requestConfirmationCode } from '@/api/storeManagerApi';
 import { HANDOVER_POLL_MS } from '@/api/config';
+import { ApiError } from '@/api/http';
 import { showError } from '@/state/toasts';
 import './ConfirmationCodeModal.css';
 
@@ -44,13 +45,18 @@ export default function ConfirmationCodeModal({ deliveryId, open, onClose, onVer
     const tick = async () => {
       try {
         if (!stop && (await checkHandover(deliveryId))) setVerified(true);
-      } catch {
-        /* network blip: try again on the next tick */
+      } catch (e) {
+        // A refusal from the server will not fix itself; stop and say why. A network blip retries.
+        if (e instanceof ApiError && e.status >= 400 && e.status < 500) {
+          stop = true;
+          showError(e, 'Could not record the receipt.');
+          onClose();
+        }
       }
     };
     const id = setInterval(tick, HANDOVER_POLL_MS);
     return () => { stop = true; clearInterval(id); };
-  }, [open, code, verified, deliveryId]);
+  }, [open, code, verified, deliveryId, onClose]);
 
   useEffect(() => {
     if (!verified) return;

@@ -5,7 +5,7 @@
  */
 import { http } from './http';
 import type {
-  Delivery, DeliveryStatus, Order, OrderStatus, OrderSuggestions, OrderType, Outlet, StoreType, TruckCapacity, Update,
+  ConfirmationCode, Delivery, DeliveryStatus, Order, OrderStatus, OrderSuggestions, OrderType, Outlet, StoreType, TruckCapacity, Update,
 } from '@/types';
 
 // ------------------------------------------------------------ backend shapes
@@ -208,6 +208,7 @@ export async function fetchDeliveries(outletId: string): Promise<Delivery[]> {
       reports: [],
       arrivedAt: eventAt(o, 'delivered'),
       confirmedAt: eventAt(o, 'received'),
+      driverDone: o.status === 'delivered',
     };
   });
 }
@@ -254,4 +255,24 @@ export async function fetchSuggestions(outletId: string): Promise<OrderSuggestio
     (o.items ?? []).forEach((i) => { lastOrderQty[i.sku] = i.quantity; });
   });
   return { lastOrderQty, missingFromLast: {} };
+}
+
+// ------------------------------------------------------------ handover and receipt
+
+/** POST /execution/orders/:ref/confirm, the 6-digit code the store reads out to the driver. */
+export const requestHandoverCode = (orderRef: string) =>
+  http.post<ConfirmationCode>(`/execution/orders/${encodeURIComponent(orderRef)}/confirm`);
+
+/** Order Management's status for one order (fresh, not cached). */
+export async function fetchOrderStatus(orderRef: string): Promise<string> {
+  const order = await http.get<{ status: string }>(`/orders/${encodeURIComponent(orderRef)}`);
+  return order.status;
+}
+
+export interface ReceiptTotals { received_units: number; missing_units: number; rejected_units: number; note?: string }
+
+/** POST /orders/:ref/receipt. Needs the order to be delivered; all received means received, anything short means disputed. */
+export async function recordReceipt(orderRef: string, totals: ReceiptTotals): Promise<void> {
+  await http.post(`/orders/${encodeURIComponent(orderRef)}/receipt`, totals);
+  snapshot = null;
 }

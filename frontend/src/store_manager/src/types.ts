@@ -157,6 +157,8 @@ export interface Delivery {
   reports: IssueReport[];
   arrivedAt?: string;
   confirmedAt?: string;
+  /** The driver has already completed the handover; only the store's receipt is left. */
+  driverDone?: boolean;
 }
 
 export type UpdateSource = 'driver' | 'dispatcher' | 'loader';
