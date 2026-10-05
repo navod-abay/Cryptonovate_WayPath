@@ -6,6 +6,8 @@ import {
   FuelUsageQuerySchema,
   GetVehiclesQuerySchema,
   VehicleDowntimeRequestSchema,
+  AvailabilityUpdateSchema,
+  WeeklyFuelQuerySchema,
 } from '../contracts';
 import { pool } from '../db/pool';
 
@@ -25,7 +27,17 @@ interface VehicleRow {
   depot: Vehicle['depot'];
   weekly_range_km: number | string | null;
   status: Vehicle['status'];
+  unavailable_periods?: { from: string; to: string }[];
 }
+
+/** Today's date in Colombo, in SQL: downtime that ended before it is history. */
+const COLOMBO_TODAY = "(now() AT TIME ZONE 'Asia/Colombo')::date";
+
+/** A vehicle's current and future downtime as [{ from, to }], earliest first. */
+const UNAVAILABLE_PERIODS_SQL = `COALESCE((
+  SELECT json_agg(json_build_object('from', d.date_from::text, 'to', d.date_to::text) ORDER BY d.date_from)
+  FROM vehicle_downtime d WHERE d.vehicle_id = v.vehicle_id AND d.date_to >= ${COLOMBO_TODAY}
+), '[]'::json)`;
 
 interface VehicleEfficiencyRow {
   km_per_l: number | string;
@@ -67,6 +79,7 @@ function mapVehicleRow(row: VehicleRow): Vehicle {
     depot: row.depot,
     weekly_range_km: row.weekly_range_km != null ? Number(row.weekly_range_km) : undefined,
     status: row.status,
+    ...(row.unavailable_periods ? { unavailable_periods: row.unavailable_periods } : {}),
   };
 }
 
@@ -133,7 +146,8 @@ export class VehicleController {
 
       let sql =
         'SELECT v.vehicle_id, v.type, v.temp, v.weight_cap_kg, v.volume_cap_m3, ' +
-        'v.fuel_type, v.km_per_l, v.weekly_fuel_quota_l, v.depot, v.weekly_range_km, v.status ' +
+        'v.fuel_type, v.km_per_l, v.weekly_fuel_quota_l, v.depot, v.weekly_range_km, v.status, ' +
+        `${UNAVAILABLE_PERIODS_SQL} AS unavailable_periods ` +
         'FROM vehicles v';
 
       if (conditions.length > 0) {
@@ -383,6 +397,134 @@ export class VehicleController {
           code: 'DATABASE_ERROR',
           message: 'Failed to update vehicle status in database',
         },
+      });
+    }
+  }
+
+  // -------------------------------------------------------------------------
+
+  /**
+   * PUT /vehicles/:vehicle_id/availability
+   * Body: { status, unavailable_periods: [{ from, to }] }
+   * Sets the status and replaces every current and future downtime booking with the given periods
+   * (past bookings stay as history), in one transaction. Answers with the stored state.
+   */
+  static async updateAvailability(
+    req: Request<{ vehicle_id: string }>,
+    res: Response<ApiResponse<{ status: Vehicle['status']; unavailable_periods: { from: string; to: string }[] }>>
+  ): Promise<void> {
+    const parsed = AvailabilityUpdateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        success: false,
+        error: { code: 'VALIDATION_ERROR', message: parsed.error.errors.map((e) => e.message).join('; ') },
+      });
+      return;
+    }
+    const { vehicle_id } = req.params;
+    const { status, unavailable_periods } = parsed.data;
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const updated = await client.query<{ status: Vehicle['status'] }>(
+        'UPDATE vehicles SET status = $1 WHERE vehicle_id = $2 RETURNING status',
+        [status, vehicle_id]
+      );
+      if (updated.rows.length === 0) {
+        await client.query('ROLLBACK');
+        res.status(404).json({
+          success: false,
+          error: { code: 'VEHICLE_NOT_FOUND', message: `Vehicle with ID '${vehicle_id}' not found` },
+        });
+        return;
+      }
+      await client.query(`DELETE FROM vehicle_downtime WHERE vehicle_id = $1 AND date_to >= ${COLOMBO_TODAY}`, [vehicle_id]);
+      for (const p of unavailable_periods) {
+        await client.query(
+          "INSERT INTO vehicle_downtime (vehicle_id, date_from, date_to, reason) VALUES ($1, $2, $3, 'Set by dispatcher')",
+          [vehicle_id, p.from, p.to]
+        );
+      }
+      const stored = await client.query<{ unavailable_periods: { from: string; to: string }[] }>(
+        `SELECT ${UNAVAILABLE_PERIODS_SQL} AS unavailable_periods FROM vehicles v WHERE v.vehicle_id = $1`,
+        [vehicle_id]
+      );
+      await client.query('COMMIT');
+      res.status(200).json({
+        success: true,
+        data: { status: updated.rows[0].status, unavailable_periods: stored.rows[0].unavailable_periods },
+      });
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      console.error('[fleet-directory] Error updating availability:', error);
+      res.status(500).json({
+        success: false,
+        error: { code: 'DATABASE_ERROR', message: 'Failed to update vehicle availability' },
+      });
+    } finally {
+      client.release();
+    }
+  }
+
+  // -------------------------------------------------------------------------
+
+  /**
+   * GET /fuel-usage/weekly?date=YYYY-MM-DD&depot=
+   * Fuel quota and use of each vehicle for the ISO week containing date, plus the share of the
+   * (depot's) total quota already used (null when the quota is 0).
+   */
+  static async getWeeklyFuel(
+    req: Request,
+    res: Response<
+      ApiResponse<{
+        iso_year: number;
+        iso_week: number;
+        utilization: number | null;
+        vehicles: { vehicle_id: string; quota_litres: number; consumed_litres: number }[];
+      }>
+    >
+  ): Promise<void> {
+    const parsed = WeeklyFuelQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({
+        success: false,
+        error: { code: 'VALIDATION_ERROR', message: parsed.error.errors.map((e) => e.message).join('; ') },
+      });
+      return;
+    }
+    try {
+      const { date, depot } = parsed.data;
+      const week = await pool.query<{ iso_year: number; iso_week: number }>(
+        'SELECT EXTRACT(isoyear FROM $1::date)::int AS iso_year, EXTRACT(week FROM $1::date)::int AS iso_week',
+        [date]
+      );
+      const { iso_year, iso_week } = week.rows[0];
+      const result = await pool.query<{ vehicle_id: string; quota: string; used: string }>(
+        `SELECT v.vehicle_id, v.weekly_fuel_quota_l AS quota, COALESCE(SUM(fl.liters_consumed), 0) AS used
+         FROM vehicles v
+         LEFT JOIN fuel_logs fl ON fl.vehicle_id = v.vehicle_id AND fl.iso_year = $1 AND fl.week_number = $2
+         WHERE $3::text IS NULL OR v.depot = $3
+         GROUP BY v.vehicle_id, v.weekly_fuel_quota_l
+         ORDER BY v.vehicle_id`,
+        [iso_year, iso_week, depot?.trim() || null]
+      );
+      const vehicles = result.rows.map((r: { vehicle_id: string; quota: string; used: string }) => ({
+        vehicle_id: r.vehicle_id,
+        quota_litres: Number(r.quota),
+        consumed_litres: Number(Number(r.used).toFixed(2)),
+      }));
+      type Row = (typeof vehicles)[number];
+      const quota = vehicles.reduce((n: number, v: Row) => n + v.quota_litres, 0);
+      const used = vehicles.reduce((n: number, v: Row) => n + v.consumed_litres, 0);
+      res.status(200).json({
+        success: true,
+        data: { iso_year, iso_week, utilization: quota > 0 ? Number((used / quota).toFixed(4)) : null, vehicles },
+      });
+    } catch (error) {
+      console.error('[fleet-directory] Error fetching weekly fuel usage:', error);
+      res.status(500).json({
+        success: false,
+        error: { code: 'DATABASE_ERROR', message: 'Failed to retrieve weekly fuel usage' },
       });
     }
   }

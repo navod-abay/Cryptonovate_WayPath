@@ -27,6 +27,8 @@ export const VehicleSchema = z.object({
   depot: DepotEnum,
   weekly_range_km: z.number().nonnegative().optional(),
   status: VehicleStatusEnum,
+  /** Downtime from today (Colombo) onwards, earliest first; listed with GET /vehicles. */
+  unavailable_periods: z.array(z.object({ from: z.string(), to: z.string() })).optional(),
 });
 
 export type Vehicle = z.infer<typeof VehicleSchema>;
