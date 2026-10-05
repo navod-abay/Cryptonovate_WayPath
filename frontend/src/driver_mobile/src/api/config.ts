@@ -1,9 +1,6 @@
 // The app talks to the API gateway (NGINX, port 80), which routes /api/<service> to each service.
-//
-// On a phone plugged in over USB, `adb reverse tcp:80 tcp:80` makes the phone's localhost:80 the
-// gateway on the development machine, so no IP address is needed (Metro uses the same trick on 8081).
-// On the Android emulator without adb reverse, use http://10.0.2.2 instead.
-const GATEWAY_URL = 'http://localhost';
+// Which gateway is set per build in ./gateway.ts.
+import { GATEWAY_URL } from './gateway';
 
 export const API_ROUTES = {
   AUTH: `${GATEWAY_URL}/api/auth`,
