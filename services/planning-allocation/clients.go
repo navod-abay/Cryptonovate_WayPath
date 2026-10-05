@@ -262,8 +262,8 @@ type FleetAPI interface {
 
 type fleetClient struct{ serviceClient }
 
-func newFleetClient(baseURL string) *fleetClient {
-	return &fleetClient{serviceClient{name: "fleet-directory", baseURL: baseURL,
+func newFleetClient(baseURL, secret string) *fleetClient {
+	return &fleetClient{serviceClient{name: "fleet-directory", baseURL: baseURL, secret: secret,
 		http: &http.Client{Timeout: 30 * time.Second}}}
 }
 

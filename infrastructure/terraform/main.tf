@@ -37,7 +37,7 @@ variable "instance_type" {
 variable "admin_ssh_cidr" {
   description = "CIDR block permitted for SSH management (Replace YOUR_IP_ADDRESS with your public IP)"
   type        = string
-  default     = "YOUR_IP_ADDRESS/32"
+  default     = "112.134.148.12/32"
 }
 
 variable "key_pair_name" {
@@ -49,7 +49,7 @@ variable "key_pair_name" {
 variable "github_repo_url" {
   description = "Public Git repository URL containing the docker-compose.yml and microservices"
   type        = string
-  default     = "https://github.com/your-org/TeamName_SolutionName.git"
+  default     = "https://github.com/navod-abay/Cryptonovate_WayPath.git"
 }
 
 # ------------------------------------------------------------------------------
@@ -282,6 +282,18 @@ resource "aws_instance" "app_server" {
 }
 
 # ------------------------------------------------------------------------------
+# Elastic IP (Fixed Public IP)
+# ------------------------------------------------------------------------------
+resource "aws_eip" "app_eip" {
+  instance = aws_instance.app_server.id
+  domain   = "vpc"
+
+  tags = {
+    Name = "cryptonovate-fixed-ip"
+  }
+}
+
+# ------------------------------------------------------------------------------
 # Outputs
 # ------------------------------------------------------------------------------
 output "instance_id" {
@@ -299,6 +311,11 @@ output "application_url" {
   value       = "http://${aws_instance.app_server.public_ip}"
 }
 
+output "fixed_application_url" {
+  description = "Permanent Public HTTP URL"
+  value       = "http://${aws_eip.app_eip.public_ip}"
+}
+
 output "ssh_connection_command" {
   description = "Command to SSH into the instance (requires matching private key and admin_ssh_cidr)"
   value       = var.key_pair_name != "" ? "ssh -i <path-to-${var.key_pair_name}.pem> ubuntu@${aws_instance.app_server.public_ip}" : "SSH Key not configured in variables"
@@ -308,3 +325,4 @@ output "bootstrap_log_command" {
   description = "Command to inspect user_data bootstrap execution logs"
   value       = "ssh ubuntu@${aws_instance.app_server.public_ip} 'sudo tail -f /var/log/user-data.log'"
 }
+
