@@ -86,6 +86,16 @@ export async function initDb() {
       );
     `);
 
+    // Store unloading: the store manager says the vehicle is at the outlet and unloading has started
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS store_unloadings (
+        order_ref VARCHAR(50) PRIMARY KEY,
+        outlet_id VARCHAR(50) NOT NULL,
+        started_by UUID,
+        started_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
     await client.query('COMMIT');
     console.log('[db/init] Execution Sync database schema initialized successfully.');
   } catch (err) {

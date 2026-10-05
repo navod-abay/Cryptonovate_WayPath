@@ -48,7 +48,74 @@ async function safeFetch(url: string, options: RequestInit = {}, timeoutMs = 500
   }
 }
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** An error that carries the HTTP status and code the caller should see. */
+export class ExecutionError extends Error {
+  constructor(public status: number, public code: string, message: string, public details?: unknown) {
+    super(message);
+  }
+}
+
+/**
+ * Tells Order Management a stop was completed. It only has 'delivered' (the store confirms the
+ * units later), so delivered and partially delivered both map to it and a rejected stop does not
+ * change the order. The caller's own token is used, so the audit trail names the driver.
+ */
+function notifyDelivered(orderRef: string, podStatus: string, authorization?: string) {
+  if (podStatus === 'rejected') {
+    console.warn(`[sync.service] Stop for ${orderRef} was rejected; order status left unchanged.`);
+    return;
+  }
+  safeFetch(`${ORDER_SERVICE_URL}/api/orders/${encodeURIComponent(orderRef)}/status`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...(authorization ? { Authorization: authorization } : {}) },
+    body: JSON.stringify({ status: 'delivered' }),
+  });
+}
+
 export class ExecutionSyncService {
+  /**
+   * Store manager starts unloading: the vehicle is at the outlet. Only valid while the order is
+   * out for delivery. The caller's token is forwarded, so Order Management enforces outlet scope.
+   */
+  static async startUnloading(orderRef: string, authorization: string | undefined, userId?: string) {
+    const res = await safeFetch(`${ORDER_SERVICE_URL}/api/orders/${encodeURIComponent(orderRef)}`, {
+      headers: { Accept: 'application/json', ...(authorization ? { Authorization: authorization } : {}) },
+    });
+    if (!res) throw new ExecutionError(502, 'ORDER_SERVICE_UNAVAILABLE', 'Order Management is unreachable');
+    const body: any = await res.json().catch(() => null);
+    if (!res.ok) {
+      throw new ExecutionError(res.status, body?.error?.code || 'ORDER_LOOKUP_FAILED', body?.error?.message || `Order lookup failed (${res.status})`, body?.error?.details);
+    }
+    const order = body?.data;
+    if (order?.status !== 'out_for_delivery') {
+      throw new ExecutionError(409, 'INVALID_STATE', `Unloading can only start while the order is out for delivery; ${orderRef} is '${order?.status}'`, { status: order?.status });
+    }
+
+    const startedBy = userId && UUID_PATTERN.test(userId) ? userId : null;
+    const inserted = await pool.query(
+      `INSERT INTO store_unloadings (order_ref, outlet_id, started_by) VALUES ($1, $2, $3)
+       ON CONFLICT (order_ref) DO NOTHING RETURNING *`,
+      [orderRef, order.outlet_id, startedBy],
+    );
+    const created = inserted.rows.length > 0;
+    const row = created ? inserted.rows[0] : (await pool.query('SELECT * FROM store_unloadings WHERE order_ref = $1', [orderRef])).rows[0];
+    return {
+      created,
+      unloading: { order_ref: row.order_ref, outlet_id: row.outlet_id, status: 'unloading', started_at: row.started_at, started_by: row.started_by },
+    };
+  }
+
+  /** Orders of an outlet whose unloading has started. */
+  static async listUnloadings(outletId: string) {
+    const result = await pool.query(
+      'SELECT order_ref, started_at FROM store_unloadings WHERE outlet_id = $1 ORDER BY started_at DESC',
+      [outletId],
+    );
+    return result.rows;
+  }
+
   /**
    * Fetches assigned trip from planning-allocation microservice and reverses stop order for LIFO loading
    */
@@ -145,7 +212,7 @@ export class ExecutionSyncService {
   /**
    * Records Proof of Delivery (POD)
    */
-  static async recordPod(stopId: string, podData: PodInput, driverId?: string) {
+  static async recordPod(stopId: string, podData: PodInput, driverId?: string, authorization?: string) {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
@@ -188,11 +255,7 @@ export class ExecutionSyncService {
       await client.query('COMMIT');
 
       // Async notification to Order Management microservice
-      safeFetch(`${ORDER_SERVICE_URL}/api/orders/${podData.orderRef}/status`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: podData.status }),
-      });
+      notifyDelivered(podData.orderRef, podData.status, authorization);
 
       return { stopExecution: stopRes.rows[0], deliveryEvent: eventRes.rows[0] };
     } catch (err) {
@@ -206,7 +269,7 @@ export class ExecutionSyncService {
   /**
    * Offline Bulk Sync Engine with Timestamp-based Conflict Resolution
    */
-  static async processBulkSync(bulkData: BulkSyncInput, driverId?: string) {
+  static async processBulkSync(bulkData: BulkSyncInput, driverId?: string, authorization?: string) {
     const syncedEvents: any[] = [];
     const syncedTelemetryCount: number = bulkData.telemetry?.length || 0;
 
@@ -253,11 +316,7 @@ export class ExecutionSyncService {
           syncedEvents.push(res.rows[0]);
 
           // Trigger Order Management status update
-          safeFetch(`${ORDER_SERVICE_URL}/api/orders/${event.orderRef}/status`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ status: event.status }),
-          });
+          notifyDelivered(event.orderRef, event.status, authorization);
         }
       }
     }

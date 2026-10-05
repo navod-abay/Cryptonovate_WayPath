@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { ExecutionSyncService } from '../services/sync.service';
+import { ExecutionError, ExecutionSyncService } from '../services/sync.service';
 import {
   ShortfallSchema,
   DispatchSchema,
@@ -97,7 +97,7 @@ export class ExecutionController {
       const { stopId } = req.params;
       const validatedData = PodSchema.parse(req.body);
       const driverId = req.user?.userId;
-      const podResult = await ExecutionSyncService.recordPod(stopId, validatedData, driverId);
+      const podResult = await ExecutionSyncService.recordPod(stopId, validatedData, driverId, req.headers.authorization);
       return res.status(201).json({ success: true, data: podResult });
     } catch (err: any) {
       if (err.name === 'ZodError') {
@@ -112,13 +112,37 @@ export class ExecutionController {
     try {
       const validatedData = BulkSyncSchema.parse(req.body);
       const driverId = req.user?.userId;
-      const syncSummary = await ExecutionSyncService.processBulkSync(validatedData, driverId);
+      const syncSummary = await ExecutionSyncService.processBulkSync(validatedData, driverId, req.headers.authorization);
       return res.json({ success: true, data: syncSummary });
     } catch (err: any) {
       if (err.name === 'ZodError') {
         return res.status(400).json({ success: false, error: 'Validation Error', details: err.errors });
       }
       return res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
+  // D0. Store manager starts unloading (vehicle at the outlet)
+  static async startUnloading(req: Request, res: Response) {
+    try {
+      const { orderRef } = req.params;
+      const { created, unloading } = await ExecutionSyncService.startUnloading(orderRef, req.headers.authorization, req.user?.userId);
+      return res.status(created ? 201 : 200).json({ success: true, data: unloading });
+    } catch (err: any) {
+      if (err instanceof ExecutionError) {
+        return res.status(err.status).json({ success: false, error: { code: err.code, message: err.message, details: err.details } });
+      }
+      return res.status(500).json({ success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: err.message } });
+    }
+  }
+
+  // D0b. Orders of an outlet whose unloading has started
+  static async listUnloadings(req: Request, res: Response) {
+    try {
+      const rows = await ExecutionSyncService.listUnloadings(req.params.outletId);
+      return res.json({ success: true, data: rows });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: err.message } });
     }
   }
 
