@@ -63,6 +63,10 @@ export const ConfirmOrderSchema = z.object({
   notes: z.string().optional(),
 });
 
+export const HandoverSchema = z.object({
+  code: z.string().regex(/^\d{6}$/, 'The handover code is 6 digits'),
+});
+
 export const DisputeOrderSchema = z.object({
   discrepancyType: z.string().min(1, 'Discrepancy type is required'),
   description: z.string().min(1, 'Discrepancy description is required'),

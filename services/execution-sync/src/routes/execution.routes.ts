@@ -82,8 +82,15 @@ router.get(
 router.post(
   '/orders/:orderRef/confirm',
   authenticateJwt,
-  requireRole('store_manager', 'dispatcher'),
+  requireRole('store_manager'),
   ExecutionController.confirmOrder
+);
+
+router.post(
+  '/orders/:orderRef/handover',
+  authenticateJwt,
+  requireRole('driver'),
+  ExecutionController.handover
 );
 
 router.post(

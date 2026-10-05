@@ -6,7 +6,7 @@ import {
   TelemetrySchema,
   PodSchema,
   BulkSyncSchema,
-  ConfirmOrderSchema,
+  HandoverSchema,
   DisputeOrderSchema,
 } from '../schemas/execution.schema';
 
@@ -146,16 +146,33 @@ export class ExecutionController {
     }
   }
 
-  // D1. Confirm Order Receipt
+  // D1. Store manager taps Confirm Receipt: issue the handover code for the driver
   static async confirmOrder(req: Request, res: Response) {
     try {
-      const { orderRef } = req.params;
-      const validatedData = ConfirmOrderSchema.parse(req.body);
-      const storeManagerId = req.user?.userId;
-      const confirmation = await ExecutionSyncService.confirmOrder(orderRef, storeManagerId, validatedData.notes);
+      const confirmation = await ExecutionSyncService.confirmOrder(req.params.orderRef, req.headers.authorization);
       return res.json({ success: true, data: confirmation });
     } catch (err: any) {
-      return res.status(500).json({ success: false, error: err.message });
+      if (err instanceof ExecutionError) {
+        return res.status(err.status).json({ success: false, error: { code: err.code, message: err.message, details: err.details } });
+      }
+      return res.status(500).json({ success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: err.message } });
+    }
+  }
+
+  // D1b. Driver enters the handover code at the outlet
+  static async handover(req: Request, res: Response) {
+    try {
+      const { code } = HandoverSchema.parse(req.body);
+      const result = await ExecutionSyncService.completeHandover(req.params.orderRef, code, req.headers.authorization);
+      return res.json({ success: true, data: result });
+    } catch (err: any) {
+      if (err.name === 'ZodError') {
+        return res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: err.errors?.[0]?.message || 'Validation Error', details: err.errors } });
+      }
+      if (err instanceof ExecutionError) {
+        return res.status(err.status).json({ success: false, error: { code: err.code, message: err.message, details: err.details } });
+      }
+      return res.status(500).json({ success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: err.message } });
     }
   }
 

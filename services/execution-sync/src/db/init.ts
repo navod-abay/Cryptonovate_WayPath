@@ -96,6 +96,19 @@ export async function initDb() {
       );
     `);
 
+    // Handover code the driver enters at the outlet. The code itself is derived from `nonce`, not stored.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS handover_codes (
+        order_ref VARCHAR(50) PRIMARY KEY,
+        outlet_id VARCHAR(50) NOT NULL,
+        nonce UUID NOT NULL,
+        expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+        attempts INT NOT NULL DEFAULT 0,
+        used_at TIMESTAMP WITH TIME ZONE,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
     await client.query('COMMIT');
     console.log('[db/init] Execution Sync database schema initialized successfully.');
   } catch (err) {

@@ -1,4 +1,5 @@
 import jwt from 'jsonwebtoken';
+import { createHmac, randomUUID, timingSafeEqual } from 'crypto';
 import { pool } from '../db/pool';
 import { BulkSyncInput, PodInput, ShortfallInput } from '../schemas/execution.schema';
 
@@ -48,6 +49,8 @@ async function safeFetch(url: string, options: RequestInit = {}, timeoutMs = 500
   }
 }
 
+const HANDOVER_TTL_SECONDS = 120;
+const HANDOVER_MAX_ATTEMPTS = 5;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** An error that carries the HTTP status and code the caller should see. */
@@ -74,21 +77,32 @@ function notifyDelivered(orderRef: string, podStatus: string, authorization?: st
   });
 }
 
+/** Reads the order from Order Management with the caller's token, so outlet scope is enforced there. */
+async function fetchOrder(orderRef: string, authorization: string | undefined) {
+  const res = await safeFetch(`${ORDER_SERVICE_URL}/api/orders/${encodeURIComponent(orderRef)}`, {
+    headers: { Accept: 'application/json', ...(authorization ? { Authorization: authorization } : {}) },
+  });
+  if (!res) throw new ExecutionError(502, 'ORDER_SERVICE_UNAVAILABLE', 'Order Management is unreachable');
+  const body: any = await res.json().catch(() => null);
+  if (!res.ok) {
+    throw new ExecutionError(res.status, body?.error?.code || 'ORDER_LOOKUP_FAILED', body?.error?.message || `Order lookup failed (${res.status})`, body?.error?.details);
+  }
+  return body?.data;
+}
+
+/** The 6-digit handover code is derived from a per-issue random value, so it never has to be stored. */
+function handoverCode(orderRef: string, nonce: string): string {
+  const digest = createHmac('sha256', JWT_SECRET).update(`${orderRef}|${nonce}`).digest();
+  return String(digest.readUInt32BE(0) % 1_000_000).padStart(6, '0');
+}
+
 export class ExecutionSyncService {
   /**
    * Store manager starts unloading: the vehicle is at the outlet. Only valid while the order is
    * out for delivery. The caller's token is forwarded, so Order Management enforces outlet scope.
    */
   static async startUnloading(orderRef: string, authorization: string | undefined, userId?: string) {
-    const res = await safeFetch(`${ORDER_SERVICE_URL}/api/orders/${encodeURIComponent(orderRef)}`, {
-      headers: { Accept: 'application/json', ...(authorization ? { Authorization: authorization } : {}) },
-    });
-    if (!res) throw new ExecutionError(502, 'ORDER_SERVICE_UNAVAILABLE', 'Order Management is unreachable');
-    const body: any = await res.json().catch(() => null);
-    if (!res.ok) {
-      throw new ExecutionError(res.status, body?.error?.code || 'ORDER_LOOKUP_FAILED', body?.error?.message || `Order lookup failed (${res.status})`, body?.error?.details);
-    }
-    const order = body?.data;
+    const order = await fetchOrder(orderRef, authorization);
     if (order?.status !== 'out_for_delivery') {
       throw new ExecutionError(409, 'INVALID_STATE', `Unloading can only start while the order is out for delivery; ${orderRef} is '${order?.status}'`, { status: order?.status });
     }
@@ -339,22 +353,83 @@ export class ExecutionSyncService {
   }
 
   /**
-   * Store Manager Order Receipt Confirmation
+   * Store manager taps Confirm Receipt: issue the handover code the driver must enter.
+   * Needs unloading to have started and the order to still be out for delivery. A repeat call
+   * while the code is valid returns the same code; an expired or locked code is replaced.
    */
-  static async confirmOrder(orderRef: string, storeManagerId?: string, notes?: string) {
-    // Notify Order Management microservice
-    const res = await safeFetch(`${ORDER_SERVICE_URL}/api/orders/${orderRef}/status`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: 'confirmed', confirmedBy: storeManagerId, notes }),
-    });
+  static async confirmOrder(orderRef: string, authorization: string | undefined) {
+    const order = await fetchOrder(orderRef, authorization);
+    if (order?.status === 'delivered') {
+      throw new ExecutionError(409, 'ALREADY_DELIVERED', `The driver has already completed ${orderRef}; record the receipt directly`, { status: order.status });
+    }
+    if (order?.status !== 'out_for_delivery') {
+      throw new ExecutionError(409, 'INVALID_STATE', `A handover code can only be issued while the order is out for delivery; ${orderRef} is '${order?.status}'`, { status: order?.status });
+    }
+    const unloading = await pool.query('SELECT 1 FROM store_unloadings WHERE order_ref = $1', [orderRef]);
+    if (unloading.rows.length === 0) {
+      throw new ExecutionError(409, 'UNLOADING_NOT_STARTED', 'Start unloading before confirming receipt');
+    }
 
-    return {
-      orderRef,
-      status: 'confirmed',
-      confirmedBy: storeManagerId || null,
-      orderManagementNotified: res ? res.ok : false,
-    };
+    const existing = (await pool.query('SELECT * FROM handover_codes WHERE order_ref = $1', [orderRef])).rows[0];
+    const reusable = existing && !existing.used_at && new Date(existing.expires_at) > new Date() && existing.attempts < HANDOVER_MAX_ATTEMPTS;
+    let row = existing;
+    if (!reusable) {
+      row = (await pool.query(
+        `INSERT INTO handover_codes (order_ref, outlet_id, nonce, expires_at, attempts, used_at)
+         VALUES ($1, $2, $3, now() + ($4 || ' seconds')::interval, 0, NULL)
+         ON CONFLICT (order_ref) DO UPDATE
+           SET nonce = EXCLUDED.nonce, expires_at = EXCLUDED.expires_at, attempts = 0, used_at = NULL
+         RETURNING *`,
+        [orderRef, order.outlet_id, randomUUID(), String(HANDOVER_TTL_SECONDS)],
+      )).rows[0];
+    }
+    return { orderRef, deliveryId: orderRef, code: handoverCode(orderRef, row.nonce), expiresAt: row.expires_at };
+  }
+
+  /**
+   * Driver enters the code at the outlet. A correct code marks the order delivered using the
+   * driver's own token. Every try counts, and the code locks after too many wrong ones.
+   */
+  static async completeHandover(orderRef: string, code: string, authorization: string | undefined) {
+    const attempt = await pool.query(
+      `UPDATE handover_codes SET attempts = attempts + 1
+        WHERE order_ref = $1 AND used_at IS NULL AND expires_at > now() AND attempts < $2
+        RETURNING nonce, outlet_id, attempts`,
+      [orderRef, HANDOVER_MAX_ATTEMPTS],
+    );
+    if (attempt.rows.length === 0) {
+      const row = (await pool.query('SELECT used_at, expires_at, attempts FROM handover_codes WHERE order_ref = $1', [orderRef])).rows[0];
+      if (!row || row.used_at) throw new ExecutionError(404, 'NO_ACTIVE_CODE', 'There is no active handover code for this order');
+      if (new Date(row.expires_at) <= new Date()) throw new ExecutionError(410, 'CODE_EXPIRED', 'The handover code has expired; ask the store for a new one');
+      throw new ExecutionError(429, 'CODE_LOCKED', 'Too many wrong codes; ask the store for a new one');
+    }
+
+    const { nonce, outlet_id: outletId, attempts } = attempt.rows[0];
+    const expected = Buffer.from(handoverCode(orderRef, nonce));
+    const given = Buffer.from(code);
+    if (given.length !== expected.length || !timingSafeEqual(given, expected)) {
+      throw new ExecutionError(400, 'INVALID_CODE', 'That code is not correct', { attemptsLeft: HANDOVER_MAX_ATTEMPTS - attempts });
+    }
+
+    const res = await safeFetch(`${ORDER_SERVICE_URL}/api/orders/${encodeURIComponent(orderRef)}/status`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', ...(authorization ? { Authorization: authorization } : {}) },
+      body: JSON.stringify({ status: 'delivered' }),
+    });
+    if (!res) throw new ExecutionError(502, 'ORDER_SERVICE_UNAVAILABLE', 'Order Management is unreachable');
+    if (!res.ok) {
+      const body: any = await res.json().catch(() => null);
+      throw new ExecutionError(res.status, body?.error?.code || 'ORDER_UPDATE_FAILED', body?.error?.message || `Order update failed (${res.status})`, body?.error?.details);
+    }
+
+    await pool.query('UPDATE handover_codes SET used_at = now() WHERE order_ref = $1', [orderRef]);
+    await pool.query(
+      `INSERT INTO delivery_events (order_ref, outlet_id, status, pod_signature, offline_captured_at)
+       VALUES ($1, $2, 'delivered', 'handover-code', now())
+       ON CONFLICT (order_ref) DO UPDATE SET status = 'delivered', pod_signature = 'handover-code', synced_at = now()`,
+      [orderRef, outletId],
+    );
+    return { orderRef, status: 'delivered', deliveredAt: new Date().toISOString() };
   }
 
   /**
