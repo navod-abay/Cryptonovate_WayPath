@@ -3,9 +3,9 @@
  * Orders, deliveries, updates and "last order" quantities are all derived from the
  * order-management orders of this outlet (plus planning stops for ETA and vehicle).
  */
-import { http } from './http';
+import { ApiError, http } from './http';
 import type {
-  ConfirmationCode, Delivery, DeliveryStatus, Order, OrderStatus, OrderSuggestions, OrderType, Outlet, StoreType, TruckCapacity, Update,
+  ConfirmationCode, Delivery, DeliveryStatus, NewOrderInput, Order, OrderStatus, OrderSuggestions, OrderType, Outlet, Product, StoreType, TruckCapacity, Update,
 } from '@/types';
 
 // ------------------------------------------------------------ backend shapes
@@ -107,6 +107,15 @@ export async function fetchCapacity(categories: OrderType[]): Promise<Partial<Re
     if (cap) result[type] = cap;
   }
   return result;
+}
+
+/** GET /orders/products: the catalogue for the outlet's categories (a store only gets its own brand). */
+export async function fetchProducts(categories: OrderType[]): Promise<Product[]> {
+  const rows = await http.get<{ sku: string; description: string; category: OrderType; unit_weight_kg: number; unit_volume_m3: number }[]>(
+    '/orders/products',
+    { categories: categories.join(',') },
+  );
+  return rows.map((p) => ({ id: p.sku, name: p.description, type: p.category, weightKg: p.unit_weight_kg, volumeM3: p.unit_volume_m3 }));
 }
 
 // ------------------------------------------------------------ orders snapshot
@@ -275,4 +284,46 @@ export interface ReceiptTotals { received_units: number; missing_units: number; 
 export async function recordReceipt(orderRef: string, totals: ReceiptTotals): Promise<void> {
   await http.post(`/orders/${encodeURIComponent(orderRef)}/receipt`, totals);
   snapshot = null;
+}
+
+// ------------------------------------------------------------ placing an order
+
+/**
+ * Creates the order for that day and category, or replaces its lines when one already exists
+ * (draft or still-open confirmed), then confirms it. Returns the order as the screens show it.
+ */
+export async function placeOrder(input: NewOrderInput, outletId: string, products: Product[]): Promise<Order> {
+  const byId = new Map(products.map((p) => [p.id, p]));
+  const items = input.lines.map((l) => {
+    const product = byId.get(l.productId);
+    if (!product) throw new Error(`${l.name} is not in the catalogue.`);
+    return {
+      sku: l.productId,
+      description: product.name,
+      quantity: l.quantity + (l.carriedOver ?? 0),
+      unit_weight_kg: product.weightKg,
+      unit_volume_m3: product.volumeM3,
+      is_chilled: product.type === 'chilled',
+    };
+  });
+  const temp = input.type === 'chilled' ? 'chilled' : 'ambient';
+
+  let ref: string;
+  let status = 'draft';
+  try {
+    const created = await http.post<{ order_ref: string }>('/orders/', { outlet_id: outletId, temp_requirement: temp, order_date: input.deliveryDate, items });
+    ref = created.order_ref;
+  } catch (e) {
+    const existing = e instanceof ApiError && e.code === 'DUPLICATE_ORDER' ? (e.details as { existing_order_ref?: string } | undefined)?.existing_order_ref : undefined;
+    if (!existing) throw e;
+    ref = existing;
+    status = await fetchOrderStatus(ref);
+    await http.put(`/orders/${encodeURIComponent(ref)}/items`, { items });
+  }
+  if (status === 'draft') await http.post(`/orders/${encodeURIComponent(ref)}/confirm`, { accept_next_run: false });
+
+  snapshot = null;
+  const order = (await fetchOrders(outletId)).find((o) => o.id === ref);
+  if (!order) throw new Error('The order was saved but could not be loaded.');
+  return order;
 }

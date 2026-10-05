@@ -24,8 +24,8 @@ const categories = () => getState().outlet.categories;
 
 // Real mode reads from the existing services through src/api/backend.ts (see BACKEND_INTEGRATION.md).
 
-/** No product catalogue exists in the backend yet, so the product list is empty in real mode. */
-const fetchProducts = (): Promise<Product[]> => (USE_MOCK ? mock.getProducts(categories()) : Promise.resolve([]));
+/** GET /orders/products */
+const fetchProducts = (): Promise<Product[]> => (USE_MOCK ? mock.getProducts(categories()) : backend.fetchProducts(categories()));
 
 /** GET /fleet/vehicles, largest vehicle per temperature */
 const fetchCapacity = (): Promise<Partial<Record<OrderType, TruckCapacity>>> =>
@@ -86,10 +86,10 @@ const upsertDelivery = (d: Delivery) =>
 
 // ============================================================ orders
 
-/** POST /orders/outlets/:outletId/orders  (creates, or replaces the order for that day + category) */
+/** POST /orders (creates, or replaces the lines of the order for that day + category), then confirm */
 export async function placeOrder(input: NewOrderInput): Promise<Order> {
   const body = { ...input, lines: input.lines.filter((l) => l.quantity + (l.carriedOver ?? 0) > 0) };
-  const order = USE_MOCK ? await mock.placeOrder(body) : await http.post<Order>(`/orders/outlets/${outletId()}/orders`, body);
+  const order = USE_MOCK ? await mock.placeOrder(body) : await backend.placeOrder(body, getState().outlet.id, getState().products);
   setState((s) => ({
     ...s,
     orders: [...s.orders.filter((o) => !(o.type === order.type && o.deliveryDate === order.deliveryDate)), order],
